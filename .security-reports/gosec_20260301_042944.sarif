@@ -55,6 +55,32 @@
 					"ruleId": "G404"
 				},
 				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "internal/monitoring/handlers.go"
+								},
+								"region": {
+									"endColumn": 20,
+									"endLine": 572,
+									"snippet": {
+										"text": "err = os.WriteFile(backupName, input, 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 20,
+									"startLine": 572
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Path traversal via taint analysis"
+					},
+					"ruleId": "G703"
+				},
+				{
 					"fixes": [
 						{
 							"artifactChanges": [
@@ -298,293 +324,23 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 123,
-									"snippet": {
-										"text": "Secret string `mapstructure:\"secret\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 123
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Secret\" (JSON key \"Secret\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "pkg/infrastructure/grafana.go"
 								},
 								"region": {
-									"endColumn": 2,
-									"endLine": 155,
+									"endColumn": 19,
+									"endLine": 481,
 									"snippet": {
-										"text": "Password          string                 `json:\"password,omitempty\"`"
+										"text": "jsonData, err := json.Marshal(ds)"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 155
+									"startColumn": 19,
+									"startLine": 481
 								}
 							}
 						}
 					],
 					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "internal/monitoring/auth_handlers.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 16,
-									"snippet": {
-										"text": "Password string `json:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 16
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/infrastructure/grafana.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 24,
-									"snippet": {
-										"text": "Password string"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 24
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 189,
-									"snippet": {
-										"text": "Password string `mapstructure:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 189
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 156,
-									"snippet": {
-										"text": "Password string `mapstructure:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 156
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 145,
-									"snippet": {
-										"text": "Password string `mapstructure:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 145
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 129,
-									"snippet": {
-										"text": "Password string `mapstructure:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 129
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 55,
-									"snippet": {
-										"text": "Password       string         `mapstructure:\"password\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 55
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"Password\" (JSON key \"Password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/infrastructure/grafana.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 22,
-									"snippet": {
-										"text": "APIKey   string"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 22
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"APIKey\" (JSON key \"APIKey\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "config/config.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 187,
-									"snippet": {
-										"text": "APIKey   string `mapstructure:\"api_key\"`"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 187
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Exported struct field \"APIKey\" (JSON key \"APIKey\") matches secret pattern"
+						"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
 					},
 					"ruleId": "G117",
 					"ruleIndex": 1
@@ -1560,10 +1316,10 @@
 								"level": "error"
 							},
 							"fullDescription": {
-								"text": "Exported struct field \"Secret\" (JSON key \"Secret\") matches secret pattern"
+								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
 							},
 							"help": {
-								"text": "Exported struct field \"Secret\" (JSON key \"Secret\") matches secret pattern\nSeverity: MEDIUM\nConfidence: MEDIUM\n"
+								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern\nSeverity: MEDIUM\nConfidence: MEDIUM\n"
 							},
 							"id": "G117",
 							"name": "Serializable Class Containing Sensitive Data",
@@ -1590,7 +1346,7 @@
 								}
 							],
 							"shortDescription": {
-								"text": "Exported struct field \"Secret\" (JSON key \"Secret\") matches secret pattern"
+								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
 							}
 						},
 						{
@@ -1743,6 +1499,32 @@
 							],
 							"shortDescription": {
 								"text": "Expect WriteFile permissions to be 0600 or less"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Path traversal via taint analysis"
+							},
+							"help": {
+								"text": "Path traversal via taint analysis\nSeverity: HIGH\nConfidence: HIGH\n"
+							},
+							"id": "G703",
+							"name": "G703",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								null
+							],
+							"shortDescription": {
+								"text": "Path traversal via taint analysis"
 							}
 						},
 						{

@@ -1520,9 +1520,6 @@
 									"HIGH"
 								]
 							},
-							"relationships": [
-								null
-							],
 							"shortDescription": {
 								"text": "Path traversal via taint analysis"
 							}

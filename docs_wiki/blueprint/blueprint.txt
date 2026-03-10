@@ -1072,7 +1072,19 @@ id, err := cron.AddJob("database_backup", "0 3 * * *", func() {
 3. **Environment variables** - Can override config values
 4. **Validation** - Config values are validated at startup
 
-## 9. PROJECT STRUCTURE SUMMARY
+## 9. SIMPLIFIED DOCUMENTATION STRUCTURE
+
+```
+docs_wiki/
+├── GETTING_STARTED.md          # 🚀 Quick start guide for new users
+├── DEVELOPMENT.md              # 🔧 Development guide for extending the app
+├── ARCHITECTURE.md             # 🏗️ Technical overview and design decisions
+├── REFERENCE.md                # 📖 Complete technical reference (config, APIs, advanced)
+└── blueprint/
+    └── blueprint.txt           # 🔍 Internal technical blueprint (this file)
+```
+
+## 10. PROJECT STRUCTURE SUMMARY
 
 ```
 stackyard/
@@ -1083,19 +1095,13 @@ stackyard/
 ├── config/
 │   ├── config.go               # Configuration management
 │   └── config.yaml             # Application configuration
-├── docs_wiki/                  # Documentation
-│   ├── API_OBFUSCATION.md
-│   ├── API_RESPONSE_STRUCTURE.md
-│   ├── ARCHITECTURE_DIAGRAMS.md
-│   ├── DOCKER_CONTAINERIZATION.md  # Docker setup guide
-│   ├── ERROR_HANDLING.md
-│   ├── HOME.md
-│   ├── INTEGRATION_GUIDE.md
-│   ├── REQUEST_RESPONSE_STRUCTURE.md
-│   ├── SERVICE_IMPLEMENTATION.md
-│   ├── TUI_IMPLEMENTATION.md
-│   └── blueprint/              # Blueprint files
-│       └── blueprint.txt       # This file
+├── docs_wiki/                  # Simplified project documentation
+│   ├── GETTING_STARTED.md      # Quick start guide
+│   ├── DEVELOPMENT.md          # Development guide
+│   ├── ARCHITECTURE.md         # Technical overview
+│   ├── REFERENCE.md            # Complete technical reference
+│   └── blueprint/              # Internal blueprint files
+│       └── blueprint.txt       # This comprehensive blueprint
 ├── internal/
 │   ├── middleware/             # HTTP middleware
 │   ├── monitoring/             # Monitoring system
@@ -1105,7 +1111,7 @@ stackyard/
 │       └── modules/            # Service implementations
 ├── pkg/
 │   ├── request/                # Request handling
-│   ├── response/               # Response helpers
+│   ├── response/               # Standardized API responses
 │   ├── tui/                    # Terminal UI
 │   ├── infrastructure/         # External integrations
 │   ├── logger/                 # Logging
@@ -1118,7 +1124,7 @@ stackyard/
 │   ├── docker_build.sh         # Docker image build (Unix/Linux/macOS)
 │   └── docker_build.bat        # Docker image build (Windows)
 └── web/                       # Web assets
-    └── monitoring/            # Monitoring UI
+    └── monitoring/             # Monitoring UI
 ```
 
 ## 10. KEY FEATURES SUMMARY

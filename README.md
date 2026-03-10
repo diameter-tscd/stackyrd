@@ -1,6 +1,6 @@
 
 <div align="center">
-  <img src=".assets/Stackyard_logo.PNG" alt="Stackyard" style="max-width: 500px;"/>
+  <img src=".assets/Stackyard_logo.PNG" alt="Stackyard" style="max-width: 300px;"/>
 </div>
 <div align="center">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"/>

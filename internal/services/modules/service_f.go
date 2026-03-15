@@ -3,10 +3,10 @@ package modules
 import (
 	"fmt"
 	"stackyard/config"
-	"stackyard/pkg/registry"
 	"stackyard/pkg/infrastructure"
 	"stackyard/pkg/interfaces"
 	"stackyard/pkg/logger"
+	"stackyard/pkg/registry"
 	"stackyard/pkg/response"
 	"strconv"
 
@@ -242,7 +242,7 @@ func init() {
 		if !config.Services.IsEnabled("service_f") {
 			return nil
 		}
-		if deps.PostgresConnectionManager == nil {
+		if deps == nil || deps.PostgresConnectionManager == nil {
 			logger.Warn("PostgreSQL connections not available, skipping Service F")
 			return nil
 		}

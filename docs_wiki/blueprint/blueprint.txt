@@ -249,13 +249,64 @@ func NewInventoryService(
 
 ### 5.3 Service Registration
 
-Services are registered in `internal/server/server.go`:
+Services are registered using an automatic discovery system with factory functions:
+
+#### Service Factory Pattern
+
+Each service module uses an `init()` function to register itself with the global registry:
 
 ```go
-registry.Register(modules.NewServiceA(s.config.Services.IsEnabled("service_a")))
-registry.Register(modules.NewOrdersService(s.config.Services.IsEnabled("orders")))
-registry.Register(modules.NewServiceE(s.config.Services.IsEnabled("service_e")))
+func init() {
+    registry.RegisterService("service_name", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        if !config.Services.IsEnabled("service_name") {
+            return nil
+        }
+        if deps == nil || deps.RequiredDependency == nil {
+            logger.Warn("Required dependency not available, skipping service")
+            return nil
+        }
+        return NewService(deps.RequiredDependency, true, logger)
+    })
+}
 ```
+
+#### Service Registration Flow
+
+1. **Import Trigger**: `cmd/app/services.go` imports the services package with blank import
+2. **Module Import**: `internal/services/register.go` imports all service modules
+3. **Service Registration**: Each module's `init()` function registers a factory
+4. **Auto-Discovery**: `registry.AutoDiscoverServices()` creates enabled services
+5. **Dependency Injection**: Services check for required dependencies before creation
+
+#### Service Registration Files
+
+- **`cmd/app/services.go`**: Triggers service registration in main application
+- **`internal/services/register.go`**: Imports all service modules
+- **`pkg/registry/registry.go`**: Service factory registration and auto-discovery
+
+#### Service Configuration
+
+```yaml
+services:
+  service_a: true
+  service_b: false
+  orders: true
+  inventory: true
+```
+
+#### Service Dependencies
+
+Services can require infrastructure dependencies:
+
+- **Service A**: No dependencies (always available)
+- **Service C**: No dependencies (cache demo)
+- **Service D**: PostgreSQL database connection
+- **Service F**: PostgreSQL connection manager (multi-tenant)
+- **Service G**: MongoDB connection manager (multi-tenant)
+- **Service H**: No dependencies (broadcast utility)
+- **Service I**: Grafana manager
+
+Services with missing dependencies are gracefully skipped during auto-discovery.
 
 ### 5.4 Service Configuration
 
@@ -1296,6 +1347,69 @@ When contributing to this project:
 2. **Original Work**: Contributions must be original work or properly licensed
 3. **No Additional Restrictions**: Contributions cannot add additional licensing restrictions
 
-### 13.8 Commercial Support
+### 13.8 Service Registration System
+
+The application uses an automatic service discovery and registration system that allows services to be dynamically enabled/disabled through configuration.
+
+#### Service Registration Flow
+
+1. **Import Trigger**: `cmd/app/services.go` imports the services package with blank import
+2. **Module Import**: `internal/services/register.go` imports all service modules
+3. **Service Registration**: Each module's `init()` function registers a factory
+4. **Auto-Discovery**: `registry.AutoDiscoverServices()` creates enabled services
+5. **Dependency Injection**: Services check for required dependencies before creation
+
+#### Service Factory Pattern
+
+Each service module uses an `init()` function to register itself:
+
+```go
+func init() {
+    registry.RegisterService("service_name", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        if !config.Services.IsEnabled("service_name") {
+            return nil
+        }
+        if deps == nil || deps.RequiredDependency == nil {
+            logger.Warn("Required dependency not available, skipping service")
+            return nil
+        }
+        return NewService(deps.RequiredDependency, true, logger)
+    })
+}
+```
+
+#### Service Dependencies
+
+Services can require infrastructure dependencies:
+
+- **Service A**: No dependencies (always available)
+- **Service C**: No dependencies (cache demo)
+- **Service D**: PostgreSQL database connection
+- **Service F**: PostgreSQL connection manager (multi-tenant)
+- **Service G**: MongoDB connection manager (multi-tenant)
+- **Service H**: No dependencies (broadcast utility)
+- **Service I**: Grafana manager
+
+Services with missing dependencies are gracefully skipped during auto-discovery.
+
+#### Troubleshooting Service Registration
+
+**Common Issues:**
+
+1. **Services not registering**: Ensure `cmd/app/services.go` imports the services package
+2. **Nil pointer dereferences**: Services should check if `deps` is nil before accessing dependencies
+3. **Missing dependencies**: Services requiring infrastructure components will be skipped if dependencies aren't available
+4. **Configuration issues**: Check that services are enabled in `config.yaml`
+
+**Debug Commands:**
+```bash
+# Check registered service factories
+go run -tags debug cmd/app/main.go --debug-services
+
+# Verify service configuration
+cat config.yaml | grep -A 10 "services:"
+```
+
+### 13.9 Commercial Support
 
 While the software is provided under Apache License 2.0, commercial support, consulting, and custom development services may be available through the project maintainer.

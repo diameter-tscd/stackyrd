@@ -59,6 +59,11 @@ func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 	}
 }
 
+// GetServiceFactories returns the global service factories map for testing/debugging
+func GetServiceFactories() map[string]ServiceFactory {
+	return serviceFactories
+}
+
 // Register adds a service to the registry
 func (r *ServiceRegistry) Register(s interfaces.Service) {
 	r.services = append(r.services, s)

@@ -7,12 +7,14 @@ import (
 	"reflect"
 	"time"
 
+	_ "stackyard/internal/services/modules"
+
 	"stackyard/config"
 	"stackyard/internal/middleware"
 	"stackyard/internal/monitoring"
-	"stackyard/pkg/registry"
 	"stackyard/pkg/infrastructure"
 	"stackyard/pkg/logger"
+	"stackyard/pkg/registry"
 	"stackyard/pkg/response"
 	"stackyard/pkg/utils"
 

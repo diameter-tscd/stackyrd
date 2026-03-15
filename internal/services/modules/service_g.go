@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"stackyard/config"
-	"stackyard/pkg/registry"
 	"stackyard/pkg/infrastructure"
 	"stackyard/pkg/interfaces"
 	"stackyard/pkg/logger"
+	"stackyard/pkg/registry"
 	"stackyard/pkg/response"
 
 	"github.com/labstack/echo/v4"
@@ -385,7 +385,7 @@ func init() {
 		if !config.Services.IsEnabled("service_g") {
 			return nil
 		}
-		if deps.MongoConnectionManager == nil {
+		if deps == nil || deps.MongoConnectionManager == nil {
 			logger.Warn("MongoDB connections not available, skipping Service G")
 			return nil
 		}

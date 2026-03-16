@@ -117,7 +117,7 @@ func NewBootModel(cfg StartupConfig, initQueue []ServiceInit) BootModel {
 		results:   results,
 		config:    cfg,
 		startTime: time.Now(),
-		width:     80,
+		width:     100,
 		phase:     "starting",
 	}
 }
@@ -318,14 +318,6 @@ func (m BootModel) View() string {
 			Bold(true).
 			Foreground(lipgloss.Color("#ffdab3ff"))
 
-		// progressWidth := 30
-		// progressPercent := float64(m.countdown) / float64(m.config.IdleSeconds)
-		// filled := int(progressPercent * float64(progressWidth))
-		// empty := progressWidth - filled
-
-		// progressBar := lipgloss.NewStyle().Foreground(lipgloss.Color("#b6ffc8ff")).Render(strings.Repeat("█", filled)) +
-		// 	lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Render(strings.Repeat("░", empty))
-
 		footerText = fmt.Sprintf("\n  %s Starting server in %s seconds...\n  Press 'q' to skip and continue now",
 			bootFrames[m.animFrame%len(bootFrames)],
 			countdownStyle.Render(fmt.Sprintf("%d", m.countdown)),
@@ -354,7 +346,7 @@ func (m BootModel) renderBootServices() string {
 		Foreground(lipgloss.Color("#f0ca8c")).
 		Render("◆ Boot Sequence")
 	lines = append(lines, header)
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Render(strings.Repeat("─", 45)))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Render(strings.Repeat("─", 100)))
 
 	for i, r := range m.results {
 		var icon, status string
@@ -383,7 +375,7 @@ func (m BootModel) renderBootServices() string {
 			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Italic(true)
 		}
 
-		nameStyle := lipgloss.NewStyle().Width(20)
+		nameStyle := lipgloss.NewStyle().Width(60)
 		if i == m.current-1 && r.Status == "loading" {
 			nameStyle = nameStyle.Foreground(lipgloss.Color("#FFB86C")).Bold(true)
 		} else {

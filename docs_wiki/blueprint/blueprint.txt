@@ -483,10 +483,33 @@ type GrafanaService struct {
 
 ### 7.6 Styling System (`pkg/tui/styles.go`)
 
-**Color Palette (Dracula-inspired):**
-- Primary: Pink (#FF79C6), Purple (#BD93F9), Cyan (#8BE9FD)
-- Status: Green (#50FA7B), Yellow (#F1FA8C), Red (#FF5555)
-- UI Elements: Dark Grey (#6272A4)
+**Unified Color Palette (Live.go inspired):**
+- **Primary Cyan**: `#8daea5` - Used for main headers, titles, and primary elements
+- **Light Gray**: `#626262ff` - Used for secondary elements and disabled states
+- **Light Yellow**: `#f5fac0ff` - Used for warning/starting states
+- **Light Green**: `#9af8b1ff` - Used for success states
+- **Light Red**: `#f67373ff` - Used for error states
+- **Off-white text**: `#F8F8F2` - Used for service names and content
+
+**Color Consistency:**
+- **Simple Renderer**: Updated to match Live.go color scheme for visual consistency
+- **Live TUI**: Maintains original color palette with enhanced accessibility
+- **Boot Sequence**: Uses unified colors for cohesive appearance
+- **Service Status**: Consistent color coding across all TUI components
+
+**Recent Color Unification (v2.0):**
+- **Purpose**: Unified color schemes between `pkg/tui/simple.go` and `pkg/tui/live.go`
+- **Benefits**: Visual consistency across all TUI implementations
+- **Changes Applied**:
+  - Banner: `#BD93F9` → `#8daea5` (purple to cyan)
+  - Divider: `#44475A` → `#626262ff` (dark gray to gray)
+  - Section headers: `#8BE9FD` → `#8daea5` (light blue to cyan)
+  - Service starting: `#F1FA8C` → `#f5fac0ff` (yellow to light yellow)
+  - Service success: `#50FA7B` → `#9af8b1ff` (green to light green)
+  - Service error: `#FF5555` → `#f67373ff` (red to light red)
+  - Server ready elements: Unified to `#8daea5` (cyan)
+  - Box styling: `#6272A4` → `#8daea5` (blue to cyan)
+  - Animation colors: Updated for consistency
 
 **Animations:**
 - Wave animation (boot screen)
@@ -893,7 +916,77 @@ scripts\change_package.bat github.com/new-org/new-project
 
 ### 8.2 Infrastructure Integration
 
-#### 8.2.1 Redis
+#### 8.2.1 Global Singleton Afero Manager
+
+**Purpose:** Provides a unified, thread-safe interface for filesystem operations with support for embedded files and aliasing.
+
+**Configuration:** No configuration required - automatically initialized with embed.FS
+
+**Key Features:**
+- **Singleton Pattern**: Thread-safe singleton using `sync.Once`
+- **Hybrid Filesystem**: Development mode uses `CopyOnWriteFs`, production uses `ReadOnlyFs`
+- **File Aliasing**: Map aliases to physical paths (e.g., "config" → "all:config.yaml")
+- **Embed.FS Integration**: Seamless integration with Go's `//go:embed` directive
+- **Thread Safety**: Read operations protected with `sync.RWMutex`
+
+**API Functions:**
+```go
+// Initialize the manager
+func Init(embedFS embed.FS, aliasMap map[string]string, isDev bool)
+
+// Read file content by alias
+func Read(alias string) ([]byte, error)
+
+// Stream file content by alias
+func Stream(alias string) (io.ReadCloser, error)
+
+// Check if alias exists
+func Exists(alias string) bool
+
+// Get all aliases
+func GetAliases() map[string]string
+
+// Get underlying filesystem
+func GetFileSystem() afero.Fs
+```
+
+**Usage Examples:**
+```go
+// In main.go
+//go:embed all:config.yaml
+var configFS embed.FS
+
+aliasMap := map[string]string{
+    "config":  "all:config.yaml",
+    "banner":  "all:banner.txt",
+    "readme":  "all:README.md",
+}
+
+infrastructure.Init(configFS, aliasMap, true) // Development mode
+
+// Read embedded file
+content, err := infrastructure.Read("config")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(string(content))
+
+// Check file existence
+if infrastructure.Exists("banner") {
+    fmt.Println("Banner file exists")
+}
+```
+
+**Development vs Production:**
+- **Development Mode**: `CopyOnWriteFs` allows local file overrides
+- **Production Mode**: `ReadOnlyFs` ensures embedded files only
+
+**Testing:**
+- Comprehensive test suite in `pkg/infrastructure/afero_test.go`
+- Tests singleton behavior, alias resolution, and error handling
+- Validates both development and production modes
+
+#### 8.2.2 Redis
 
 **Configuration:**
 ```yaml
@@ -1127,12 +1220,12 @@ id, err := cron.AddJob("database_backup", "0 3 * * *", func() {
 
 ```
 docs_wiki/
-├── GETTING_STARTED.md          # 🚀 Quick start guide for new users
-├── DEVELOPMENT.md              # 🔧 Development guide for extending the app
-├── ARCHITECTURE.md             # 🏗️ Technical overview and design decisions
-├── REFERENCE.md                # 📖 Complete technical reference (config, APIs, advanced)
+├── GETTING_STARTED.md          # Quick start guide for new users
+├── DEVELOPMENT.md              # Development guide for extending the app
+├── ARCHITECTURE.md             # Technical overview and design decisions
+├── REFERENCE.md                # Complete technical reference (config, APIs, advanced)
 └── blueprint/
-    └── blueprint.txt           # 🔍 Internal technical blueprint (this file)
+    └── blueprint.txt           # Internal technical blueprint (this file)
 ```
 
 ## 11. PROJECT STRUCTURE SUMMARY
@@ -1165,6 +1258,19 @@ stackyard/
 │   ├── response/               # Standardized API responses
 │   ├── tui/                    # Terminal UI
 │   ├── infrastructure/         # External integrations
+│   │   ├── afero.go            # Global Singleton Afero Manager
+│   │   ├── afero_test.go       # Afero Manager tests
+│   │   ├── async.go            # Async infrastructure operations
+│   │   ├── async_init.go       # Async initialization
+│   │   ├── cron_manager.go     # Cron job management
+│   │   ├── grafana.go          # Grafana integration
+│   │   ├── http_monitor.go     # HTTP monitoring
+│   │   ├── kafka.go            # Kafka messaging
+│   │   ├── minio.go            # MinIO object storage
+│   │   ├── mongo.go            # MongoDB multi-tenant support
+│   │   ├── postgres.go         # PostgreSQL multi-tenant support
+│   │   ├── redis.go            # Redis caching
+│   │   └── system_monitor.go   # System monitoring
 │   ├── logger/                 # Logging
 │   └── utils/                  # Utility functions
 ├── scripts/                    # Build and utility scripts
@@ -1192,6 +1298,7 @@ stackyard/
 - **Real-time Monitoring**: System and service health dashboard with web interface
 - **Terminal UI**: Interactive boot sequence and dashboard
 - **Infrastructure Integrations**: Redis, Postgres, Kafka, MinIO, Grafana, Cron
+- **Global Singleton Afero Manager**: Thread-safe filesystem operations with embed.FS support
 - **Customizable Parameter Parsing**: Dynamic flag system for command-line configuration
 
 ### 11.2 Technical Highlights

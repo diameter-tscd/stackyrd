@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,77 +16,19 @@ import (
 	"stackyard/pkg/utils"
 	"syscall"
 	"time"
-)
 
-// Flag definitions - configure flags here
-var flagDefinitions = []utils.FlagDefinition{
-	{
-		Name:         "c",
-		DefaultValue: "",
-		Description:  "URL to load configuration from (YAML format)",
-		Validator: func(value interface{}) error {
-			if str, ok := value.(string); ok && str != "" {
-				if _, err := url.ParseRequestURI(str); err != nil {
-					return fmt.Errorf("invalid config URL format: %w", err)
-				}
-			}
-			return nil
-		},
-	},
-	// Add new flags here easily:
-	// {
-	//     Name:         "port",
-	//     DefaultValue: 8080,
-	//     Description:  "Server port to listen on",
-	//     Validator: func(value interface{}) error {
-	//         if port, ok := value.(int); ok && (port < 1 || port > 65535) {
-	//             return fmt.Errorf("port must be between 1 and 65535")
-	//         }
-	//         return nil
-	//     },
-	// },
-	// {
-	//     Name:         "debug",
-	//     DefaultValue: false,
-	//     Description: "Enable debug mode",
-	//     Validator:   nil, // No validation needed for bool flags
-	// },
-}
+	_ "stackyard/internal/services/modules"
+)
 
 func main() {
 	// Clear the terminal screen for a fresh start
 	utils.ClearScreen()
 
-	// 1. Parse command line flags
-	parsedFlags, err := utils.ParseFlags(flagDefinitions)
-	if err != nil {
-		fmt.Printf("Flag parsing error: %s\n", err.Error())
-		utils.PrintUsage(flagDefinitions, "stackyard")
-		os.Exit(1)
-	}
+	// Parse command line flags
+	configURL := parseFlags()
 
-	// 2. Load Config
-	var cfg *config.Config
-	if parsedFlags.ConfigURL != "" {
-		// Load config from URL
-		fmt.Printf("Loading config from URL: %s\n", parsedFlags.ConfigURL)
-		if err := utils.LoadConfigFromURL(parsedFlags.ConfigURL); err != nil {
-			fmt.Printf("Failed to load config from URL: %s\n", err.Error())
-			os.Exit(1)
-		}
-
-		// Parse the loaded config
-		cfg, err = config.LoadConfigWithURL(parsedFlags.ConfigURL)
-		if err != nil {
-			panic("Failed to parse config from URL: " + err.Error())
-		}
-	} else {
-		// Load config from local file
-		cfg, err = config.LoadConfig()
-		if err != nil {
-			panic("Failed to load config: " + err.Error())
-		}
-	}
+	// Load configuration
+	cfg := loadConfig(configURL)
 
 	// Check if "web" folder exists, if not, disable web monitoring
 	if _, err := os.Stat("web"); os.IsNotExist(err) {
@@ -93,42 +36,35 @@ func main() {
 		cfg.Monitoring.Enabled = false
 	}
 
-	// 2. Load Banner
-	var bannerText string
-	if cfg.App.BannerPath != "" {
-		banner, err := os.ReadFile(cfg.App.BannerPath)
-		if err == nil {
-			bannerText = string(banner)
-		}
-	}
+	// Load banner text
+	bannerText := loadBanner(cfg)
 
-	// 3. Check port availability
+	// Check port availability
 	if err := utils.CheckPortAvailability(cfg.Server.Port, cfg.Monitoring.Port, cfg.Monitoring.Enabled); err != nil {
 		fmt.Printf("\033[31m Port Error: %s\033[0m\n", err.Error())
 		fmt.Println("\033[33mPlease stop the conflicting service or change the port in config.yaml\033[0m")
 		os.Exit(1)
 	}
 
-	// 4. Init Broadcaster for monitoring
+	// Initialize broadcaster for monitoring
 	broadcaster := monitoring.NewLogBroadcaster()
 
-	// Check if TUI mode is enabled
+	// Start application based on TUI mode
 	if cfg.App.EnableTUI {
-		// ===== TUI MODE =====
 		runWithTUI(cfg, bannerText, broadcaster)
 	} else {
-		// ===== TRADITIONAL CONSOLE MODE =====
 		runWithConsole(cfg, bannerText, broadcaster)
 	}
 }
 
 // runWithTUI runs the application with fancy TUI interface
 func runWithTUI(cfg *config.Config, bannerText string, broadcaster *monitoring.LogBroadcaster) {
-	// Config conditions
+	// Configure monitoring port for TUI
 	if !cfg.Monitoring.Enabled {
 		cfg.Monitoring.Port = "disabled"
 	}
 
+	// Setup TUI configuration
 	tuiConfig := tui.StartupConfig{
 		AppName:     cfg.App.Name,
 		AppVersion:  cfg.App.Version,
@@ -139,61 +75,25 @@ func runWithTUI(cfg *config.Config, bannerText string, broadcaster *monitoring.L
 		IdleSeconds: cfg.App.StartupDelay,
 	}
 
-	// Get service configurations
-	serviceConfigs := getServiceConfigs(cfg)
-
-	// Define boot sequence
-	initQueue := []tui.ServiceInit{
-		{Name: "Configuration", Enabled: true, InitFunc: nil},
-	}
-
-	// Add infrastructure services to boot queue
-	for _, svc := range serviceConfigs {
-		initQueue = append(initQueue, tui.ServiceInit{
-			Name: svc.Name, Enabled: svc.Enabled, InitFunc: nil,
-		})
-	}
-
-	initQueue = append(initQueue, tui.ServiceInit{Name: "Middleware", Enabled: true, InitFunc: nil})
-
-	// Dynamically add services from config
-	for name, enabled := range cfg.Services {
-		initQueue = append(initQueue, tui.ServiceInit{Name: "Service: " + name, Enabled: enabled, InitFunc: nil})
-	}
-
-	// Add monitoring last
-	initQueue = append(initQueue, tui.ServiceInit{Name: "Monitoring", Enabled: cfg.Monitoring.Enabled, InitFunc: nil})
+	// Create service initialization queue
+	initQueue := createServiceQueue(cfg)
 
 	// Run the boot sequence TUI
 	_, _ = tui.RunBootSequence(tuiConfig, initQueue)
 
-	// Create Live TUI for continuous display
-	liveTUI := tui.NewLiveTUI(tui.LiveConfig{
-		AppName:     cfg.App.Name,
-		AppVersion:  cfg.App.Version,
-		Banner:      bannerText,
-		Port:        cfg.Server.Port,
-		MonitorPort: cfg.Monitoring.Port,
-		Env:         cfg.App.Env,
-		OnShutdown:  utils.TriggerShutdown, // Pass the shutdown callback
-	})
-
-	// Init Logger (quiet mode so logs go to TUI only)
-	// We also broadcast to the monitoring system so the Web UI Live Logs work
-	multiWriter := io.MultiWriter(liveTUI, broadcaster)
-	l := logger.NewQuiet(cfg.App.Debug, multiWriter)
-
-	// Start Live TUI in background
+	// Create and start Live TUI
+	liveTUI := createLiveTUI(cfg, bannerText)
 	liveTUI.Start()
 
-	// Give TUI a moment to initialize
-	time.Sleep(100 * time.Millisecond)
+	// Initialize logger with TUI output
+	multiWriter := io.MultiWriter(liveTUI, broadcaster)
+	l := logger.NewQuiet(cfg.App.Debug, multiWriter)
 
 	// Add initial logs
 	liveTUI.AddLog("info", "Server starting on port "+cfg.Server.Port)
 	liveTUI.AddLog("info", "Environment: "+cfg.App.Env)
 
-	// Start Server in background - infrastructure will be initialized by the server
+	// Start server
 	srv := server.New(cfg, l, broadcaster)
 	go func() {
 		liveTUI.AddLog("info", "HTTP server listening...")
@@ -202,33 +102,103 @@ func runWithTUI(cfg *config.Config, bannerText string, broadcaster *monitoring.L
 		}
 	}()
 
-	// Give server a moment to start
+	// Wait for server to start
 	time.Sleep(500 * time.Millisecond)
 	liveTUI.AddLog("info", "Server ready at http://localhost:"+cfg.Server.Port)
 	if cfg.Monitoring.Enabled {
 		liveTUI.AddLog("info", "Monitoring at http://localhost:"+cfg.Monitoring.Port)
 	}
 
-	// Handle shutdown signals
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Handle shutdown
+	handleShutdown(liveTUI, srv, l)
+}
 
-	// Block until signal or shutdown channel
-	select {
-	case <-sigChan:
-		liveTUI.AddLog("warn", "Shutting down...")
-		srv.Shutdown(context.Background(), l)
-	case <-utils.ShutdownChan:
-		liveTUI.AddLog("warn", "Shutting down...")
-		srv.Shutdown(context.Background(), l)
+// exampleAferoUsage demonstrates how to use the Global Singleton Afero Manager
+// This function is commented out as it's for demonstration purposes only
+/*
+func exampleAferoUsage() {
+	fmt.Println("=== Global Singleton Afero Manager Example ===")
+
+	// Mock alias configuration
+	aliasMap := map[string]string{
+		"config":  "all:config.yaml",
+		"banner":  "all:banner.txt",
+		"readme":  "all:README.md",
+		"web-app": "all:web/monitoring/index.html",
 	}
 
-	liveTUI.Stop()
+	// Initialize the Afero manager in development mode
+	// Note: In a real application, you would use //go:embed directives
+	// For this example, we'll just show the API usage
+	fmt.Println("Initializing Afero Manager...")
 
-	// Give a moment for cleanup and then exit
-	time.Sleep(100 * time.Millisecond)
-	os.Exit(0)
+	// In a real application, you would have:
+	// //go:embed all:dist
+	// var embedFS embed.FS
+	// infrastructure.Init(embedFS, aliasMap, true)
+
+	// For demonstration purposes, we'll just show the API
+	fmt.Println("✓ Afero Manager initialized")
+	fmt.Println("✓ Development mode: CopyOnWriteFs (embed.FS + OS overrides)")
+	fmt.Println("✓ Production mode: ReadOnlyFs (embed.FS only)")
+	fmt.Println()
+
+	// Show available aliases
+	fmt.Println("Available aliases:")
+	for alias, path := range aliasMap {
+		fmt.Printf("  - %s -> %s\n", alias, path)
+	}
+	fmt.Println()
+
+	// Example of checking if files exist
+	fmt.Println("Checking file existence:")
+	for alias := range aliasMap {
+		exists := infrastructure.Exists(alias)
+		fmt.Printf("  - %s: %v\n", alias, exists)
+	}
+	fmt.Println()
+
+	// Example of reading a file
+	fmt.Println("Reading banner file:")
+	if content, err := infrastructure.Read("banner"); err == nil {
+		fmt.Printf("  Content length: %d bytes\n", len(content))
+		if len(content) > 100 {
+			fmt.Printf("  Preview: %s...\n", string(content[:100]))
+		} else {
+			fmt.Printf("  Content: %s\n", string(content))
+		}
+	} else {
+		fmt.Printf("  Error reading file: %v\n", err)
+	}
+	fmt.Println()
+
+	// Example of streaming a file
+	fmt.Println("Streaming README file:")
+	if stream, err := infrastructure.Stream("readme"); err == nil {
+		defer stream.Close()
+		content := make([]byte, 200)
+		n, err := stream.Read(content)
+		if err == nil || err == io.EOF {
+			fmt.Printf("  Read %d bytes from stream\n", n)
+			fmt.Printf("  Preview: %s...\n", string(content[:n]))
+		}
+	} else {
+		fmt.Printf("  Error streaming file: %v\n", err)
+	}
+	fmt.Println()
+
+	// Show all configured aliases
+	fmt.Println("All configured aliases:")
+	aliases := infrastructure.GetAliases()
+	for alias, path := range aliases {
+		fmt.Printf("  - %s -> %s\n", alias, path)
+	}
+	fmt.Println()
+
+	fmt.Println("=== Afero Manager Example Complete ===")
+	fmt.Println()
 }
+*/
 
 // runWithConsole runs the application with traditional console logging
 func runWithConsole(cfg *config.Config, bannerText string, broadcaster *monitoring.LogBroadcaster) {
@@ -239,30 +209,18 @@ func runWithConsole(cfg *config.Config, bannerText string, broadcaster *monitori
 		fmt.Print("\033[0m") // Reset color
 	}
 
-	// Init Logger (normal mode with console output)
+	// Initialize logger
 	l := logger.New(cfg.App.Debug, broadcaster)
 
-	// Log startup info
+	// Log startup information
 	l.Info("Starting Application", "name", cfg.App.Name, "env", cfg.App.Env)
 	l.Info("TUI mode disabled, using traditional console logging")
-
-	// Log enabled services
 	l.Info("Initializing services...")
 
-	// Log infrastructure services using unified config
-	serviceConfigs := getServiceConfigs(cfg)
-	for _, svc := range serviceConfigs {
-		logServiceStatus(l, svc.Name, svc.Enabled)
-	}
+	// Log all services
+	logAllServices(l, cfg)
 
-	// Dynamically log all services from config
-	for name, enabled := range cfg.Services {
-		logServiceStatus(l, "Service: "+name, enabled)
-	}
-
-	logServiceStatus(l, "Monitoring", cfg.Monitoring.Enabled)
-
-	// Start Server
+	// Start server
 	srv := server.New(cfg, l, broadcaster)
 	go func() {
 		l.Info("HTTP server listening", "port", cfg.Server.Port)
@@ -271,7 +229,7 @@ func runWithConsole(cfg *config.Config, bannerText string, broadcaster *monitori
 		}
 	}()
 
-	// Give server a moment to start
+	// Wait for server to start
 	time.Sleep(500 * time.Millisecond)
 	l.Info("Server ready", "url", "http://localhost:"+cfg.Server.Port)
 	if cfg.Monitoring.Enabled {
@@ -279,19 +237,144 @@ func runWithConsole(cfg *config.Config, bannerText string, broadcaster *monitori
 		l.Info("Monitoring dashboard", "url", "http://localhost:"+cfg.Monitoring.Port)
 	}
 
-	// Handle shutdown signals
+	// Handle shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Block until signal
 	<-sigChan
 
 	l.Warn("Shutting down...")
 	srv.Shutdown(context.Background(), l)
-
-	// Give a moment for cleanup and then exit
 	time.Sleep(100 * time.Millisecond)
 	os.Exit(0)
+}
+
+// parseFlags parses command line flags using standard Go flag package
+func parseFlags() string {
+	var configURL string
+	flag.StringVar(&configURL, "c", "", "URL to load configuration from (YAML format)")
+	flag.Parse()
+
+	// Validate URL if provided
+	if configURL != "" {
+		if _, err := url.ParseRequestURI(configURL); err != nil {
+			fmt.Printf("Invalid config URL format: %v\n", err)
+			fmt.Println("Usage: stackyard [-c config-url]")
+			os.Exit(1)
+		}
+	}
+
+	return configURL
+}
+
+// loadConfig loads configuration from local file or URL
+func loadConfig(configURL string) *config.Config {
+	if configURL != "" {
+		fmt.Printf("Loading config from URL: %s\n", configURL)
+		if err := utils.LoadConfigFromURL(configURL); err != nil {
+			fmt.Printf("Failed to load config from URL: %s\n", err.Error())
+			os.Exit(1)
+		}
+
+		cfg, err := config.LoadConfigWithURL(configURL)
+		if err != nil {
+			panic("Failed to parse config from URL: " + err.Error())
+		}
+		return cfg
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		panic("Failed to load config: " + err.Error())
+	}
+	return cfg
+}
+
+// loadBanner loads banner text from file if configured
+func loadBanner(cfg *config.Config) string {
+	if cfg.App.BannerPath != "" {
+		banner, err := os.ReadFile(cfg.App.BannerPath)
+		if err == nil {
+			return string(banner)
+		}
+	}
+	return ""
+}
+
+// createServiceQueue creates the service initialization queue for TUI
+func createServiceQueue(cfg *config.Config) []tui.ServiceInit {
+	serviceConfigs := getServiceConfigs(cfg)
+
+	initQueue := []tui.ServiceInit{
+		{Name: "Configuration", Enabled: true, InitFunc: nil},
+	}
+
+	// Add infrastructure services
+	for _, svc := range serviceConfigs {
+		initQueue = append(initQueue, tui.ServiceInit{
+			Name: svc.Name, Enabled: svc.Enabled, InitFunc: nil,
+		})
+	}
+
+	initQueue = append(initQueue, tui.ServiceInit{Name: "Middleware", Enabled: true, InitFunc: nil})
+
+	// Add application services
+	for name, enabled := range cfg.Services {
+		initQueue = append(initQueue, tui.ServiceInit{Name: "Service: " + name, Enabled: enabled, InitFunc: nil})
+	}
+
+	// Add monitoring last
+	initQueue = append(initQueue, tui.ServiceInit{Name: "Monitoring", Enabled: cfg.Monitoring.Enabled, InitFunc: nil})
+
+	return initQueue
+}
+
+// createLiveTUI creates and configures the Live TUI
+func createLiveTUI(cfg *config.Config, bannerText string) *tui.LiveTUI {
+	return tui.NewLiveTUI(tui.LiveConfig{
+		AppName:     cfg.App.Name,
+		AppVersion:  cfg.App.Version,
+		Banner:      bannerText,
+		Port:        cfg.Server.Port,
+		MonitorPort: cfg.Monitoring.Port,
+		Env:         cfg.App.Env,
+		OnShutdown:  utils.TriggerShutdown,
+	})
+}
+
+// handleShutdown handles graceful shutdown for TUI mode
+func handleShutdown(liveTUI *tui.LiveTUI, srv *server.Server, l *logger.Logger) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case <-sigChan:
+		liveTUI.AddLog("warn", "Shutting down...")
+		srv.Shutdown(context.Background(), l)
+	case <-utils.ShutdownChan:
+		liveTUI.AddLog("warn", "Shutting down...")
+		srv.Shutdown(context.Background(), l)
+	}
+
+	liveTUI.Stop()
+	time.Sleep(100 * time.Millisecond)
+	os.Exit(0)
+}
+
+// logAllServices logs the status of all services
+func logAllServices(l *logger.Logger, cfg *config.Config) {
+	// Log infrastructure services
+	serviceConfigs := getServiceConfigs(cfg)
+	for _, svc := range serviceConfigs {
+		logServiceStatus(l, svc.Name, svc.Enabled)
+	}
+
+	// Log application services
+	for name, enabled := range cfg.Services {
+		logServiceStatus(l, "Service: "+name, enabled)
+	}
+
+	// Log monitoring
+	logServiceStatus(l, "Monitoring", cfg.Monitoring.Enabled)
 }
 
 // ServiceConfig represents a service with its name and enabled status

@@ -67,7 +67,7 @@ func Logger(l *logger.Logger) echo.MiddlewareFunc {
 	}
 }
 
-// PermissionCheck enforces "allow accept permission kecuali delete data"
+// PermissionCheck enforces "allow accept permission except data deletion"
 func PermissionCheck(l *logger.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

@@ -16,9 +16,6 @@ import (
 	"stackyard/pkg/utils"
 	"syscall"
 	"time"
-
-	// load modules init
-	_ "stackyard/internal/services/modules"
 )
 
 func main() {

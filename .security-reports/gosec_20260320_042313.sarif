@@ -81,6 +81,58 @@
 					"ruleId": "G703"
 				},
 				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "internal/monitoring/session/middleware.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 54,
+									"snippet": {
+										"text": "cookie := new(http.Cookie)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 54
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute"
+					},
+					"ruleId": "G124"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "internal/monitoring/session/middleware.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 41,
+									"snippet": {
+										"text": "cookie := new(http.Cookie)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 41
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute"
+					},
+					"ruleId": "G124"
+				},
+				{
 					"fixes": [
 						{
 							"artifactChanges": [
@@ -131,7 +183,8 @@
 					"message": {
 						"text": "Potential file inclusion via variable"
 					},
-					"ruleId": "G304"
+					"ruleId": "G304",
+					"ruleIndex": 1
 				},
 				{
 					"fixes": [
@@ -184,7 +237,8 @@
 					"message": {
 						"text": "Potential file inclusion via variable"
 					},
-					"ruleId": "G304"
+					"ruleId": "G304",
+					"ruleIndex": 1
 				},
 				{
 					"fixes": [
@@ -237,7 +291,8 @@
 					"message": {
 						"text": "Potential file inclusion via variable"
 					},
-					"ruleId": "G304"
+					"ruleId": "G304",
+					"ruleIndex": 1
 				},
 				{
 					"fixes": [
@@ -290,7 +345,8 @@
 					"message": {
 						"text": "Potential file inclusion via variable"
 					},
-					"ruleId": "G304"
+					"ruleId": "G304",
+					"ruleIndex": 1
 				},
 				{
 					"level": "error",
@@ -370,7 +426,7 @@
 						"text": "Expect file permissions to be 0600 or less"
 					},
 					"ruleId": "G302",
-					"ruleIndex": 2
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -397,7 +453,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 2
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -424,7 +480,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 2
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -451,7 +507,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 5
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -478,7 +534,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 5
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -505,7 +561,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 5
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -532,7 +588,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 5
+					"ruleIndex": 6
 				},
 				{
 					"level": "warning",
@@ -1205,6 +1261,17 @@
 						},
 						{
 							"fullDescription": {
+								"text": "The Secure attribute for a sensitive cookie is not set, which could cause the user agent to send that cookie in plaintext over an HTTP session."
+							},
+							"guid": "6a277b82-d988-3aa0-8c10-d7b40576a735",
+							"helpUri": "https://cwe.mitre.org/data/definitions/614.html",
+							"id": "614",
+							"shortDescription": {
+								"text": "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute"
+							}
+						},
+						{
+							"fullDescription": {
 								"text": "The software does not properly anticipate or handle exceptional conditions that rarely occur during normal operation of the software."
 							},
 							"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
@@ -1347,6 +1414,44 @@
 							],
 							"shortDescription": {
 								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute"
+							},
+							"help": {
+								"text": "http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G124",
+							"name": "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "6a277b82-d988-3aa0-8c10-d7b40576a735",
+										"id": "614",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "http.Cookie missing or has insecure Secure, HttpOnly, or SameSite attribute"
 							}
 						},
 						{
@@ -1512,7 +1617,7 @@
 								"text": "Path traversal via taint analysis\nSeverity: HIGH\nConfidence: HIGH\n"
 							},
 							"id": "G703",
-							"name": "G703",
+							"name": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')",
 							"properties": {
 								"precision": "high",
 								"tags": [
@@ -1520,6 +1625,21 @@
 									"HIGH"
 								]
 							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "3e718404-88bc-3f17-883e-e85e74078a76",
+										"id": "22",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
 							"shortDescription": {
 								"text": "Path traversal via taint analysis"
 							}

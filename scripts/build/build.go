@@ -105,6 +105,23 @@ func (ctx *BuildContext) checkPath(logger *Logger) error {
 	return ctx.ensureProjectRoot(logger)
 }
 
+// clear console screen
+func ClearScreen() {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "windows":
+		// Windows: use cmd /c cls
+		cmd = exec.Command("cmd", "/c", "cls")
+	default:
+		// Linux, macOS, and others: use clear command
+		cmd = exec.Command("clear")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
+
 // ensureProjectRoot finds the project root and changes to it if needed
 func (ctx *BuildContext) ensureProjectRoot(logger *Logger) error {
 	currentDir, err := os.Getwd()
@@ -679,6 +696,8 @@ func setupSignalHandler(cancel context.CancelFunc) {
 
 // main function
 func main() {
+	ClearScreen()
+
 	// Parse command line flags
 	var (
 		timeoutSeconds = flag.Int("timeout", 10, "Timeout for user prompts in seconds")

@@ -18,40 +18,62 @@ import (
 	"time"
 )
 
+// AppContext holds the application state throughout initialization
+type AppContext struct {
+	Config      *config.Config
+	Logger      *logger.Logger
+	Broadcaster *monitoring.LogBroadcaster
+	BannerText  string
+	Timestamp   string
+	ConfigURL   string // Store the parsed config URL
+}
+
+// AppStep represents a single step in the application initialization process
+type AppStep struct {
+	Name string
+	Fn   func(*AppContext) error
+}
+
+// executeSteps executes the provided steps in sequence with error handling
+func executeSteps(ctx *AppContext, steps []AppStep) error {
+	for i, step := range steps {
+		stepNum := fmt.Sprintf("%d/%d", i+1, len(steps))
+		fmt.Printf("[%s] %s\n", stepNum, step.Name)
+
+		if err := step.Fn(ctx); err != nil {
+			return fmt.Errorf("step failed: %w", err)
+		}
+	}
+	return nil
+}
+
 func main() {
 	// Clear the terminal screen for a fresh start
 	utils.ClearScreen()
 
-	// Parse command line flags
+	// Parse flags once at the beginning
 	configURL := parseFlags()
 
-	// Load configuration
-	cfg := loadConfig(configURL)
-
-	// Check if "web" folder exists, if not, disable web monitoring
-	if _, err := os.Stat("web"); os.IsNotExist(err) {
-		fmt.Println("\033[33m 'web' folder not found, disabling web monitoring\033[0m")
-		cfg.Monitoring.Enabled = false
+	// Create app context
+	ctx := &AppContext{
+		Timestamp: time.Now().Format("20060102_150405"),
+		ConfigURL: configURL,
 	}
 
-	// Load banner text
-	bannerText := loadBanner(cfg)
+	// Execute initialization steps
+	steps := []AppStep{
+		{"Loading configuration", loadConfigStep},
+		{"Validating configuration", validateConfigStep},
+		{"Loading banner", loadBannerStep},
+		{"Checking port availability", checkPortStep},
+		{"Initializing logger", initLoggerStep},
+		{"Initializing broadcaster", initBroadcasterStep},
+		{"Starting application", startAppStep},
+	}
 
-	// Check port availability
-	if err := utils.CheckPortAvailability(cfg.Server.Port, cfg.Monitoring.Port, cfg.Monitoring.Enabled); err != nil {
-		fmt.Printf("\033[31m Port Error: %s\033[0m\n", err.Error())
-		fmt.Println("\033[33mPlease stop the conflicting service or change the port in config.yaml\033[0m")
+	if err := executeSteps(ctx, steps); err != nil {
+		fmt.Printf("Fatal error: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Initialize broadcaster for monitoring
-	broadcaster := monitoring.NewLogBroadcaster()
-
-	// Start application based on TUI mode
-	if cfg.App.EnableTUI {
-		runWithTUI(cfg, bannerText, broadcaster)
-	} else {
-		runWithConsole(cfg, bannerText, broadcaster)
 	}
 }
 
@@ -393,4 +415,107 @@ func logServiceStatus(l *logger.Logger, name string, enabled bool) {
 	} else {
 		l.Debug("Service skipped", "service", name, "status", "disabled")
 	}
+}
+
+// Step functions for the initialization process
+
+// parseConfigStep parses command line flags
+func parseConfigStep(ctx *AppContext) error {
+	var configURL string
+	flag.StringVar(&configURL, "c", "", "URL to load configuration from (YAML format)")
+	flag.Parse()
+
+	// Validate URL if provided
+	if configURL != "" {
+		if _, err := url.ParseRequestURI(configURL); err != nil {
+			return fmt.Errorf("invalid config URL format: %v", err)
+		}
+	}
+
+	// Store config URL in context for later use
+	// We'll need to modify the context to store this, but for now we'll handle it in loadConfigStep
+	return nil
+}
+
+// loadConfigStep loads configuration from local file or URL
+func loadConfigStep(ctx *AppContext) error {
+	// Use the config URL that was parsed in main and stored in context
+	configURL := ctx.ConfigURL
+
+	cfg := loadConfig(configURL)
+	ctx.Config = cfg
+	return nil
+}
+
+// validateConfigStep validates the loaded configuration
+func validateConfigStep(ctx *AppContext) error {
+	cfg := ctx.Config
+
+	// Check if "web" folder exists, if not, disable web monitoring
+	if _, err := os.Stat("web"); os.IsNotExist(err) {
+		fmt.Println("\033[33m 'web' folder not found, disabling web monitoring\033[0m")
+		cfg.Monitoring.Enabled = false
+	}
+
+	// Additional validation can be added here
+	return nil
+}
+
+// loadBannerStep loads banner text from file if configured
+func loadBannerStep(ctx *AppContext) error {
+	cfg := ctx.Config
+	bannerText := loadBanner(cfg)
+	ctx.BannerText = bannerText
+	return nil
+}
+
+// checkPortStep checks port availability
+func checkPortStep(ctx *AppContext) error {
+	cfg := ctx.Config
+	if err := utils.CheckPortAvailability(cfg.Server.Port, cfg.Monitoring.Port, cfg.Monitoring.Enabled); err != nil {
+		return fmt.Errorf("port error: %s", err.Error())
+	}
+	return nil
+}
+
+// initLoggerStep initializes the logger
+func initLoggerStep(ctx *AppContext) error {
+	cfg := ctx.Config
+
+	// Initialize logger based on TUI mode
+	if cfg.App.EnableTUI {
+		// For TUI mode, we'll create a logger that writes to both TUI and broadcaster
+		// This will be handled in startAppStep when we have the broadcaster
+		ctx.Logger = nil // Will be initialized later
+	} else {
+		// For console mode, create a regular logger
+		ctx.Logger = logger.New(cfg.App.Debug, nil)
+		ctx.Logger.Info("Starting Application", "name", cfg.App.Name, "env", cfg.App.Env)
+		ctx.Logger.Info("TUI mode disabled, using traditional console logging")
+		ctx.Logger.Info("Initializing services...")
+	}
+
+	return nil
+}
+
+// initBroadcasterStep initializes the log broadcaster
+func initBroadcasterStep(ctx *AppContext) error {
+	ctx.Broadcaster = monitoring.NewLogBroadcaster()
+	return nil
+}
+
+// startAppStep starts the application based on TUI mode
+func startAppStep(ctx *AppContext) error {
+	cfg := ctx.Config
+	broadcaster := ctx.Broadcaster
+	bannerText := ctx.BannerText
+
+	// Start application based on TUI mode
+	if cfg.App.EnableTUI {
+		runWithTUI(cfg, bannerText, broadcaster)
+	} else {
+		runWithConsole(cfg, bannerText, broadcaster)
+	}
+
+	return nil
 }

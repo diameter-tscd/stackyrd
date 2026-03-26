@@ -21,7 +21,7 @@ import (
 var (
 	DIST_DIR   = "dist"
 	APP_NAME   = "stackyard"
-	MAIN_PATH  = "./cmd/app/main.go"
+	MAIN_PATH  = "./cmd/app"
 	CONFIG_YML = "config.yaml"
 	BANNER_TXT = "banner.txt"
 	DB_FILE    = "monitoring_users.db"

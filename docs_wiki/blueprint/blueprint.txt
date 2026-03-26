@@ -27,6 +27,11 @@ Client → Handler → Request Binding → Validation → Business Logic → Res
 ### 2.2 Package Organization
 
 - **cmd/**: Application entry points
+  - **app/**: Main application with clean code structure
+    - **main.go**: Simplified entry point (30 lines)
+    - **constants.go**: Centralized constants and type definitions
+    - **config_manager.go**: Configuration loading and validation
+    - **application.go**: Application orchestration and lifecycle management
 - **config/**: Configuration management
 - **internal/**: Core application logic (private)
   - **middleware/**: HTTP middleware
@@ -40,7 +45,6 @@ Client → Handler → Request Binding → Validation → Business Logic → Res
   - **response/**: Standardized API responses
   - **tui/**: Terminal User Interface
   - **infrastructure/**: External service integrations
-  - **logger/**: Logging utilities
   - **utils/**: Utility functions
     - **parameter.go**: Customizable parameter parsing system for command-line flags
 
@@ -55,7 +59,7 @@ Client → Handler → Request Binding → Validation → Business Logic → Res
 
 ### 2.4 Step-by-Step Application Execution
 
-The application follows a structured step-by-step execution pattern inspired by the build system:
+The application follows a structured step-by-step execution pattern with clean code principles:
 
 **Execution Flow:**
 1. **Configuration Loading** → Load and validate application configuration
@@ -1411,20 +1415,36 @@ id, err := cron.AddJob("database_backup", "0 3 * * *", func() {
 })
 ```
 
-## 9. BEST PRACTICES
+## 9. CLEAN CODE PRINCIPLES
 
-### 9.1 API Development
+### 9.1 Application Structure
 
-1. **Use response helpers** - Never manually construct responses
-2. **Validate all requests** - Use built-in and custom validators
-3. **Standardize error codes** - Make errors machine-readable
-4. **Include meaningful messages** - Help developers debug
-5. **Use pagination** - For all list endpoints
-6. **Return appropriate status codes** - Follow HTTP standards
-7. **Include timestamps** - All responses have Unix timestamps
-8. **Keep responses consistent** - Same structure across endpoints
+The application follows clean code principles with clear separation of concerns:
 
-### 9.2 Service Development
+1. **Single Responsibility Principle** - Each component has one clear purpose
+2. **Dependency Injection** - All dependencies injected through constructors
+3. **Separation of Concerns** - Configuration, application logic, and entry point separated
+4. **Consistent Error Handling** - Proper error propagation throughout
+5. **Type Safety** - Strong typing with custom types and constants
+6. **Testability** - Each component can be unit tested independently
+7. **Maintainability** - Clear structure makes code easy to understand and modify
+
+### 9.2 File Organization
+
+**cmd/app/**: Clean application structure
+- **main.go**: Simplified entry point (30 lines) - creates application and runs it
+- **constants.go**: Centralized constants and type definitions
+- **config_manager.go**: Configuration loading and validation
+- **application.go**: Application orchestration and lifecycle management
+
+**Key Benefits:**
+- **Main Function**: Single responsibility - create application and run it
+- **Configuration**: Centralized in ConfigManager with validation
+- **Application Logic**: Encapsulated in Application struct
+- **Constants**: All magic numbers and strings centralized
+- **Types**: Clear type definitions for better type safety
+
+### 9.3 Service Development
 
 1. **Implement Service interface** - Name, RegisterRoutes, Enabled, Endpoints
 2. **Use dependency injection** - For infrastructure components
@@ -1433,7 +1453,7 @@ id, err := cron.AddJob("database_backup", "0 3 * * *", func() {
 5. **Handle errors gracefully** - Use response helpers
 6. **Validate inputs** - Use request.Bind and validation tags
 
-### 9.3 Configuration Management
+### 9.4 Configuration Management
 
 1. **Use config.yaml** - For all runtime configuration
 2. **Default to enabled** - Services enabled by default if not specified
@@ -1457,30 +1477,72 @@ docs_wiki/
 ```
 stackyard/
 ├── Dockerfile                  # Multi-stage Docker configuration
+├── .dockerignore               # Docker ignore file
+├── .gitignore                  # Git ignore file
+├── banner.txt                  # Application banner
+├── config.yaml                 # Application configuration
+├── go.mod                      # Go module definition
+├── go.sum                      # Go module checksums
+├── LICENSE                     # Apache License 2.0
+├── README.md                   # Project documentation
+├── resource_windows_386.syso   # Windows 32-bit resources
+├── resource_windows_amd64.syso # Windows 64-bit resources
+├── resource_windows_arm.syso   # Windows ARM resources
+├── resource_windows_arm64.syso # Windows ARM64 resources
+├── versioninfo.json            # Windows version info
 ├── cmd/
-│   └── app/
-│       └── main.go              # Application entry point
+│   └── app/                    # Clean application structure
+│       ├── main.go             # Simplified entry point (30 lines)
+│       ├── constants.go        # Centralized constants and types
+│       ├── config_manager.go   # Configuration loading and validation
+│       └── application.go      # Application orchestration and lifecycle
 ├── config/
-│   ├── config.go               # Configuration management
-│   └── config.yaml             # Application configuration
+│   └── config.go               # Configuration management
 ├── docs_wiki/                  # Simplified project documentation
-│   ├── GETTING_STARTED.md      # Quick start guide
-│   ├── DEVELOPMENT.md          # Development guide
-│   ├── ARCHITECTURE.md         # Technical overview
-│   ├── REFERENCE.md            # Complete technical reference
-│   └── blueprint/              # Internal blueprint files
-│       └── blueprint.txt       # This comprehensive blueprint
-├── internal/
+│   ├── ARCHITECTURE.md         # Technical overview and design decisions
+│   ├── DEVELOPMENT.md          # Development guide for extending the app
+│   ├── GETTING_STARTED.md      # Quick start guide for new users
+│   ├── REFERENCE.md            # Complete technical reference (config, APIs, advanced)
+│   ├── blueprint/              # Internal blueprint files
+│   │   └── blueprint.txt       # This comprehensive blueprint
+│   └── examples/               # Code examples
+│       └── response_examples.go # API response examples
+├── internal/                   # Core application logic (private)
 │   ├── middleware/             # HTTP middleware
+│   │   ├── encryption.go       # API encryption middleware
+│   │   └── middleware.go       # General middleware
 │   ├── monitoring/             # Monitoring system
+│   │   ├── auth_handlers.go    # Authentication handlers
+│   │   ├── broadcaster.go      # Log broadcasting
+│   │   ├── handlers.go         # Monitoring API handlers
+│   │   ├── server.go           # Monitoring HTTP server
+│   │   ├── user_handlers.go    # User management handlers
+│   │   ├── database/           # Monitoring database
+│   │   │   ├── db.go           # Database connection
+│   │   │   ├── models.go       # Database models
+│   │   │   └── repository.go   # Database repository
+│   │   ├── middleware/         # Monitoring middleware
+│   │   │   └── obfuscator.go   # API obfuscation middleware
+│   │   └── session/            # Session management
+│   │       ├── middleware.go   # Session middleware
+│   │       └── session.go      # Session implementation
 │   ├── server/                 # HTTP server
+│   │   └── server.go           # Main server implementation
 │   └── services/               # Business services
-│       ├── services.go         # Service interface
-│       └── modules/            # Service implementations
-├── pkg/
-│   ├── request/                # Request handling
-│   ├── response/               # Standardized API responses
-│   ├── tui/                    # Terminal UI
+│       ├── modules/            # Service implementations
+│       │   ├── broadcast_service.go    # Event streaming service
+│       │   ├── cache_service.go        # Cache service
+│       │   ├── encryption_service.go   # Encryption service
+│       │   ├── grafana_service.go      # Grafana integration service
+│       │   ├── mongodb_service.go      # MongoDB multi-tenant service
+│       │   ├── multi_tenant_service.go # Multi-tenant service
+│       │   ├── products_service.go     # Products service
+│       │   ├── tasks_service.go        # Tasks service
+│       │   └── users_service.go        # Users service
+│       └── services.go         # Service interface
+├── pkg/                        # Reusable packages (public)
+│   ├── cache/                  # Caching utilities
+│   │   └── cache.go            # Cache implementation
 │   ├── infrastructure/         # External integrations
 │   │   ├── afero.go            # Global Singleton Afero Manager
 │   │   ├── afero_test.go       # Afero Manager tests
@@ -1494,24 +1556,69 @@ stackyard/
 │   │   ├── mongo.go            # MongoDB multi-tenant support
 │   │   ├── postgres.go         # PostgreSQL multi-tenant support
 │   │   ├── redis.go            # Redis caching
-│   │   └── system_monitor.go   # System monitoring
-│   ├── logger/                 # Logging
+│   │   ├── system_monitor.go   # System monitoring
+│   │   └── testdata/           # Test data
+│   │       ├── config.yaml     # Test configuration
+│   │       ├── README.md       # Test data documentation
+│   │       └── test.txt        # Test file
+│   ├── interfaces/             # Interface definitions
+│   │   └── service.go          # Service interface
+│   ├── logger/                 # Logging utilities
+│   │   └── logger.go           # Logger implementation
+│   ├── registry/               # Service registry
+│   │   ├── dependencies.go     # Dependency injection
+│   │   └── registry.go         # Service registration
+│   ├── request/                # Request handling
+│   │   └── request.go          # Request validation and binding
+│   ├── response/               # Standardized API responses
+│   │   └── response.go         # Response helpers
+│   ├── tui/                    # Terminal User Interface
+│   │   ├── boot.go             # Boot sequence TUI
+│   │   ├── dashboard.go        # Dashboard TUI
+│   │   ├── live.go             # Live logs TUI
+│   │   ├── simple.go           # Simple TUI
+│   │   ├── startup.go          # Startup TUI
+│   │   ├── styles.go           # TUI styling
+│   │   └── template/           # TUI templates
+│   │       └── dialog.go       # Dialog components
 │   └── utils/                  # Utility functions
+│       ├── broadcast.go        # Event broadcasting
+│       ├── date.go             # Date utilities
+│       ├── io.go               # I/O utilities
+│       ├── numeric.go          # Numeric utilities
+│       ├── parameter.go        # Parameter parsing
+│       ├── strings.go          # String utilities
+│       └── system.go           # System utilities
 ├── scripts/                    # Build and utility scripts
-│   ├── build.sh                # Go binary build (Unix/Linux/macOS)
-│   ├── build.bat               # Go binary build (Windows)
-│   ├── change_package.sh       # Package name change (Unix/Linux/macOS)
-│   ├── change_package.bat      # Package name change (Windows)
-│   ├── docker_build.sh         # Docker image build (Unix/Linux/macOS)
-│   └── docker_build.bat        # Docker image build (Windows)
-└── web/                       # Web assets
+│   ├── build/                  # Build scripts
+│   │   └── build.go            # Go-based build script
+│   └── docker/                 # Docker scripts
+│       └── docker_build.go     # Docker build script
+└── web/                        # Web assets
     └── monitoring/             # Monitoring UI
+        ├── index.html          # Main dashboard
+        ├── login.html          # Login page
+        ├── assets/             # Static assets
+        │   ├── css/            # Stylesheets
+        │   │   └── style.css   # Main stylesheet
+        │   ├── favicon/        # Favicon files
+        │   │   ├── apple-touch-icon.png
+        │   │   ├── favicon-96x96.png
+        │   │   ├── favicon.ico
+        │   │   ├── favicon.svg
+        │   │   ├── site.webmanifest
+        │   │   ├── web-app-manifest-192x192.png
+        │   │   └── web-app-manifest-512x512.png
+        │   └── js/             # JavaScript files
+        │       └── app.js      # Main application script
+        └── uploads/            # Upload directory
 ```
 
 ## 11. KEY FEATURES SUMMARY
 
 ### 11.1 Core Features
 
+- **Clean Code Architecture**: Single responsibility, dependency injection, separation of concerns
 - **Modular Architecture**: Services can be enabled/disabled via config
 - **Multi-Tenant Database Support**: Multiple PostgreSQL connections with dynamic switching
 - **ORM Integration**: GORM with auto-migration for database operations
@@ -1532,7 +1639,7 @@ stackyard/
 - **GORM**: ORM for database operations
 - **Validator**: Request validation library
 - **Gopsutil**: System monitoring library
-- **Clean Architecture**: Separation of concerns
+- **Clean Architecture**: Separation of concerns with clean code principles
 - **Dependency Injection**: For service components
 - **Configuration Management**: YAML-based with defaults
 
@@ -1545,6 +1652,7 @@ stackyard/
 - **Configuration Validation**: At startup
 - **Security Features**: API obfuscation, proper error handling
 - **Scalability**: Modular design for horizontal scaling
+- **Clean Code**: Maintainable, testable, and extensible codebase
 
 ## 12. GETTING STARTED
 
@@ -1590,12 +1698,20 @@ go run cmd/app/main.go
    - Check logs for errors and debugging
    - Verify API responses with Postman/curl
 
+5. **Clean Code Practices**:
+   - Follow single responsibility principle
+   - Use dependency injection for testability
+   - Keep functions focused and small
+   - Use meaningful names for variables and functions
+   - Add proper error handling and logging
+
 ## 13. CONCLUSION
 
-This project represents a sophisticated, production-ready Go boilerplate with comprehensive features for API development, service management, monitoring, and infrastructure integration. The modular architecture, standardized patterns, and extensive documentation make it an excellent foundation for building scalable, maintainable applications.
+This project represents a sophisticated, production-ready Go boilerplate with comprehensive features for API development, service management, monitoring, and infrastructure integration. The clean code architecture, modular design, standardized patterns, and extensive documentation make it an excellent foundation for building scalable, maintainable applications.
 
 The combination of:
-- **Clean architecture** with separation of concerns
+- **Clean code principles** with single responsibility and dependency injection
+- **Modular architecture** with separation of concerns
 - **Multi-tenant database support** with dynamic connection switching
 - **ORM integration** using GORM with auto-migration capabilities
 - **Comprehensive API structure** with validation and error handling
@@ -1604,6 +1720,8 @@ The combination of:
 - **Infrastructure integrations** for Redis, multiple PostgreSQL databases, Kafka, MinIO, and Cron
 
 makes this boilerplate suitable for a wide range of applications from simple APIs to complex multi-tenant SaaS systems.
+
+The clean code refactoring of `cmd/app/main.go` demonstrates best practices in Go development, showing how to transform complex, monolithic code into maintainable, testable, and extensible components.
 
 ## 14. LICENSING
 

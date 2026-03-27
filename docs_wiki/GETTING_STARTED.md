@@ -217,9 +217,6 @@ go clean -modcache
 go mod download
 ```
 
-## Next Steps
-
-🎉 **Congratulations!** You have a running Stackyard application.
 
 ### What to Explore Next:
 
@@ -242,10 +239,3 @@ docker-compose up                   # Run with full stack
 go test ./...                       # Run all tests
 ```
 
-## Getting Help
-
-- **Documentation**: Check the [docs_wiki](.) folder
-- **Issues**: Report bugs on GitHub
-- **Community**: Join discussions for questions
-
-Happy coding! 🚀

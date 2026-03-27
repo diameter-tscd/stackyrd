@@ -12,7 +12,7 @@ type LogBroadcaster struct{}
 // Application constants
 const (
 	AppName        = "stackyard"
-	DefaultAppName = "Golang App"
+	DefaultAppName = ""
 	DefaultVersion = "1.0.0"
 	DefaultEnv     = "development"
 

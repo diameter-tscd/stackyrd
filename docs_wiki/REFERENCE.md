@@ -9,35 +9,35 @@ This comprehensive reference covers all configuration options, API specification
 ```yaml
 # Application Configuration
 app:
-  name: "Stackyard App"        # Application display name
-  version: "1.0.0"            # Application version
-  debug: true                 # Enable debug logging
-  env: "development"          # Environment (development, staging, production)
-  banner_path: "banner.txt"   # Path to startup banner file
-  startup_delay: 3            # Seconds to display boot screen (0 to skip)
-  quiet_startup: false        # Suppress console logs during startup
-  enable_tui: true           # Enable Terminal User Interface
+  name: "Stackyard"         # Application display name
+  version: "1.0.0"          # Application version
+  debug: true               # Enable debug logging
+  env: "development"        # Environment (development, staging, production)
+  banner_path: "banner.txt" # Path to startup banner file
+  startup_delay: 3          # Seconds to display boot screen (0 to skip)
+  quiet_startup: true       # Suppress console logs during startup (TUI only)
+  enable_tui: true          # Enable Terminal User Interface
 
 # Server Configuration
 server:
-  port: "8080"               # HTTP server port
+  port: "8080"              # HTTP server port
 
 # Service Configuration
 services:
-  service_a: true           # Basic CRUD service example
-  service_b: false          # Additional service
-  service_c: true           # Another service
-  service_d: false          # Disabled service
-  service_e: false          # Event streaming service
-  service_f: false          # Multi-tenant service
-  service_g: false          # MongoDB service
-  service_h: false          # Broadcast utility demo
-  service_i: false          # Grafana integration
+  users_service: true       # User management service
+  broadcast_service: false  # Event broadcasting service
+  cache_service: true       # Redis caching service
+  encryption_service: false # API encryption service
+  grafana_service: false    # Grafana integration service
+  mongodb_service: true     # MongoDB multi-tenant service
+  multi_tenant_service: true # Multi-tenant PostgreSQL service
+  products_service: true    # Product catalog service
+  tasks_service: true       # Task management service
 
 # Authentication
 auth:
   type: "apikey"            # Authentication type (apikey, basic, none)
-  secret: "your-secret-key" # API key for authentication
+  secret: "super-secret-key" # API key for authentication
 
 # Redis Configuration
 redis:
@@ -51,20 +51,8 @@ kafka:
   enabled: false            # Enable Kafka
   brokers:                  # List of Kafka brokers
     - "localhost:9092"
-  topic: "stackyard-events" # Default topic
-  group_id: "stackyard"     # Consumer group ID
-
-# PostgreSQL Configuration (Single Connection)
-postgres:
-  enabled: true             # Enable PostgreSQL
-  host: "localhost"         # Database host
-  port: 5432                # Database port
-  user: "postgres"          # Database user
-  password: "password"      # Database password
-  dbname: "stackyard"       # Database name
-  sslmode: "disable"        # SSL mode (disable, require, verify-ca, verify-full)
-  max_open_conns: 10        # Maximum open connections
-  max_idle_conns: 5         # Maximum idle connections
+  topic: "my-topic"         # Default topic
+  group_id: "my-group"      # Consumer group ID
 
 # PostgreSQL Multi-Connection Configuration
 postgres:
@@ -75,72 +63,83 @@ postgres:
       host: "localhost"
       port: 5432
       user: "postgres"
-      password: "password"
-      dbname: "primary_db"
+      password: "Mypostgres01"
+      dbname: "postgres"
       sslmode: "disable"
     - name: "secondary"
       enabled: true
       host: "localhost"
       port: 5433
       user: "postgres"
-      password: "password"
-      dbname: "secondary_db"
+      password: "Mypostgres01"
+      dbname: "postgres"
       sslmode: "disable"
 
-# MongoDB Configuration
+# MongoDB Multi-Connection Configuration
 mongo:
-  enabled: false
+  enabled: true
   connections:
     - name: "primary"
       enabled: true
       uri: "mongodb://localhost:27017"
       database: "primary_db"
-    - name: "analytics"
-      enabled: false
-      uri: "mongodb://analytics.example.com:27017"
-      database: "analytics_db"
+    - name: "secondary"
+      enabled: true
+      uri: "mongodb://localhost:27018"
+      database: "secondary_db"
 
 # Monitoring Configuration
 monitoring:
-  enabled: true            # Enable web monitoring dashboard
-  port: "9090"             # Monitoring dashboard port
-  password: "admin"        # Dashboard login password
-  obfuscate_api: false     # Enable API response obfuscation
-  title: "Stackyard Admin" # Dashboard title
+  enabled: true             # Enable web monitoring dashboard
+  port: "9090"              # Monitoring dashboard port
+  password: "admin"         # Dashboard login password
+  obfuscate_api: true       # Enable API response obfuscation
+  title: "Stackyard"        # Dashboard title
   subtitle: "Monitoring Dashboard" # Dashboard subtitle
+  max_photo_size_mb: 2      # Maximum photo upload size
+  upload_dir: "web/monitoring/uploads" # Upload directory
 
-# MinIO Configuration
+# MinIO Configuration (Nested under monitoring)
 monitoring:
   minio:
-    enabled: false         # Enable MinIO integration
-    endpoint: "localhost:9000" # MinIO server endpoint
-    access_key: "minioadmin"   # MinIO access key
-    secret_key: "minioadmin"   # MinIO secret key
-    use_ssl: false         # Use SSL for MinIO connection
-    bucket: "stackyard"    # Default bucket name
+    enabled: true           # Enable MinIO integration
+    endpoint: "localhost:9003" # MinIO server endpoint
+    access_key_id: "minioadmin" # MinIO access key
+    secret_access_key: "minioadmin" # MinIO secret key
+    use_ssl: false          # Use SSL for MinIO connection
+    bucket_name: "main"     # Default bucket name
+
+# External Services Configuration (Nested under monitoring)
+monitoring:
+  external:
+    services:               # List of external services to monitor
+      - name: "Google"
+        url: "https://google.com"
+      - name: "Local API"
+        url: "http://localhost:8080/health"
 
 # Cron Jobs Configuration
 cron:
-  enabled: false           # Enable scheduled jobs
+  enabled: true             # Enable scheduled jobs
   jobs:
-    cleanup: "0 0 * * *"   # Daily cleanup at midnight
-    health_check: "*/5 * * * *" # Health check every 5 minutes
+    log_cleanup: "0 0 * * *" # Daily log cleanup at midnight
+    health_check: "*/10 * * * *" # Health check every 10 seconds
 
 # Encryption Configuration
 encryption:
-  enabled: false           # Enable API encryption
-  algorithm: "aes-256-gcm" # Encryption algorithm
-  key: ""                  # 32-byte encryption key (base64 encoded)
-  rotate_keys: false       # Enable automatic key rotation
+  enabled: false            # Enable API encryption
+  algorithm: "aes-256-gcm"  # Encryption algorithm
+  key: ""                   # 32-byte encryption key (base64 encoded)
+  rotate_keys: false        # Enable automatic key rotation
   key_rotation_interval: "24h" # Key rotation interval
 
 # Grafana Integration
 grafana:
-  enabled: false           # Enable Grafana integration
+  enabled: true             # Enable Grafana integration
   url: "http://localhost:3000" # Grafana server URL
-  api_key: ""              # Grafana API key
-  username: "admin"        # Grafana username (alternative to API key)
-  password: "admin"        # Grafana password (alternative to API key)
+  api_key: "your-grafana-api-key" # Grafana API key
+  username: "admin"         # Grafana username (alternative to API key)
+  password: "admin"         # Grafana password (alternative to API key)
 ```
 
 ## API Specifications
@@ -198,7 +197,7 @@ All API responses follow this standardized structure:
 
 ## API Endpoints Reference
 
-### Service A (CRUD Example) - `/api/v1/users`
+### Users Service - `/api/v1/users`
 
 #### GET `/api/v1/users`
 List users with pagination.
@@ -213,10 +212,11 @@ List users with pagination.
   "success": true,
   "data": [
     {
-      "id": 1,
-      "name": "John Doe",
+      "id": "1",
+      "username": "john_doe",
       "email": "john@example.com",
-      "created_at": "2024-01-01T00:00:00Z"
+      "status": "active",
+      "created_at": 1704067200
     }
   ],
   "meta": {
@@ -234,9 +234,9 @@ Create a new user.
 **Request Body:**
 ```json
 {
-  "name": "Jane Doe",
+  "username": "jane_doe",
   "email": "jane@example.com",
-  "age": 25
+  "full_name": "Jane Doe"
 }
 ```
 
@@ -245,11 +245,11 @@ Create a new user.
 {
   "success": true,
   "data": {
-    "id": 2,
-    "name": "Jane Doe",
+    "id": "123",
+    "username": "jane_doe",
     "email": "jane@example.com",
-    "age": 25,
-    "created_at": "2024-01-01T00:00:00Z"
+    "status": "active",
+    "created_at": 1704067200
   }
 }
 ```
@@ -262,9 +262,11 @@ Get a specific user.
 {
   "success": true,
   "data": {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com"
+    "id": "1",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "status": "active",
+    "created_at": 1704067200
   }
 }
 ```
@@ -275,8 +277,9 @@ Update a user.
 **Request Body:**
 ```json
 {
-  "name": "John Smith",
-  "email": "johnsmith@example.com"
+  "username": "john_smith",
+  "email": "johnsmith@example.com",
+  "status": "inactive"
 }
 ```
 
@@ -291,33 +294,116 @@ Delete a user.
 }
 ```
 
-### Service G (MongoDB) - `/api/v1/products`
+### Products Service - `/api/v1/products`
+
+#### GET `/api/v1/products`
+Get product catalog information.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Hello from Service B - Products"
+  }
+}
+```
+
+### MongoDB Service - `/api/v1/products/{tenant}`
 
 #### GET `/api/v1/products/{tenant}`
-List products for a tenant.
+List products for a specific tenant database.
 
 **Path Parameters:**
-- `tenant` (string): Tenant identifier
+- `tenant` (string): Tenant identifier (maps to MongoDB database name)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "Laptop",
+      "description": "Gaming laptop",
+      "price": 1299.99,
+      "category": "electronics",
+      "in_stock": true,
+      "quantity": 5,
+      "tags": ["gaming", "laptop"]
+    }
+  ]
+}
+```
 
 #### POST `/api/v1/products/{tenant}`
-Create a product.
+Create a product in tenant database.
 
 **Request Body:**
 ```json
 {
-  "name": "Laptop",
-  "price": 999.99,
-  "category": "electronics"
+  "name": "Smartphone",
+  "description": "Latest smartphone",
+  "price": 899.99,
+  "category": "electronics",
+  "quantity": 10,
+  "tags": ["mobile", "phone"]
 }
 ```
 
-### Service H (Event Streaming) - `/api/v1/events`
+#### GET `/api/v1/products/{tenant}/{id}`
+Get specific product by ID.
+
+#### PUT `/api/v1/products/{tenant}/{id}`
+Update product.
+
+#### DELETE `/api/v1/products/{tenant}/{id}`
+Delete product.
+
+#### GET `/api/v1/products/{tenant}/search`
+Search products with filters.
+
+**Query Parameters:**
+- `name` (string): Product name filter
+- `category` (string): Category filter
+- `in_stock` (boolean): Stock status filter
+- `min_price` (number): Minimum price
+- `max_price` (number): Maximum price
+- `tags` (string): Comma-separated tags
+
+#### GET `/api/v1/products/{tenant}/analytics`
+Get product analytics by category.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "total_products": 150,
+    "in_stock_products": 120,
+    "out_of_stock": 30,
+    "category_breakdown": [
+      {
+        "_id": "electronics",
+        "total_products": 80,
+        "avg_price": 450.50,
+        "min_price": 50.00,
+        "max_price": 2000.00,
+        "total_quantity": 500,
+        "in_stock_count": 450
+      }
+    ]
+  }
+}
+```
+
+### Broadcast Service - `/api/v1/events`
 
 #### GET `/api/v1/events/stream/{stream_id}`
 Subscribe to event stream (Server-Sent Events).
 
 #### POST `/api/v1/events/broadcast`
-Broadcast an event.
+Broadcast an event to all subscribers.
 
 **Request Body:**
 ```json
@@ -325,15 +411,34 @@ Broadcast an event.
   "type": "user_action",
   "message": "User logged in",
   "data": {
-    "user_id": 123
+    "user_id": "123"
   }
 }
 ```
 
 #### GET `/api/v1/events/streams`
-Get stream information.
+Get active stream information.
 
-### Service I (Grafana) - `/api/v1/grafana`
+### Cache Service - `/api/v1/cache`
+
+#### GET `/api/v1/cache/{key}`
+Get cached value.
+
+#### POST `/api/v1/cache/{key}`
+Set cached value.
+
+**Request Body:**
+```json
+{
+  "value": "cached data",
+  "ttl": 3600
+}
+```
+
+#### DELETE `/api/v1/cache/{key}`
+Delete cached value.
+
+### Grafana Service - `/api/v1/grafana`
 
 #### POST `/api/v1/grafana/dashboards`
 Create a Grafana dashboard.
@@ -364,6 +469,9 @@ Application health check.
 
 #### GET `/health/infrastructure`
 Detailed infrastructure health.
+
+#### GET `/health/services`
+Service-specific health status.
 
 ## Request Validation
 
@@ -409,9 +517,10 @@ Usage: `validate:"username"`
 ```sql
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    username VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    age INTEGER,
+    full_name VARCHAR(255),
+    status VARCHAR(50) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE
@@ -423,13 +532,39 @@ CREATE TABLE users (
 #### Products Collection
 ```javascript
 {
-  "_id": ObjectId("..."),
-  "tenant_id": "tenant_a",
+  "_id": ObjectId("507f1f77bcf86cd799439011"),
   "name": "Laptop",
-  "price": 999.99,
+  "description": "Gaming laptop",
+  "price": 1299.99,
   "category": "electronics",
+  "in_stock": true,
+  "quantity": 5,
+  "tags": ["gaming", "laptop"],
   "created_at": ISODate("2024-01-01T00:00:00Z")
 }
+```
+
+#### Analytics Aggregation Pipeline
+```javascript
+// Product analytics by category
+[
+  {
+    "$group": {
+      "_id": "$category",
+      "total_products": {"$sum": 1},
+      "avg_price": {"$avg": "$price"},
+      "min_price": {"$min": "$price"},
+      "max_price": {"$max": "$price"},
+      "total_quantity": {"$sum": "$quantity"},
+      "in_stock_count": {
+        "$sum": {"$cond": ["$in_stock", 1, 0]}
+      }
+    }
+  },
+  {
+    "$sort": {"total_products": -1}
+  }
+]
 ```
 
 ## Infrastructure Managers
@@ -464,20 +599,92 @@ func (ar *AsyncResult[T]) IsDone() bool
 
 ### Connection Pool Settings
 
-#### PostgreSQL
+#### PostgreSQL Multi-Connection
 ```yaml
 postgres:
-  max_open_conns: 10    # Maximum open connections
-  max_idle_conns: 5     # Maximum idle connections
-  conn_max_lifetime: "1h" # Connection max lifetime
+  connections:
+    - name: "primary"
+      max_open_conns: 10    # Maximum open connections
+      max_idle_conns: 5     # Maximum idle connections
+      conn_max_lifetime: "1h" # Connection max lifetime
+    - name: "secondary"
+      max_open_conns: 8     # Secondary connection pool
+      max_idle_conns: 3
+      conn_max_lifetime: "1h"
 ```
 
 #### Redis
 ```yaml
 redis:
-  pool_size: 10         # Connection pool size
-  min_idle_conns: 2     # Minimum idle connections
+  pool_size: 10           # Connection pool size
+  min_idle_conns: 2       # Minimum idle connections
   conn_max_lifetime: "1h" # Connection max lifetime
+  idle_timeout: "10m"     # Idle connection timeout
+```
+
+#### MongoDB
+```yaml
+mongo:
+  connections:
+    - name: "primary"
+      max_pool_size: 100      # Maximum connection pool size
+      min_pool_size: 10       # Minimum connection pool size
+      max_idle_time: "10m"    # Maximum idle time
+      connect_timeout: "30s"  # Connection timeout
+    - name: "secondary"
+      max_pool_size: 50
+      min_pool_size: 5
+      max_idle_time: "10m"
+      connect_timeout: "30s"
+```
+
+### Infrastructure Connection Management
+
+#### PostgreSQL Connection Manager
+```go
+// Get tenant-specific connection
+conn, exists := postgresManager.GetConnection("tenant_a")
+if exists {
+    // Use tenant_a database
+    result := conn.ORM.Where("tenant_id = ?", "tenant_a").Find(&data)
+}
+
+// List all available connections
+connections := postgresManager.ListConnections()
+for name, conn := range connections {
+    fmt.Printf("Connection %s: %s\n", name, conn.Status())
+}
+```
+
+#### MongoDB Connection Manager
+```go
+// Get tenant-specific database
+db, exists := mongoManager.GetConnection("tenant_b")
+if exists {
+    // Use tenant_b database
+    cursor, err := db.Collection("products").Find(context.Background(), bson.M{})
+}
+
+// List all available databases
+databases := mongoManager.ListConnections()
+for name, db := range databases {
+    fmt.Printf("Database %s: %s\n", name, db.Name())
+}
+```
+
+#### Redis Connection Manager
+```go
+// Basic operations
+err := redisManager.Set(ctx, "key", "value", time.Hour)
+value, err := redisManager.Get(ctx, "key")
+
+// Hash operations
+err = redisManager.HSet(ctx, "user:123", "name", "John")
+name, err := redisManager.HGet(ctx, "user:123", "name")
+
+// List operations
+err = redisManager.LPush(ctx, "queue", "item1")
+item, err := redisManager.LPop(ctx, "queue")
 ```
 
 ## Security Features

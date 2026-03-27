@@ -14,48 +14,79 @@ Create a new service in `internal/services/modules/service_yourname.go`:
 package modules
 
 import (
-    "stackyard/pkg/response"
-    "github.com/labstack/echo/v4"
+	"stackyard/config"
+	"stackyard/pkg/interfaces"
+	"stackyard/pkg/logger"
+	"stackyard/pkg/registry"
+	"stackyard/pkg/request"
+	"stackyard/pkg/response"
+
+	"github.com/labstack/echo/v4"
 )
 
 type YourService struct {
-    enabled bool
+	enabled bool
 }
 
 func NewYourService(enabled bool) *YourService {
-    return &YourService{enabled: enabled}
+	return &YourService{enabled: enabled}
 }
 
 func (s *YourService) Name() string        { return "Your Service" }
+func (s *YourService) WireName() string    { return "your-service" }
 func (s *YourService) Enabled() bool       { return s.enabled }
 func (s *YourService) Endpoints() []string { return []string{"/your-api"} }
+func (s *YourService) Get() interface{}    { return s }
 
 func (s *YourService) RegisterRoutes(g *echo.Group) {
-    // Register your API endpoints here
-    g.GET("/your-api", s.getData)
-    g.POST("/your-api", s.createData)
+	// Register your API endpoints here
+	g.GET("/your-api", s.getData)
+	g.POST("/your-api", s.createData)
 }
 
 func (s *YourService) getData(c echo.Context) error {
-    // Your business logic here
-    data := map[string]string{"message": "Hello from your service!"}
-    return response.Success(c, data, "Data retrieved")
+	// Your business logic here
+	data := map[string]string{"message": "Hello from your service!"}
+	return response.Success(c, data, "Data retrieved")
 }
 
 func (s *YourService) createData(c echo.Context) error {
-    // Handle POST request
-    return response.Created(c, nil, "Data created")
+	// Handle POST request
+	return response.Created(c, nil, "Data created")
+}
+
+// Auto-registration function - called when package is imported
+func init() {
+	registry.RegisterService("your_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+		return NewYourService(config.Services.IsEnabled("your_service"))
+	})
 }
 ```
 
-### Register Your Service
+### Service Auto-Discovery
 
-Add to `internal/server/server.go`:
+Services are automatically discovered and registered when their package is imported. The `init()` function in your service file handles this registration:
 
 ```go
-// Find the service registration section and add:
-registry.Register(modules.NewYourService(s.config.Services.IsEnabled("your_service")))
+// Auto-registration function - called when package is imported
+func init() {
+	registry.RegisterService("your_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+		return NewYourService(config.Services.IsEnabled("your_service"))
+	})
+}
 ```
+
+**How it works:**
+1. When the application starts, Go automatically calls the `init()` function
+2. The service factory is registered with the global registry
+3. During boot, the registry automatically discovers and creates enabled services
+4. No manual registration in `internal/server/server.go` is required
+
+**Service Factory Function:**
+- Takes configuration, logger, and dependencies as parameters
+- Returns a new service instance
+- Checks if the service is enabled via `config.Services.IsEnabled()`
+- Enables dependency injection for infrastructure components
 
 ### Enable in Configuration
 
@@ -109,11 +140,16 @@ func (s *YourService) createUser(c echo.Context) error {
 
 ```go
 type CreateUserRequest struct {
-    Name     string `json:"name" validate:"required,min=2,max=50"`
+    Username string `json:"username" validate:"required,username"`
     Email    string `json:"email" validate:"required,email"`
-    Age      int    `json:"age" validate:"required,gte=18,lte=120"`
-    Phone    string `json:"phone" validate:"required,phone"`
-    Password string `json:"password" validate:"required,min=8"`
+    FullName string `json:"full_name" validate:"required,min=3,max=100"`
+}
+
+type UpdateUserRequest struct {
+    Username string `json:"username" validate:"omitempty,username"`
+    Email    string `json:"email" validate:"omitempty,email"`
+    FullName string `json:"full_name" validate:"omitempty,min=3,max=100"`
+    Status   string `json:"status" validate:"omitempty,oneof=active inactive suspended"`
 }
 
 func (s *YourService) createUser(c echo.Context) error {
@@ -128,7 +164,15 @@ func (s *YourService) createUser(c echo.Context) error {
     }
 
     // Request is valid, proceed...
-    return response.Created(c, req, "User created")
+    user := User{
+        ID:        "123",
+        Username:  req.Username,
+        Email:     req.Email,
+        Status:    "active",
+        CreatedAt: time.Now().Unix(),
+    }
+
+    return response.Created(c, user, "User created successfully")
 }
 ```
 
@@ -151,6 +195,88 @@ validate.RegisterValidation("username", func(fl validator.FieldLevel) bool {
     matched, _ := regexp.MatchString(`^[a-zA-Z0-9]{3,20}$`, username)
     return matched
 })
+```
+
+### Dependency Injection
+
+Services receive infrastructure dependencies through constructor injection via the service factory function:
+
+```go
+type UserService struct {
+    enabled bool
+    db      *infrastructure.PostgresManager
+    cache   *infrastructure.RedisManager
+    logger  *logger.Logger
+}
+
+func NewUserService(
+    db *infrastructure.PostgresManager,
+    cache *infrastructure.RedisManager,
+    logger *logger.Logger,
+    enabled bool,
+) *UserService {
+    return &UserService{
+        enabled: enabled,
+        db:      db,
+        cache:   cache,
+        logger:  logger,
+    }
+}
+```
+
+**Service Factory with Dependencies:**
+
+```go
+func init() {
+    registry.RegisterService("user_service", func(
+        config *config.Config,
+        logger *logger.Logger,
+        deps *registry.Dependencies,
+    ) interfaces.Service {
+        return NewUserService(
+            deps.Postgres,
+            deps.Redis,
+            logger,
+            config.Services.IsEnabled("user_service"),
+        )
+    })
+}
+```
+
+**Available Dependencies:**
+- `deps.Postgres` - PostgreSQL database manager
+- `deps.Redis` - Redis cache manager
+- `deps.MinIO` - Object storage manager
+- `deps.Kafka` - Message queue manager
+- `deps.MongoDB` - MongoDB database manager
+- `deps.Grafana` - Monitoring dashboard manager
+
+**Using Dependencies in Handlers:**
+
+```go
+func (s *UserService) createUser(c echo.Context) error {
+    var req CreateUserRequest
+    if err := request.Bind(c, &req); err != nil {
+        return response.ValidationError(c, "Validation failed", err.GetFieldErrors())
+    }
+
+    // Use database dependency
+    user := User{
+        Username: req.Username,
+        Email:    req.Email,
+    }
+
+    if err := s.db.Create(&user).Error; err != nil {
+        s.logger.Error("Failed to create user", "error", err)
+        return response.InternalServerError(c, "Database error")
+    }
+
+    // Use cache dependency
+    s.cache.cacheUser(user.ID, user)
+
+    s.logger.Info("User created successfully", "user_id", user.ID)
+    return response.Created(c, user, "User created successfully")
+}
 ```
 
 ### Response Types
@@ -451,6 +577,17 @@ func (s *FileService) uploadFile(c echo.Context) error {
 
 ## Configuration Management
 
+### Service Configuration
+
+Services are enabled/disabled through the `services` section in `config.yaml`:
+
+```yaml
+services:
+  your_service: true
+  user_service: true
+  product_service: false
+```
+
 ### Adding New Configuration Options
 
 Add to `config/config.go`:
@@ -478,6 +615,66 @@ your_service:
     - "https://api.example.com"
     - "https://backup.example.com"
 ```
+
+### Accessing Configuration in Services
+
+```go
+func init() {
+    registry.RegisterService("your_service", func(
+        config *config.Config,
+        logger *logger.Logger,
+        deps *registry.Dependencies,
+    ) interfaces.Service {
+        // Access service-specific configuration
+        serviceConfig := config.YourService
+        
+        return NewYourService(
+            deps.Postgres,
+            logger,
+            serviceConfig,
+            config.Services.IsEnabled("your_service"),
+        )
+    })
+}
+
+type YourService struct {
+    enabled        bool
+    db             *infrastructure.PostgresManager
+    logger         *logger.Logger
+    serviceConfig  YourServiceConfig
+}
+
+func NewYourService(
+    db *infrastructure.PostgresManager,
+    logger *logger.Logger,
+    serviceConfig YourServiceConfig,
+    enabled bool,
+) *YourService {
+    return &YourService{
+        enabled:       enabled,
+        db:            db,
+        logger:        logger,
+        serviceConfig: serviceConfig,
+    }
+}
+```
+
+### Environment Variable Overrides
+
+Configuration can be overridden using environment variables:
+
+```bash
+export YOUR_SERVICE_API_KEY="production-api-key"
+export YOUR_SERVICE_TIMEOUT=120
+export YOUR_SERVICE_ENDPOINTS='["https://prod-api.example.com"]'
+
+go run cmd/app/main.go
+```
+
+**Environment Variable Naming:**
+- Use uppercase with underscores
+- Prefix with the service name
+- Use JSON format for complex types like slices
 
 ## Testing
 
@@ -625,30 +822,158 @@ go run cmd/app/main.go
 4. **HTTPS**: Use HTTPS in production
 5. **Secrets**: Never commit secrets to version control
 
+## Service Discovery & Auto-Registration
+
+### How Auto-Discovery Works
+
+Stackyard uses an automatic service discovery system that eliminates the need for manual service registration:
+
+1. **Package Import**: When a service package is imported, Go calls its `init()` function
+2. **Factory Registration**: The `init()` function registers a service factory with the global registry
+3. **Boot Process**: During application startup, the registry discovers all registered factories
+4. **Service Creation**: Enabled services are automatically created and registered
+5. **Route Registration**: Services register their routes with the Echo router
+
+### Service Factory Pattern
+
+The service factory function is the core of the auto-discovery system:
+
+```go
+func init() {
+    registry.RegisterService("your_service", func(
+        config *config.Config,
+        logger *logger.Logger,
+        deps *registry.Dependencies,
+    ) interfaces.Service {
+        // Service creation logic here
+        return NewYourService(/* dependencies */)
+    })
+}
+```
+
+**Factory Function Parameters:**
+- `config *config.Config` - Application configuration
+- `logger *logger.Logger` - Structured logger instance
+- `deps *registry.Dependencies` - Infrastructure dependencies
+
+**Factory Function Responsibilities:**
+- Create service instance with dependencies
+- Check if service is enabled via `config.Services.IsEnabled()`
+- Return `nil` if service should not be registered
+
+### Service Lifecycle
+
+1. **Import Phase**: Service packages are imported, `init()` functions execute
+2. **Registration Phase**: Service factories are registered in global registry
+3. **Discovery Phase**: Registry scans for all registered factories
+4. **Creation Phase**: Enabled services are instantiated with dependencies
+5. **Boot Phase**: Services register their routes and start operations
+6. **Runtime Phase**: Services handle requests and perform business logic
+
+### Service Dependencies
+
+Services can declare dependencies on infrastructure components:
+
+```go
+type YourService struct {
+    enabled bool
+    db      *infrastructure.PostgresManager
+    cache   *infrastructure.RedisManager
+    logger  *logger.Logger
+}
+
+func NewYourService(
+    db *infrastructure.PostgresManager,
+    cache *infrastructure.RedisManager,
+    logger *logger.Logger,
+    enabled bool,
+) *YourService {
+    return &YourService{
+        enabled: enabled,
+        db:      db,
+        cache:   cache,
+        logger:  logger,
+    }
+}
+```
+
+**Available Dependencies:**
+- `deps.Postgres` - PostgreSQL database manager
+- `deps.Redis` - Redis cache manager
+- `deps.MinIO` - Object storage manager
+- `deps.Kafka` - Message queue manager
+- `deps.MongoDB` - MongoDB database manager
+- `deps.Grafana` - Monitoring dashboard manager
+
+### Service Interface Requirements
+
+All services must implement the `interfaces.Service` interface:
+
+```go
+type Service interface {
+    Name() string                    // Human-readable service name
+    WireName() string               // Dependency injection name
+    Enabled() bool                  // Whether service is enabled
+    Endpoints() []string            // List of endpoint patterns
+    RegisterRoutes(g *echo.Group)   // Register API routes
+    Get() interface{}               // Return service instance
+}
+```
+
+### Service Naming Conventions
+
+- **Service Name**: Human-readable name (e.g., "User Service")
+- **Wire Name**: Dependency injection identifier (e.g., "user-service")
+- **Config Key**: YAML configuration key (e.g., "user_service")
+- **Package Name**: Go package name (e.g., "users_service")
+
+### Debugging Service Discovery
+
+If a service isn't registering properly:
+
+1. **Check Package Import**: Ensure the service package is imported
+2. **Verify init() Function**: Confirm the `init()` function exists and calls `registry.RegisterService()`
+3. **Check Configuration**: Verify the service is enabled in `config.yaml`
+4. **Review Dependencies**: Ensure all required dependencies are available
+5. **Examine Logs**: Check application logs for service registration messages
+
+### Service Registration Order
+
+Services are registered in the order they are discovered, which depends on:
+- Package import order
+- `init()` function execution order
+- Dependency availability
+
+**Best Practice**: Design services to be independent of registration order when possible.
+
 ## Troubleshooting
 
 ### Common Development Issues
 
 **Service not registering:**
-- Check that the service is added to `internal/server/server.go`
-- Verify the config key matches in `config.yaml`
-- Check for compilation errors
+- Check that the service package is imported (no manual registration needed)
+- Verify the `init()` function calls `registry.RegisterService()`
+- Ensure the service is enabled in `config.yaml`
+- Check for compilation errors in the service package
 
 **Database connection errors:**
 - Verify database credentials
 - Check network connectivity
 - Ensure database server is running
+- Confirm dependency injection is working correctly
 
 **API validation errors:**
 - Check request JSON structure
 - Verify validation tags on struct fields
 - Test with valid/invalid data
+- Review custom validator implementations
 
 **Performance issues:**
 - Add database indexes
 - Implement caching
 - Check for N+1 query problems
 - Monitor memory usage
+- Review dependency injection overhead
 
 ## Next Steps
 
@@ -656,6 +981,4 @@ Now that you understand how to develop with Stackyard, explore:
 
 - **[Architecture Overview](ARCHITECTURE.md)** - Deep dive into the technical design
 - **[API Reference](REFERENCE.md)** - Complete technical documentation
-- **Built-in Services** - Study `service_a.go`, `service_b.go` for examples
 
-Happy developing! 🎯

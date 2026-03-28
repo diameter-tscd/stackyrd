@@ -1,0 +1,38 @@
+package services_test
+
+import (
+	"testing"
+
+	"stackyard/internal/services/modules"
+)
+
+func TestNew{{SERVICE_NAME}}(t *testing.T) {
+	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}})
+	if service == nil {
+		t.Fatal("expected service to be created")
+	}
+	if !service.Enabled() {
+		t.Error("expected service to be enabled")
+	}
+	if service.Name() != "{{SERVICE_NAME}} Service" {
+		t.Errorf("expected name '{{SERVICE_NAME}} Service', got %q", service.Name())
+	}
+	if service.WireName() != "{{WIRE_NAME}}" {
+		t.Errorf("expected wire name '{{WIRE_NAME}}', got %q", service.WireName())
+	}
+}
+
+func Test{{SERVICE_NAME}}Disabled(t *testing.T) {
+	service := modules.New{{SERVICE_NAME}}(false{{CONSTRUCTOR_ARGS}})
+	if service.Enabled() {
+		t.Error("expected service to be disabled")
+	}
+}
+
+func Test{{SERVICE_NAME}}Endpoints(t *testing.T) {
+	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}})
+	endpoints := service.Endpoints()
+	if len(endpoints) == 0 {
+		t.Error("expected at least one endpoint")
+	}
+}

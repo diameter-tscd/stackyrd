@@ -20,6 +20,7 @@ var (
 	SERVICES_DIR  = "internal/services/modules"
 	MODULE_NAME   = "stackyard"
 	STRUCTURE_DIR = "scripts/service"
+	TESTS_DIR     = "tests/services"
 )
 
 // ANSI Colors
@@ -111,6 +112,7 @@ type ServiceConfig struct {
 	FileName        string
 	Dependencies    []Dependency
 	HasDependencies bool
+	GenerateTests   bool
 	Verbose         bool
 	DryRun          bool
 }
@@ -121,6 +123,7 @@ type ServiceContext struct {
 	ProjectDir   string
 	ServicesDir  string
 	StructureDir string
+	TestsDir     string
 }
 
 // Logger for structured output
@@ -335,6 +338,73 @@ func (ctx *ServiceContext) promptDependencies(logger *Logger) error {
 
 	ctx.Config.HasDependencies = len(ctx.Config.Dependencies) > 0
 
+	return nil
+}
+
+// promptGenerateTests prompts for test file generation
+func (ctx *ServiceContext) promptGenerateTests(logger *Logger) error {
+	logger.Prompt("Generate test file? (y/N, default: N): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	if strings.ToLower(input) == "y" || strings.ToLower(input) == "yes" {
+		ctx.Config.GenerateTests = true
+		logger.Success("Test file will be generated")
+	} else {
+		ctx.Config.GenerateTests = false
+		logger.Info("Skipping test file generation")
+	}
+
+	return nil
+}
+
+// buildConstructorArgs builds the constructor arguments for tests
+func (ctx *ServiceContext) buildConstructorArgs() string {
+	if !ctx.Config.HasDependencies {
+		return ", nil"
+	}
+
+	var args []string
+	for range ctx.Config.Dependencies {
+		args = append(args, "nil")
+	}
+
+	return ", " + strings.Join(args, ", ") + ", nil"
+}
+
+// generateTestFile generates the test file
+func (ctx *ServiceContext) generateTestFile(logger *Logger) error {
+	if !ctx.Config.GenerateTests {
+		return nil
+	}
+
+	logger.Info("Generating test file...")
+
+	// Read the test structure template
+	structurePath := filepath.Join(ctx.StructureDir, "structure_test")
+	template, err := os.ReadFile(structurePath)
+	if err != nil {
+		return fmt.Errorf("failed to read test structure template: %w", err)
+	}
+
+	content := string(template)
+	content = strings.ReplaceAll(content, "{{SERVICE_NAME}}", ctx.Config.ServiceName)
+	content = strings.ReplaceAll(content, "{{SERVICE_NAME_LOWER}}", strings.ToLower(ctx.Config.ServiceName))
+	content = strings.ReplaceAll(content, "{{WIRE_NAME}}", ctx.Config.WireName)
+	content = strings.ReplaceAll(content, "{{CONSTRUCTOR_ARGS}}", ctx.buildConstructorArgs())
+
+	// Clean up extra newlines
+	content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+
+	// Write the file
+	testFileName := strings.ToLower(ctx.Config.ServiceName) + "_service_test.go"
+	filePath := filepath.Join(ctx.ProjectDir, TESTS_DIR, testFileName)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write test file: %w", err)
+	}
+
+	logger.Success("Test file generated: %s", testFileName)
 	return nil
 }
 
@@ -657,12 +727,14 @@ func main() {
 		{"Prompting for wire name", ctx.promptWireName},
 		{"Prompting for file name", ctx.promptFileName},
 		{"Prompting for dependencies", ctx.promptDependencies},
+		{"Prompting for test generation", ctx.promptGenerateTests},
 		{"Displaying configuration", func(l *Logger) error {
 			ctx.displayConfiguration(l)
 			return nil
 		}},
 		{"Asking for confirmation", ctx.askUserForConfirmation},
 		{"Generating service file", ctx.generateService},
+		{"Generating test file", ctx.generateTestFile},
 		{"Displaying summary", func(l *Logger) error {
 			ctx.displaySummary(l)
 			return nil

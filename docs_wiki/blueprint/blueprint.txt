@@ -819,6 +819,60 @@ Components are shut down in reverse order to ensure dependencies are handled cor
 
 The project includes comprehensive build scripts for automated compilation, backup management, and deployment across multiple platforms.
 
+### 9.1.1 Service Generator (`scripts/service/service.go`)
+
+**Purpose**: Interactive service scaffolding tool that generates boilerplate service code and optional test files.
+
+**Features:**
+- **Interactive Prompts**: Guides through service name, wire name, file name, and dependency selection
+- **Dependency Selection**: Choose from 8 available infrastructure dependencies
+- **Test Generation**: Optional test file generation with configurable prompt (default: no)
+- **Template-Based**: Uses separate template files for service and test code
+- **Import Deduplication**: Automatically deduplicates imports when multiple dependencies share the same package
+- **Auto-Registration**: Generates init() function for automatic service registration
+
+**Available Dependencies:**
+1. PostgresManager - PostgreSQL database connection manager
+2. PostgresConnectionManager - Multi-tenant PostgreSQL connection manager
+3. MongoConnectionManager - Multi-tenant MongoDB connection manager
+4. RedisManager - Redis cache manager
+5. KafkaManager - Kafka message queue manager
+6. MinIOManager - MinIO object storage manager
+7. GrafanaManager - Grafana monitoring dashboard manager
+8. CronManager - Cron job scheduler manager
+
+**Template Files:**
+- `scripts/service/structure` - Service code template
+- `scripts/service/structure_test` - Test code template
+
+**Usage:**
+```bash
+# Interactive mode
+go run scripts/service/service.go
+
+# Dry run (analyze only)
+go run scripts/service/service.go --dry-run
+
+# Verbose output
+go run scripts/service/service.go --verbose
+```
+
+**Generated Output:**
+- Service file: `internal/services/modules/{service_name}_service.go`
+- Test file: `tests/services/{service_name}_service_test.go` (optional)
+
+**Service Template Includes:**
+- Service struct with enabled flag and dependency fields
+- Constructor with dependency injection
+- Interface implementation (Name, WireName, Enabled, Endpoints, Get, RegisterRoutes)
+- Handler methods (list, create, get, update, delete)
+- Auto-registration init function with dependency checks
+
+**Test Template Includes:**
+- Service creation tests
+- Disabled service behavior tests
+- Endpoint listing tests
+
 #### 9.1.1 Go Build Script (`scripts/build.go`)
 
 **Version**: Go-based build system (replaces shell scripts)

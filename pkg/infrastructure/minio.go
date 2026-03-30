@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"stackyard/config"
+	"stackyard/pkg/logger"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -15,6 +16,11 @@ type MinIOManager struct {
 	BucketName string
 	Connected  bool
 	Pool       *WorkerPool // Async worker pool
+}
+
+// Name returns the display name of the component
+func (m *MinIOManager) Name() string {
+	return "MinIO"
 }
 
 func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
@@ -224,4 +230,13 @@ func (m *MinIOManager) Close() error {
 		m.Pool.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("minio", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Monitoring.MinIO.Enabled {
+			return nil, nil
+		}
+		return NewMinIOManager(cfg.Monitoring.MinIO)
+	})
 }

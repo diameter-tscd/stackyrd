@@ -77,22 +77,67 @@ func (s *Server) Start() error {
 	s.infraInitManager = infrastructure.NewInfraInitManager(s.logger)
 
 	s.logger.Info("Starting async infrastructure initialization...")
-	redisManager, kafkaManager, minIOManager, postgresConnectionManager, mongoConnectionManager, grafanaManager, cronManager :=
-		s.infraInitManager.StartAsyncInitialization(s.config, s.logger)
+	componentRegistry := s.infraInitManager.StartAsyncInitialization(s.config, s.logger)
+
+	// Get components from registry
+	redisManager, _ := componentRegistry.Get("redis")
+	kafkaManager, _ := componentRegistry.Get("kafka")
+	minioManager, _ := componentRegistry.Get("minio")
+	postgresManager, _ := componentRegistry.Get("postgres")
+	mongoManager, _ := componentRegistry.Get("mongo")
+	grafanaManager, _ := componentRegistry.Get("grafana")
+	cronManager, _ := componentRegistry.Get("cron")
+
+	// Type assert to get the concrete types
+	var redisMgr *infrastructure.RedisManager
+	var kafkaMgr *infrastructure.KafkaManager
+	var minioMgr *infrastructure.MinIOManager
+	var postgresConnMgr *infrastructure.PostgresConnectionManager
+	var mongoConnMgr *infrastructure.MongoConnectionManager
+	var grafanaMgr *infrastructure.GrafanaManager
+	var cronMgr *infrastructure.CronManager
+
+	if rm, ok := redisManager.(*infrastructure.RedisManager); ok {
+		redisMgr = rm
+	}
+	if km, ok := kafkaManager.(*infrastructure.KafkaManager); ok {
+		kafkaMgr = km
+	}
+	if mm, ok := minioManager.(*infrastructure.MinIOManager); ok {
+		minioMgr = mm
+	}
+	if pm, ok := postgresManager.(*infrastructure.PostgresConnectionManager); ok {
+		postgresConnMgr = pm
+	} else if _, ok := postgresManager.(*infrastructure.PostgresManager); ok {
+		// Handle single connection case
+		s.logger.Info("PostgreSQL single connection manager detected")
+	}
+	if mm, ok := mongoManager.(*infrastructure.MongoConnectionManager); ok {
+		mongoConnMgr = mm
+	} else if _, ok := mongoManager.(*infrastructure.MongoManager); ok {
+		// Handle single connection case
+		s.logger.Info("MongoDB single connection manager detected")
+	}
+	if gm, ok := grafanaManager.(*infrastructure.GrafanaManager); ok {
+		grafanaMgr = gm
+	}
+	if cm, ok := cronManager.(*infrastructure.CronManager); ok {
+		cronMgr = cm
+	}
 
 	s.dependencies = registry.NewDependencies(
-		redisManager,
-		kafkaManager,
+		redisMgr,
+		kafkaMgr,
 		nil,
-		postgresConnectionManager,
+		postgresConnMgr,
 		nil,
-		mongoConnectionManager,
-		grafanaManager,
-		cronManager,
-		minIOManager,
+		mongoConnMgr,
+		grafanaMgr,
+		cronMgr,
+		minioMgr,
 	)
 
-	s.setConnectionDefaults(postgresConnectionManager, mongoConnectionManager)
+	s.setConnectionDefaults(postgresConnMgr, mongoConnMgr)
 
 	s.logger.Info("Initializing Middleware...")
 	middleware.InitMiddlewares(s.echo, middleware.Config{
@@ -124,7 +169,7 @@ func (s *Server) Start() error {
 
 	if s.config.Monitoring.Enabled {
 		servicesList := s.buildServicesList(serviceRegistry)
-		go monitoring.Start(s.config.Monitoring, s.config, s, s.broadcaster, redisManager, s.dependencies.PostgresManager, postgresConnectionManager, s.dependencies.MongoManager, mongoConnectionManager, kafkaManager, cronManager, servicesList, s.logger)
+		go monitoring.Start(s.config.Monitoring, s.config, s, s.broadcaster, redisMgr, s.dependencies.PostgresManager, postgresConnMgr, s.dependencies.MongoManager, mongoConnMgr, kafkaMgr, cronMgr, servicesList, s.logger)
 		s.logger.Info("Monitoring interface started", "port", s.config.Monitoring.Port, "services_count", len(servicesList))
 	}
 

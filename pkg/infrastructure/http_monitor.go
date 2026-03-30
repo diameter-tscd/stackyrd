@@ -3,12 +3,18 @@ package infrastructure
 import (
 	"net/http"
 	"stackyard/config"
+	"stackyard/pkg/logger"
 	"time"
 )
 
 type HttpManager struct {
 	Services []config.ExternalService
 	Client   *http.Client
+}
+
+// Name returns the display name of the component
+func (h *HttpManager) Name() string {
+	return "HTTP Monitor"
 }
 
 func NewHttpManager(cfg config.ExternalConfig) *HttpManager {
@@ -20,7 +26,7 @@ func NewHttpManager(cfg config.ExternalConfig) *HttpManager {
 	}
 }
 
-func (h *HttpManager) GetStatus() []map[string]interface{} {
+func (h *HttpManager) GetStatus() map[string]interface{} {
 	results := []map[string]interface{}{}
 
 	for _, svc := range h.Services {
@@ -49,5 +55,19 @@ func (h *HttpManager) GetStatus() []map[string]interface{} {
 		})
 	}
 
-	return results
+	return map[string]interface{}{
+		"services": results,
+	}
+}
+
+// Close closes the HTTP monitor client
+func (h *HttpManager) Close() error {
+	h.Client.CloseIdleConnections()
+	return nil
+}
+
+func init() {
+	RegisterComponent("http", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+		return NewHttpManager(cfg.Monitoring.External), nil
+	})
 }

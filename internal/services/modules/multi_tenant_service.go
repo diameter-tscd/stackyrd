@@ -302,13 +302,17 @@ func (s *MultiTenantService) deleteOrder(c echo.Context) error {
 // Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("multi_tenant_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		if !config.Services.IsEnabled("multi_tenant_service") {
+		helper := registry.NewServiceHelper(config, logger, deps)
+
+		if !helper.IsServiceEnabled("multi_tenant_service") {
 			return nil
 		}
-		if deps == nil || deps.PostgresConnectionManager == nil {
-			logger.Warn("PostgreSQL connections not available, skipping Multi-Tenant Service")
+
+		postgresConnectionManager, ok := helper.GetPostgresConnection()
+		if !helper.RequireDependency("PostgresConnectionManager", ok) {
 			return nil
 		}
-		return NewMultiTenantService(deps.PostgresConnectionManager, true, logger)
+
+		return NewMultiTenantService(postgresConnectionManager, true, logger)
 	})
 }

@@ -22,9 +22,19 @@ type MongoManager struct {
 	Pool     *WorkerPool // Async worker pool
 }
 
+// Name returns the display name of the component
+func (m *MongoManager) Name() string {
+	return "MongoDB"
+}
+
 type MongoConnectionManager struct {
 	connections map[string]*MongoManager
 	mu          sync.RWMutex
+}
+
+// Name returns the display name of the component
+func (m *MongoConnectionManager) Name() string {
+	return "MongoDB Connection Manager"
 }
 
 func NewMongoDB(cfg config.MongoConfig, l *logger.Logger) (*MongoManager, error) {
@@ -153,16 +163,21 @@ func (m *MongoConnectionManager) GetAllConnections() map[string]*MongoManager {
 }
 
 // GetStatus returns status for all connections
-func (m *MongoConnectionManager) GetStatus() map[string]map[string]interface{} {
+func (m *MongoConnectionManager) GetStatus() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	status := make(map[string]map[string]interface{})
+	status := make(map[string]interface{})
 
 	for name, conn := range m.connections {
 		status[name] = conn.GetStatus()
 	}
 
 	return status
+}
+
+// Close closes all connections (implements InfrastructureComponent)
+func (m *MongoConnectionManager) Close() error {
+	return m.CloseAll()
 }
 
 // CloseAll closes all connections
@@ -552,4 +567,16 @@ func (m *MongoManager) Close() error {
 		return m.Client.Disconnect(context.Background())
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("mongo", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Mongo.Enabled && !cfg.MongoMultiConfig.Enabled {
+			return nil, nil
+		}
+		if cfg.MongoMultiConfig.Enabled {
+			return NewMongoConnectionManager(cfg.MongoMultiConfig, log)
+		}
+		return NewMongoDB(cfg.Mongo, log)
+	})
 }

@@ -169,11 +169,11 @@ func (h *Handler) getStatus(c echo.Context) error {
 	// Handle both single and multiple PostgreSQL connections
 	if h.postgresConnectionManager != nil || (h.config.PostgresMultiConfig.Enabled && len(h.config.PostgresMultiConfig.Connections) > 0) {
 		// For multiple connections, format the status for frontend compatibility
-		var pgStatus map[string]map[string]interface{}
+		var pgStatus map[string]interface{}
 		if h.postgresConnectionManager != nil {
 			pgStatus = h.postgresConnectionManager.GetStatus()
 		} else {
-			pgStatus = make(map[string]map[string]interface{})
+			pgStatus = make(map[string]interface{})
 		}
 
 		var connectionStatuses = make(map[string]interface{})
@@ -217,11 +217,11 @@ func (h *Handler) getStatus(c echo.Context) error {
 	// Handle both single and multiple MongoDB connections
 	if h.mongoConnectionManager != nil || (h.config.MongoMultiConfig.Enabled && len(h.config.MongoMultiConfig.Connections) > 0) {
 		// For multiple connections, format the status for frontend compatibility
-		var mongoStatus map[string]map[string]interface{}
+		var mongoStatus map[string]interface{}
 		if h.mongoConnectionManager != nil {
 			mongoStatus = h.mongoConnectionManager.GetStatus()
 		} else {
-			mongoStatus = make(map[string]map[string]interface{})
+			mongoStatus = make(map[string]interface{})
 		}
 
 		var connectionStatuses = make(map[string]interface{})

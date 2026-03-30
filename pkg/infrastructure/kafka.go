@@ -17,6 +17,11 @@ type KafkaManager struct {
 	Pool     *WorkerPool // Async worker pool
 }
 
+// Name returns the display name of the component
+func (k *KafkaManager) Name() string {
+	return "Kafka"
+}
+
 func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
@@ -210,4 +215,13 @@ func (k *KafkaManager) Close() error {
 		return k.Producer.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("kafka", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Kafka.Enabled {
+			return nil, nil
+		}
+		return NewKafkaManager(cfg.Kafka, log)
+	})
 }

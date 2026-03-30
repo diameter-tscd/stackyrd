@@ -550,34 +550,67 @@ func (ctx *ServiceContext) buildInitFunction() string {
 	var dependencyParams strings.Builder
 
 	if ctx.Config.HasDependencies {
-		dependencyChecks.WriteString(`	if deps == nil {
-		logger.Warn("Dependencies not available, skipping Service")
-		return nil
-	}
-
+		dependencyChecks.WriteString(`		helper := registry.NewServiceHelper(config, logger, deps)
+		
+		if !helper.IsServiceEnabled("` + configKey + `") {
+			return nil
+		}
+		
 `)
 
 		for _, dep := range ctx.Config.Dependencies {
-			dependencyChecks.WriteString(fmt.Sprintf(`	if deps.%s == nil {
-		logger.Warn("%s not available, skipping Service")
-		return nil
-	}
+			varName := strings.ToLower(dep.Name[:1]) + dep.Name[1:]
 
-`, dep.Name, dep.Name))
+			// Map dependency names to helper method names
+			var helperMethod string
+			switch dep.Name {
+			case "RedisManager":
+				helperMethod = "GetRedis"
+			case "KafkaManager":
+				helperMethod = "GetKafka"
+			case "PostgresManager":
+				helperMethod = "GetPostgres"
+			case "PostgresConnectionManager":
+				helperMethod = "GetPostgresConnection"
+			case "MongoManager":
+				helperMethod = "GetMongo"
+			case "MongoConnectionManager":
+				helperMethod = "GetMongoConnection"
+			case "GrafanaManager":
+				helperMethod = "GetGrafana"
+			case "CronManager":
+				helperMethod = "GetCron"
+			case "MinIOManager":
+				helperMethod = "GetMinIO"
+			default:
+				helperMethod = "Get" + dep.Name
+			}
 
-			dependencyParams.WriteString(fmt.Sprintf(", deps.%s", dep.Name))
+			dependencyChecks.WriteString(fmt.Sprintf(`		%s, ok := helper.%s()
+		if !helper.RequireDependency("%s", ok) {
+			return nil
 		}
+		
+`, varName, helperMethod, dep.Name))
+
+			dependencyParams.WriteString(fmt.Sprintf(", %s", varName))
+		}
+	} else {
+		dependencyChecks.WriteString(`		helper := registry.NewServiceHelper(config, logger, deps)
+		
+		if !helper.IsServiceEnabled("` + configKey + `") {
+			return nil
+		}
+		
+`)
 	}
 
 	return fmt.Sprintf(`// Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("%s", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		if !config.Services.IsEnabled("%s") {
-			return nil
-		}
 %s		return New%s(true%s, logger)
 	})
-}`, configKey, configKey, dependencyChecks.String(), ctx.Config.ServiceName, dependencyParams.String())
+}`, configKey, dependencyChecks.String(), ctx.Config.ServiceName, dependencyParams.String())
 }
 
 // generateService generates the service Go file

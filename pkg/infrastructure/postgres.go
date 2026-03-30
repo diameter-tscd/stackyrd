@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"stackyard/config"
+	"stackyard/pkg/logger"
 	"sync"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -21,6 +22,16 @@ type PostgresManager struct {
 type PostgresConnectionManager struct {
 	connections map[string]*PostgresManager
 	mu          sync.RWMutex
+}
+
+// Name returns the display name of the component
+func (p *PostgresManager) Name() string {
+	return "PostgreSQL"
+}
+
+// Name returns the display name of the component
+func (m *PostgresConnectionManager) Name() string {
+	return "PostgreSQL Connection Manager"
 }
 
 func NewPostgresDB(cfg config.PostgresConfig) (*PostgresManager, error) {
@@ -131,16 +142,21 @@ func (m *PostgresConnectionManager) GetAllConnections() map[string]*PostgresMana
 }
 
 // GetStatus returns status for all connections
-func (m *PostgresConnectionManager) GetStatus() map[string]map[string]interface{} {
+func (m *PostgresConnectionManager) GetStatus() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	status := make(map[string]map[string]interface{})
+	status := make(map[string]interface{})
 
 	for name, conn := range m.connections {
 		status[name] = conn.GetStatus()
 	}
 
 	return status
+}
+
+// Close closes all connections (implements InfrastructureComponent)
+func (m *PostgresConnectionManager) Close() error {
+	return m.CloseAll()
 }
 
 // CloseAll closes all connections
@@ -527,4 +543,16 @@ func (p *PostgresManager) Close() error {
 		return p.DB.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("postgres", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Postgres.Enabled && !cfg.PostgresMultiConfig.Enabled {
+			return nil, nil
+		}
+		if cfg.PostgresMultiConfig.Enabled {
+			return NewPostgresConnectionManager(cfg.PostgresMultiConfig)
+		}
+		return NewPostgresDB(cfg.Postgres)
+	})
 }

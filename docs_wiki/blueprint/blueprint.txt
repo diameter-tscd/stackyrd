@@ -584,6 +584,107 @@ type GrafanaService struct {
 
 The application implements a comprehensive async infrastructure system that ensures all database operations, caching, message queuing, and file operations run asynchronously to avoid blocking the main application thread. This implementation uses Go's goroutines, channels, and worker pools to provide non-blocking operations while maintaining thread safety.
 
+### 8.1.1 Infrastructure Component Registry
+
+The application uses a dynamic infrastructure component registry that provides a unified interface for managing all infrastructure components.
+
+**Core Interface:**
+```go
+type InfrastructureComponent interface {
+    Name() string
+    Close() error
+    GetStatus() map[string]interface{}
+}
+```
+
+**Component Registry:**
+```go
+type ComponentRegistry struct {
+    components map[string]InfrastructureComponent
+    factories  map[string]ComponentFactory
+    mu         sync.RWMutex
+}
+```
+
+**Auto-Registration Pattern:**
+Each infrastructure manager registers itself via `init()` function:
+```go
+func init() {
+    RegisterComponent("redis", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+        if !cfg.Redis.Enabled {
+            return nil, nil
+        }
+        return NewRedisClient(cfg.Redis)
+    })
+}
+```
+
+**Supported Components:**
+- `redis` - Redis cache manager
+- `kafka` - Kafka message queue manager
+- `postgres` - PostgreSQL connection manager (single or multi-tenant)
+- `mongo` - MongoDB connection manager (single or multi-tenant)
+- `minio` - MinIO object storage manager
+- `grafana` - Grafana monitoring dashboard manager
+- `cron` - Cron job scheduler manager
+- `system` - System monitoring manager
+- `http` - HTTP external service monitor
+
+### 8.1.2 Service Helper Pattern
+
+The application provides a `ServiceHelper` utility that simplifies dependency resolution for services.
+
+**Service Helper:**
+```go
+type ServiceHelper struct {
+    config *config.Config
+    logger *logger.Logger
+    deps   *Dependencies
+}
+
+func NewServiceHelper(config *config.Config, logger *logger.Logger, deps *Dependencies) *ServiceHelper
+```
+
+**Type-Safe Dependency Getters:**
+```go
+func (h *ServiceHelper) GetRedis() (*infrastructure.RedisManager, bool)
+func (h *ServiceHelper) GetKafka() (*infrastructure.KafkaManager, bool)
+func (h *ServiceHelper) GetPostgres() (*infrastructure.PostgresManager, bool)
+func (h *ServiceHelper) GetPostgresConnection() (*infrastructure.PostgresConnectionManager, bool)
+func (h *ServiceHelper) GetMongo() (*infrastructure.MongoManager, bool)
+func (h *ServiceHelper) GetMongoConnection() (*infrastructure.MongoConnectionManager, bool)
+func (h *ServiceHelper) GetGrafana() (*infrastructure.GrafanaManager, bool)
+func (h *ServiceHelper) GetCron() (*infrastructure.CronManager, bool)
+func (h *ServiceHelper) GetMinIO() (*infrastructure.MinIOManager, bool)
+```
+
+**Service Registration Pattern:**
+```go
+func init() {
+    registry.RegisterService("service_name", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        helper := registry.NewServiceHelper(config, logger, deps)
+        
+        if !helper.IsServiceEnabled("service_name") {
+            return nil
+        }
+        
+        dependencyManager, ok := helper.GetDependencyName()
+        if !helper.RequireDependency("DependencyName", ok) {
+            return nil
+        }
+        
+        return NewServiceName(dependencyManager, true, logger)
+    })
+}
+```
+
+**Benefits:**
+- **Type Safety**: Getters return typed managers with explicit errors
+- **DRY Principle**: No duplicated nil-checking logic
+- **Consistency**: All services follow the same dependency resolution pattern
+- **Better Error Messages**: Clear error messages when dependencies unavailable
+- **Maintainability**: Single place to change dependency logic
+
 ### 8.2 Simplified Service Registration
 
 The service registration system has been completely simplified to make adding new services straightforward:

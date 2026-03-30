@@ -182,6 +182,17 @@ func (s *TasksService) deleteTask(c echo.Context) error {
 // Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("tasks_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		return NewTasksService(deps.PostgresManager, config.Services.IsEnabled("tasks_service"), logger)
+		helper := registry.NewServiceHelper(config, logger, deps)
+
+		if !helper.IsServiceEnabled("tasks_service") {
+			return nil
+		}
+
+		postgresManager, ok := helper.GetPostgres()
+		if !helper.RequireDependency("PostgresManager", ok) {
+			return nil
+		}
+
+		return NewTasksService(postgresManager, true, logger)
 	})
 }

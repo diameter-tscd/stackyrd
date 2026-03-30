@@ -2,6 +2,8 @@ package infrastructure
 
 import (
 	"fmt"
+	"stackyard/config"
+	"stackyard/pkg/logger"
 	"sync"
 	"time"
 
@@ -22,6 +24,11 @@ type CronManager struct {
 	jobs map[cron.EntryID]*CronJob
 	mu   sync.RWMutex
 	pool *WorkerPool // Worker pool for async job execution
+}
+
+// Name returns the display name of the component
+func (c *CronManager) Name() string {
+	return "Cron Scheduler"
 }
 
 func NewCronManager() *CronManager {
@@ -245,4 +252,32 @@ func (c *CronManager) Close() error {
 		c.pool.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("cron", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Cron.Enabled {
+			return nil, nil
+		}
+		cronManager := NewCronManager()
+
+		// Add configured cron jobs
+		for name, schedule := range cfg.Cron.Jobs {
+			jobName := name
+			jobSchedule := schedule
+			_, err := cronManager.AddAsyncJob(jobName, jobSchedule, func() {
+				l.Info("Executing Cron Job", "job", jobName)
+			})
+			if err != nil {
+				l.Error("Failed to schedule cron job", err, "job", jobName)
+			} else {
+				l.Info("Cron job scheduled", "job", jobName, "schedule", jobSchedule)
+			}
+		}
+
+		cronManager.Start()
+		l.Info("Cron jobs initialized with async execution")
+
+		return cronManager, nil
+	})
 }

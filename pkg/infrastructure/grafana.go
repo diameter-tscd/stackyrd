@@ -173,6 +173,11 @@ type GrafanaAnnotation struct {
 	Data        map[string]interface{} `json:"data,omitempty"`
 }
 
+// Name returns the display name of the component
+func (gm *GrafanaManager) Name() string {
+	return "Grafana"
+}
+
 // NewGrafanaManager creates a new Grafana manager
 func NewGrafanaManager(cfg config.GrafanaConfig, logger *logger.Logger) (*GrafanaManager, error) {
 	if !cfg.Enabled {
@@ -661,4 +666,13 @@ func (gm *GrafanaManager) Close() error {
 		gm.Pool.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("grafana", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Grafana.Enabled {
+			return nil, nil
+		}
+		return NewGrafanaManager(cfg.Grafana, l)
+	})
 }

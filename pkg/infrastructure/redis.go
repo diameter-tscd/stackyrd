@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"stackyard/config"
+	"stackyard/pkg/logger"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,11 @@ import (
 type RedisManager struct {
 	Client *redis.Client
 	Pool   *WorkerPool // Async worker pool
+}
+
+// Name returns the display name of the component
+func (r *RedisManager) Name() string {
+	return "Redis"
 }
 
 func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
@@ -231,4 +237,13 @@ func (r *RedisManager) Close() error {
 		return r.Client.Close()
 	}
 	return nil
+}
+
+func init() {
+	RegisterComponent("redis", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
+		if !cfg.Redis.Enabled {
+			return nil, nil
+		}
+		return NewRedisClient(cfg.Redis)
+	})
 }

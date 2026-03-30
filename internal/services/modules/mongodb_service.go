@@ -469,13 +469,17 @@ func (s *MongoDBService) getProductAnalytics(c echo.Context) error {
 // Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("mongodb_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		if !config.Services.IsEnabled("mongodb_service") {
+		helper := registry.NewServiceHelper(config, logger, deps)
+
+		if !helper.IsServiceEnabled("mongodb_service") {
 			return nil
 		}
-		if deps == nil || deps.MongoConnectionManager == nil {
-			logger.Warn("MongoDB connections not available, skipping MongoDB Service")
+
+		mongoConnectionManager, ok := helper.GetMongoConnection()
+		if !helper.RequireDependency("MongoConnectionManager", ok) {
 			return nil
 		}
-		return NewMongoDBService(deps.MongoConnectionManager, true, logger)
+
+		return NewMongoDBService(mongoConnectionManager, true, logger)
 	})
 }

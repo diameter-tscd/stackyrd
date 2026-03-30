@@ -89,6 +89,12 @@ monitoring:
   subtitle: "Monitoring Dashboard"
   max_photo_size_mb: 2
   upload_dir: "web/monitoring/uploads"
+  external:
+    services:
+      - name: "Google"
+        url: "https://google.com"
+      - name: "Local API"
+        url: "http://localhost:8080/health"
   
 minio:
   enabled: true
@@ -98,13 +104,6 @@ minio:
   use_ssl: false
   bucket_name: "main"
 
-external:
-  services:
-    - name: "Google"
-      url: "https://google.com"
-    - name: "Local API"
-      url: "http://localhost:8080/health"
-  
 cron:
   enabled: true
   jobs:

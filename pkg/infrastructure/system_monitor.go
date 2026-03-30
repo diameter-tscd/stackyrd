@@ -5,6 +5,8 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"stackyard/config"
+	"stackyard/pkg/logger"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -13,6 +15,11 @@ import (
 )
 
 type SystemManager struct{}
+
+// Name returns the display name of the component
+func (s *SystemManager) Name() string {
+	return "System Monitor"
+}
 
 func NewSystemManager() *SystemManager {
 	return &SystemManager{}
@@ -80,5 +87,23 @@ func (s *SystemManager) GetHostInfo() map[string]string {
 		"ip":       ip,
 		"os":       runtime.GOOS,
 		"arch":     runtime.GOARCH,
+	}
+}
+
+func init() {
+	RegisterComponent("system", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+		return NewSystemManager(), nil
+	})
+}
+
+// Close closes the system monitor (no-op for system monitor)
+func (s *SystemManager) Close() error {
+	return nil
+}
+
+// GetStatus returns the current status of the system monitor
+func (s *SystemManager) GetStatus() map[string]interface{} {
+	return map[string]interface{}{
+		"active": true,
 	}
 }

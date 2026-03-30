@@ -290,13 +290,17 @@ func (s *GrafanaService) getHealth(c echo.Context) error {
 // Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		if !config.Services.IsEnabled("grafana_service") {
+		helper := registry.NewServiceHelper(config, logger, deps)
+
+		if !helper.IsServiceEnabled("grafana_service") {
 			return nil
 		}
-		if deps == nil || deps.GrafanaManager == nil {
-			logger.Warn("Grafana manager not available, skipping Grafana Service")
+
+		grafanaManager, ok := helper.GetGrafana()
+		if !helper.RequireDependency("GrafanaManager", ok) {
 			return nil
 		}
-		return NewGrafanaService(deps.GrafanaManager, true, logger)
+
+		return NewGrafanaService(grafanaManager, true, logger)
 	})
 }

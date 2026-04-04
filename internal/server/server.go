@@ -4,19 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
 
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
-	"stackyrd/internal/monitoring"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
-	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -27,11 +24,10 @@ type Server struct {
 	config           *config.Config
 	logger           *logger.Logger
 	dependencies     *registry.Dependencies
-	broadcaster      *monitoring.LogBroadcaster
 	infraInitManager *infrastructure.InfraInitManager
 }
 
-func New(cfg *config.Config, l *logger.Logger, b *monitoring.LogBroadcaster) *Server {
+func New(cfg *config.Config, l *logger.Logger) *Server {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -66,10 +62,9 @@ func New(cfg *config.Config, l *logger.Logger, b *monitoring.LogBroadcaster) *Se
 	}
 
 	return &Server{
-		echo:        e,
-		config:      cfg,
-		logger:      l,
-		broadcaster: b,
+		echo:   e,
+		config: cfg,
+		logger: l,
 	}
 }
 
@@ -165,13 +160,7 @@ func (s *Server) Start() error {
 	}
 
 	serviceRegistry.Boot(s.echo)
-	s.logger.Info("All services boot successfully, ready to start monitoring")
-
-	if s.config.Monitoring.Enabled {
-		servicesList := s.buildServicesList(serviceRegistry)
-		go monitoring.Start(s.config.Monitoring, s.config, s, s.broadcaster, componentRegistry, servicesList, s.logger)
-		s.logger.Info("Monitoring interface started", "port", s.config.Monitoring.Port, "services_count", len(servicesList))
-	}
+	s.logger.Info("All services boot successfully")
 
 	port := s.config.Server.Port
 	s.logger.Info("HTTP server starting immediately", "port", port, "env", s.config.App.Env)
@@ -214,54 +203,6 @@ func (s *Server) registerHealthEndpoints() {
 		}()
 		return response.Success(c, map[string]string{"status": "restarting", "message": "Service is restarting..."})
 	})
-}
-
-func (s *Server) buildServicesList(serviceRegistry *registry.ServiceRegistry) []monitoring.ServiceInfo {
-	var servicesList []monitoring.ServiceInfo
-	for _, srv := range serviceRegistry.GetServices() {
-		var fullEndpoints []string
-		for _, endp := range srv.Endpoints() {
-			fullEndpoints = append(fullEndpoints, "/api/v1"+endp)
-		}
-
-		servicesList = append(servicesList, monitoring.ServiceInfo{
-			Name:       srv.Name(),
-			StructName: reflect.TypeOf(srv).Elem().String(),
-			Active:     srv.Enabled(),
-			Endpoints:  fullEndpoints,
-		})
-	}
-	return servicesList
-}
-
-// GetStatus satisfies monitoring.StatusProvider
-func (s *Server) GetStatus() map[string]interface{} {
-	diskStats, _ := utils.GetDiskUsage()
-	netStats, _ := utils.GetNetworkInfo()
-
-	checkEnabled := func(enabled bool, manager interface{}) bool {
-		return enabled && s.dependencies != nil && manager != nil
-	}
-
-	infra := map[string]bool{
-		"redis":    checkEnabled(s.config.Redis.Enabled, s.dependencies.RedisManager),
-		"kafka":    checkEnabled(s.config.Kafka.Enabled, s.dependencies.KafkaManager),
-		"postgres": checkEnabled(s.config.Postgres.Enabled || s.config.PostgresMultiConfig.Enabled, s.dependencies.PostgresManager),
-		"mongo":    checkEnabled(s.config.Mongo.Enabled || s.config.MongoMultiConfig.Enabled, s.dependencies.MongoManager),
-		"grafana":  checkEnabled(s.config.Grafana.Enabled, s.dependencies.GrafanaManager),
-		"cron":     checkEnabled(s.config.Cron.Enabled, s.dependencies.CronManager),
-		"minio":    checkEnabled(s.config.MinIO.Enabled, s.dependencies.MinIOManager),
-	}
-
-	return map[string]interface{}{
-		"version":        "1.0.0",
-		"services":       s.config.Services,
-		"infrastructure": infra,
-		"system": map[string]interface{}{
-			"disk":    diskStats,
-			"network": netStats,
-		},
-	}
 }
 
 // Shutdown performs graceful shutdown of all infrastructure components

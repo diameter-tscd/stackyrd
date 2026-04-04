@@ -144,17 +144,10 @@ func ClearScreen() {
 }
 
 // CheckPortAvailability checks if the required ports are available before starting the application
-func CheckPortAvailability(serverPort, monitoringPort string, monitoringEnabled bool) error {
+func CheckPortAvailability(serverPort string) error {
 	// Check server port
 	if err := CheckPort(serverPort); err != nil {
 		return fmt.Errorf("server port %s is already in use: %v", serverPort, err)
-	}
-
-	// Check monitoring port if enabled
-	if monitoringEnabled {
-		if err := CheckPort(monitoringPort); err != nil {
-			return fmt.Errorf("monitoring port %s is already in use: %v", monitoringPort, err)
-		}
 	}
 
 	return nil

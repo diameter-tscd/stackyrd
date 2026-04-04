@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"stackyrd/config"
-	"stackyrd/internal/monitoring"
 	"stackyrd/internal/server"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/tui"
@@ -21,7 +19,6 @@ type Application struct {
 	configManager *ConfigManager
 	config        *config.Config
 	logger        *logger.Logger
-	broadcaster   *monitoring.LogBroadcaster
 	bannerText    string
 }
 
@@ -44,7 +41,6 @@ func (app *Application) Run() error {
 		{"Loading banner", app.loadBannerStep},
 		{"Checking port availability", app.checkPortStep},
 		{"Initializing logger", app.initLoggerStep},
-		{"Initializing broadcaster", app.initBroadcasterStep},
 		{"Starting application", app.startAppStep},
 	}
 
@@ -102,7 +98,7 @@ func (app *Application) loadBannerStep(ctx *AppContext) error {
 
 // checkPortStep checks port availability
 func (app *Application) checkPortStep(ctx *AppContext) error {
-	return utils.CheckPortAvailability(app.config.Server.Port, app.config.Monitoring.Port, app.config.Monitoring.Enabled)
+	return utils.CheckPortAvailability(app.config.Server.Port)
 }
 
 // initLoggerStep initializes the logger
@@ -118,12 +114,6 @@ func (app *Application) initLoggerStep(ctx *AppContext) error {
 	app.logger.Info("TUI mode disabled, using traditional console logging")
 	app.logger.Info("Initializing services...")
 
-	return nil
-}
-
-// initBroadcasterStep initializes the log broadcaster
-func (app *Application) initBroadcasterStep(ctx *AppContext) error {
-	app.broadcaster = monitoring.NewLogBroadcaster()
 	return nil
 }
 
@@ -176,15 +166,14 @@ func (app *Application) runWithTUI() {
 	liveTUI.Start()
 
 	// Initialize logger with TUI output
-	multiWriter := io.MultiWriter(liveTUI, app.broadcaster)
-	app.logger = logger.NewQuiet(app.config.App.Debug, multiWriter)
+	app.logger = logger.NewQuiet(app.config.App.Debug, liveTUI)
 
 	// Add initial logs
 	liveTUI.AddLog(LogLevelInfo, "Server starting on port "+app.config.Server.Port)
 	liveTUI.AddLog(LogLevelInfo, "Environment: "+app.config.App.Env)
 
 	// Start server
-	srv := server.New(app.config, app.logger, app.broadcaster)
+	srv := server.New(app.config, app.logger)
 	go func() {
 		liveTUI.AddLog(LogLevelInfo, "HTTP server listening...")
 		if err := srv.Start(); err != nil {
@@ -195,9 +184,6 @@ func (app *Application) runWithTUI() {
 	// Wait for server to start
 	time.Sleep(StartupDelay)
 	liveTUI.AddLog(LogLevelInfo, "Server ready at http://localhost:"+app.config.Server.Port)
-	if app.config.Monitoring.Enabled {
-		liveTUI.AddLog(LogLevelInfo, "Monitoring at http://localhost:"+app.config.Monitoring.Port)
-	}
 
 	// Handle shutdown
 	app.handleShutdown(liveTUI, srv)
@@ -213,7 +199,7 @@ func (app *Application) runWithConsole() {
 	}
 
 	// Initialize logger
-	app.logger = logger.New(app.config.App.Debug, app.broadcaster)
+	app.logger = logger.New(app.config.App.Debug, nil)
 
 	// Log startup information
 	app.logger.Info("Starting Application", "name", app.config.App.Name, "env", app.config.App.Env)
@@ -224,7 +210,7 @@ func (app *Application) runWithConsole() {
 	app.logAllServices()
 
 	// Start server
-	srv := server.New(app.config, app.logger, app.broadcaster)
+	srv := server.New(app.config, app.logger)
 	go func() {
 		app.logger.Info("HTTP server listening", "port", app.config.Server.Port)
 		if err := srv.Start(); err != nil {
@@ -235,10 +221,6 @@ func (app *Application) runWithConsole() {
 	// Wait for server to start
 	time.Sleep(StartupDelay)
 	app.logger.Info("Server ready", "url", "http://localhost:"+app.config.Server.Port)
-	if app.config.Monitoring.Enabled {
-		time.Sleep(StartupDelay)
-		app.logger.Info("Monitoring dashboard", "url", "http://localhost:"+app.config.Monitoring.Port)
-	}
 
 	// Handle shutdown
 	app.handleConsoleShutdown(srv)
@@ -301,8 +283,6 @@ func (app *Application) logAllServices() {
 		app.logServiceStatus("Service: "+name, enabled)
 	}
 
-	// Log monitoring
-	app.logServiceStatus(ServiceMonitoringName, app.config.Monitoring.Enabled)
 }
 
 // logServiceStatus logs whether a service is enabled or skipped

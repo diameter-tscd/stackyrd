@@ -106,229 +106,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/encryption/decrypt": {
-            "post": {
-                "description": "Decrypt encrypted data using AES-256-GCM",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "encryption"
-                ],
-                "summary": "Decrypt data",
-                "parameters": [
-                    {
-                        "description": "Data to decrypt",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/modules.DecryptRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Data decrypted successfully",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/modules.DecryptResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request body or decryption failed",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/encryption/encrypt": {
-            "post": {
-                "description": "Encrypt plaintext data using AES-256-GCM",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "encryption"
-                ],
-                "summary": "Encrypt data",
-                "parameters": [
-                    {
-                        "description": "Data to encrypt",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/modules.EncryptRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Data encrypted successfully",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/modules.EncryptResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request body",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Encryption failed",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/encryption/key-rotate": {
-            "post": {
-                "description": "Rotate the encryption key with a new key",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "encryption"
-                ],
-                "summary": "Rotate encryption key",
-                "parameters": [
-                    {
-                        "description": "New encryption key",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/modules.KeyRotateRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Key rotation successful",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request body",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/encryption/status": {
-            "get": {
-                "description": "Get the current status and configuration of the encryption service",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "encryption"
-                ],
-                "summary": "Get encryption service status",
-                "responses": {
-                    "200": {
-                        "description": "Encryption service status",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/modules.StatusResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
-        "/events/stream/{stream_id}": {
-            "get": {
-                "description": "Subscribe to Server-Sent Events (SSE) for a specific stream",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Stream events from a specific stream",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Stream ID",
-                        "name": "stream_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "SSE stream",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "Stream not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    }
-                }
-            }
-        },
         "/grafana/annotations": {
             "post": {
                 "description": "Create a new Grafana annotation",
@@ -433,7 +210,7 @@ const docTemplate = `{
                 "summary": "Create Grafana dashboard",
                 "parameters": [
                     {
-                        "description": "Dashboard data",
+                        "description": "Dashboard configuration",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -508,7 +285,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update an existing Grafana dashboard by UID",
+                "description": "Update an existing Grafana dashboard",
                 "consumes": [
                     "application/json"
                 ],
@@ -528,7 +305,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Dashboard data",
+                        "description": "Dashboard configuration",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -545,7 +322,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid dashboard data or missing UID",
+                        "description": "Invalid dashboard data",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -953,29 +730,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/products": {
-            "get": {
-                "description": "Get a list of products",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "products"
-                ],
-                "summary": "Get products",
-                "responses": {
-                    "200": {
-                        "description": "Success",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    }
-                }
-            }
-        },
         "/products/{tenant}": {
             "get": {
                 "description": "Retrieve all products from a specific tenant's database",
@@ -1030,7 +784,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Create product in tenant database",
+                "summary": "Create a product for tenant",
                 "parameters": [
                     {
                         "type": "string",
@@ -1051,7 +805,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Product created in tenant database",
+                        "description": "Product created successfully",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1067,19 +821,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
-                    },
-                    "500": {
-                        "description": "Failed to create product",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
                     }
                 }
             }
         },
         "/products/{tenant}/analytics": {
             "get": {
-                "description": "Get analytics for products in a tenant's database",
+                "description": "Get aggregated product analytics from a tenant's database",
                 "consumes": [
                     "application/json"
                 ],
@@ -1089,7 +837,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Get product analytics",
+                "summary": "Get product analytics for tenant",
                 "parameters": [
                     {
                         "type": "string",
@@ -1101,19 +849,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Product analytics for tenant database",
+                        "description": "Analytics data",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
-                    "404": {
-                        "description": "Tenant database not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to aggregate product analytics",
+                    "400": {
+                        "description": "Missing tenant",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1123,7 +865,7 @@ const docTemplate = `{
         },
         "/products/{tenant}/search": {
             "get": {
-                "description": "Search products with various filters in a tenant's database",
+                "description": "Search products in a tenant's database",
                 "consumes": [
                     "application/json"
                 ],
@@ -1133,7 +875,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Search products in tenant database",
+                "summary": "Search products for tenant",
                 "parameters": [
                     {
                         "type": "string",
@@ -1144,56 +886,20 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Search by product name",
-                        "name": "name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter by category",
-                        "name": "category",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Filter by stock availability",
-                        "name": "in_stock",
-                        "in": "query"
-                    },
-                    {
-                        "type": "number",
-                        "description": "Minimum price filter",
-                        "name": "min_price",
-                        "in": "query"
-                    },
-                    {
-                        "type": "number",
-                        "description": "Maximum price filter",
-                        "name": "max_price",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter by tags (comma-separated)",
-                        "name": "tags",
+                        "description": "Search query",
+                        "name": "q",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Products found",
+                        "description": "Search results",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
-                    "404": {
-                        "description": "Tenant database not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to search products",
+                    "400": {
+                        "description": "Missing tenant",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1213,7 +919,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Get product by tenant",
+                "summary": "Get product by tenant and ID",
                 "parameters": [
                     {
                         "type": "string",
@@ -1232,25 +938,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Product retrieved from tenant database",
+                        "description": "Product retrieved successfully",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "400": {
-                        "description": "Invalid product ID format",
+                        "description": "Invalid product ID",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "404": {
-                        "description": "Tenant database or product not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to query tenant database",
+                        "description": "Product or tenant not found",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1258,7 +958,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update a product in a specific tenant's database",
+                "description": "Update an existing product in a tenant's database",
                 "consumes": [
                     "application/json"
                 ],
@@ -1268,7 +968,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Update product in tenant database",
+                "summary": "Update a product for tenant",
                 "parameters": [
                     {
                         "type": "string",
@@ -1285,37 +985,30 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Product update data",
+                        "description": "Updated product data",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/modules.Product"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Product updated in tenant database",
+                        "description": "Product updated successfully",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "400": {
-                        "description": "Invalid product ID format or update data",
+                        "description": "Invalid data",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "404": {
-                        "description": "Tenant database or product not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to update product",
+                        "description": "Product or tenant not found",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1323,7 +1016,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Delete a product from a specific tenant's database",
+                "description": "Delete a product from a tenant's database",
                 "consumes": [
                     "application/json"
                 ],
@@ -1333,7 +1026,7 @@ const docTemplate = `{
                 "tags": [
                     "products"
                 ],
-                "summary": "Delete product from tenant database",
+                "summary": "Delete a product for tenant",
                 "parameters": [
                     {
                         "type": "string",
@@ -1352,25 +1045,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Product deleted from tenant database",
+                        "description": "Product deleted successfully",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "400": {
-                        "description": "Invalid product ID format",
+                        "description": "Invalid product ID",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
                     },
                     "404": {
-                        "description": "Tenant database or product not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to delete product",
+                        "description": "Product or tenant not found",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -1864,82 +1551,6 @@ const docTemplate = `{
                 }
             }
         },
-        "modules.DecryptRequest": {
-            "type": "object",
-            "required": [
-                "encrypted_data"
-            ],
-            "properties": {
-                "content_type": {
-                    "type": "string"
-                },
-                "encrypted_data": {
-                    "type": "string"
-                }
-            }
-        },
-        "modules.DecryptResponse": {
-            "type": "object",
-            "properties": {
-                "algorithm": {
-                    "type": "string"
-                },
-                "content_type": {
-                    "type": "string"
-                },
-                "decrypted_data": {
-                    "type": "string"
-                },
-                "timestamp": {
-                    "type": "integer"
-                }
-            }
-        },
-        "modules.EncryptRequest": {
-            "type": "object",
-            "required": [
-                "data"
-            ],
-            "properties": {
-                "content_type": {
-                    "description": "e.g., \"application/json\", \"text/plain\"",
-                    "type": "string"
-                },
-                "data": {
-                    "type": "string"
-                }
-            }
-        },
-        "modules.EncryptResponse": {
-            "type": "object",
-            "properties": {
-                "algorithm": {
-                    "type": "string"
-                },
-                "content_type": {
-                    "type": "string"
-                },
-                "encrypted_data": {
-                    "type": "string"
-                },
-                "timestamp": {
-                    "type": "integer"
-                }
-            }
-        },
-        "modules.KeyRotateRequest": {
-            "type": "object",
-            "required": [
-                "new_key"
-            ],
-            "properties": {
-                "new_key": {
-                    "type": "string",
-                    "maxLength": 64,
-                    "minLength": 16
-                }
-            }
-        },
         "modules.MultiTenantOrder": {
             "type": "object"
         },
@@ -1950,6 +1561,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "description": {
+                    "type": "string"
+                },
+                "id": {
                     "type": "string"
                 },
                 "in_stock": {
@@ -1969,29 +1583,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "modules.StatusResponse": {
-            "type": "object",
-            "properties": {
-                "algorithm": {
-                    "type": "string"
-                },
-                "current_key": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "key_length": {
-                    "type": "integer"
-                },
-                "last_rotation": {
-                    "type": "integer"
-                },
-                "rotate_keys": {
-                    "type": "boolean"
                 }
             }
         },

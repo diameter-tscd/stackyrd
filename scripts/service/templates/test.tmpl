@@ -1,0 +1,72 @@
+package services_test
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"stackyrd/internal/services/modules"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/response"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+)
+
+func setupTestService() (*modules.{{SERVICE_NAME}}, *gin.Engine) {
+	gin.SetMode(gin.TestMode)
+	
+	l, _ := logger.NewLogger(logger.Config{
+		Level:  "error",
+		Format: "json",
+	})
+	
+	service := modules.New{{SERVICE_NAME}}(true, l)
+	
+	router := gin.New()
+	service.RegisterRoutes(router.Group("/api/v1"))
+	
+	return service, router
+}
+
+func TestNew{{SERVICE_NAME}}(t *testing.T) {
+	l, _ := logger.NewLogger(logger.Config{
+		Level:  "error",
+		Format: "json",
+	})
+	
+	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}}, l)
+	assert.NotNil(t, service, "expected service to be created")
+	assert.True(t, service.Enabled(), "expected service to be enabled")
+	assert.Equal(t, "{{SERVICE_NAME}} Service", service.Name(), "unexpected service name")
+	assert.Equal(t, "{{WIRE_NAME}}", service.WireName(), "unexpected wire name")
+}
+
+func Test{{SERVICE_NAME}}Disabled(t *testing.T) {
+	l, _ := logger.NewLogger(logger.Config{
+		Level:  "error",
+		Format: "json",
+	})
+	
+	service := modules.New{{SERVICE_NAME}}(false{{CONSTRUCTOR_ARGS}}, l)
+	assert.False(t, service.Enabled(), "expected service to be disabled")
+}
+
+func Test{{SERVICE_NAME}}Endpoints(t *testing.T) {
+	l, _ := logger.NewLogger(logger.Config{
+		Level:  "error",
+		Format: "json",
+	})
+	
+	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}}, l)
+	endpoints := service.Endpoints()
+	assert.NotEmpty(t, endpoints, "expected at least one endpoint")
+}
+
+func Test{{SERVICE_NAME}}RegisterRoutes(t *testing.T) {
+	_, router := setupTestService()
+	
+	// Test that routes are registered
+	routes := router.Routes()
+	assert.NotEmpty(t, routes, "expected routes to be registered")
+}

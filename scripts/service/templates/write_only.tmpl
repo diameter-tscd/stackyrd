@@ -1,0 +1,62 @@
+package modules
+
+import (
+	"stackyrd/config"
+	"stackyrd/pkg/interfaces"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/request"
+	"stackyrd/pkg/response"
+
+	"github.com/gin-gonic/gin"
+{{IMPORTS}}
+)
+
+type {{SERVICE_NAME}} struct {
+	enabled bool
+{{FIELDS}}
+	logger *logger.Logger
+}
+
+func New{{SERVICE_NAME}}(
+	enabled bool,
+{{PARAMS}}
+	logger *logger.Logger,
+) *{{SERVICE_NAME}} {
+	return &{{SERVICE_NAME}}{
+		enabled: enabled,
+{{ASSIGNMENTS}}
+		logger: logger,
+	}
+}
+
+func (s *{{SERVICE_NAME}}) Name() string     { return "{{SERVICE_NAME}} Service" }
+func (s *{{SERVICE_NAME}}) WireName() string { return "{{WIRE_NAME}}" }
+func (s *{{SERVICE_NAME}}) Enabled() bool    { return s.enabled }
+func (s *{{SERVICE_NAME}}) Get() interface{} { return s }
+func (s *{{SERVICE_NAME}}) Endpoints() []string {
+	return []string{"/{{SERVICE_NAME_LOWER}}"}
+}
+
+{{SWAGGER_ANNOTATIONS}}
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
+	{
+		sub.POST("", s.createHandler)
+		sub.PUT("/:id", s.updateHandler)
+	}
+}
+
+// createHandler handles POST /{{SERVICE_NAME_LOWER}}
+func (s *{{SERVICE_NAME}}) createHandler(c *gin.Context) {
+	// TODO: Implement create logic
+	response.Created(c, nil, "Create endpoint")
+}
+
+// updateHandler handles PUT /{{SERVICE_NAME_LOWER}}/:id
+func (s *{{SERVICE_NAME}}) updateHandler(c *gin.Context) {
+	// TODO: Implement update logic
+	id := c.Param("id")
+	response.Success(c, map[string]string{"id": id}, "Update endpoint")
+}
+
+{{INIT_FUNCTION}}

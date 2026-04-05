@@ -901,13 +901,19 @@ The project includes comprehensive build scripts for automated compilation, back
 
 ### 9.1.1 Service Generator (`scripts/service/service.go`)
 
-**Purpose**: Interactive service scaffolding tool that generates boilerplate service code and optional test files.
+**Purpose**: Interactive service scaffolding tool that generates boilerplate service code with embedded templates and comprehensive validation.
 
 **Features:**
-- **Interactive Prompts**: Guides through service name, wire name, file name, and dependency selection
+- **Embedded Templates**: All templates are embedded directly in the Go binary using `//go:embed` - no external template files needed
+- **6 Service Patterns**: Choose from Basic CRUD, Read-Only, Write-Only, Event-Driven, WebSocket, or Batch Processing patterns
+- **Interactive Prompts**: Guides through service name, wire name, file name, pattern selection, and dependency selection
 - **Dependency Selection**: Choose from 8 available infrastructure dependencies
-- **Test Generation**: Optional test file generation with configurable prompt (default: no)
-- **Template-Based**: Uses separate template files for service and test code
+- **Optional Database Model**: Auto-generates GORM model code when selected
+- **Automatic Swagger Annotations**: Generates Swagger documentation based on selected service pattern
+- **Custom Route Builder**: Interactive custom route definition with method, path, summary, and description
+- **Service Name Duplication Check**: Prevents creating services with names that already exist
+- **Method Duplication Check**: Scans all existing services and detects if any methods would conflict before generation
+- **Test Generation**: Optional test file generation
 - **Import Deduplication**: Automatically deduplicates imports when multiple dependencies share the same package
 - **Auto-Registration**: Generates init() function for automatic service registration
 
@@ -921,20 +927,34 @@ The project includes comprehensive build scripts for automated compilation, back
 7. GrafanaManager - Grafana monitoring dashboard manager
 8. CronManager - Cron job scheduler manager
 
-**Template Files:**
-- `scripts/service/structure` - Service code template
-- `scripts/service/structure_test` - Test code template
+**Service Patterns:**
+1. **Basic CRUD** - Standard Create, Read, Update, Delete operations
+2. **Read-Only** - Only list and get operations (no create/update/delete)
+3. **Write-Only** - Only create and update operations (no list/get)
+4. **Event-Driven** - Event publishing and subscription handlers
+5. **WebSocket** - Real-time WebSocket communication
+6. **Batch Processing** - Batch operations with worker pool
+
+**Template Files (Embedded):**
+- `templates/basic_crud.tmpl` - Basic CRUD operations template
+- `templates/read_only.tmpl` - Read-only operations template
+- `templates/write_only.tmpl` - Write-only operations template
+- `templates/event_driven.tmpl` - Event-driven operations template
+- `templates/websocket.tmpl` - WebSocket operations template
+- `templates/batch_processing.tmpl` - Batch processing template
+- `templates/test.tmpl` - Test file template
 
 **Usage:**
 ```bash
 # Interactive mode
-go run scripts/service/service.go
+cd scripts/service
+go run service.go
 
 # Dry run (analyze only)
-go run scripts/service/service.go --dry-run
+go run service.go --dry-run
 
 # Verbose output
-go run scripts/service/service.go --verbose
+go run service.go --verbose
 ```
 
 **Generated Output:**
@@ -945,8 +965,13 @@ go run scripts/service/service.go --verbose
 - Service struct with enabled flag and dependency fields
 - Constructor with dependency injection
 - Interface implementation (Name, WireName, Enabled, Endpoints, Get, RegisterRoutes)
-- Handler methods (list, create, get, update, delete)
+- Handler methods based on selected pattern
 - Auto-registration init function with dependency checks
+- Swagger annotations for all endpoints
+
+**Duplication Prevention:**
+- **Service Name Check**: Loops until a unique service name is provided
+- **Method Duplication Check**: Before generation, scans all existing `*_service.go` files and extracts public method names, then compares with methods that will be generated. If conflicts are found, displays error with list of conflicting methods and their source files, then exits.
 
 **Test Template Includes:**
 - Service creation tests

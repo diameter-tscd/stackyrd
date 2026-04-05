@@ -58,10 +58,54 @@ func (s *UsersService) Get() interface{} {
 func (s *UsersService) RegisterRoutes(g *gin.RouterGroup) {
 	sub := g.Group("/users")
 	{
+		// @Summary List users with pagination
+		// @Description Get a paginated list of users
+		// @Tags users
+		// @Accept json
+		// @Produce json
+		// @Param page query int false "Page number" default(1)
+		// @Param per_page query int false "Items per page" default(10)
+		// @Success 200 {object} response.Response{data=[]User} "Success"
+		// @Failure 400 {object} response.Response "Bad request"
+		// @Router /users [get]
 		sub.GET("", s.listUsers)
+
+		// @Summary Get user by ID
+		// @Description Get a specific user by ID
+		// @Tags users
+		// @Accept json
+		// @Produce json
+		// @Param id path int true "User ID"
+		// @Success 200 {object} response.Response{data=User} "Success"
+		// @Failure 404 {object} response.Response "User not found"
+		// @Router /users/{id} [get]
 		sub.GET("/:id", s.getUser)
+
+		// @Summary Create user
+		// @Description Create a new user
+		// @Tags users
+		// @Accept json
+		// @Produce json
+		// @Param user body User true "User data"
+		// @Success 201 {object} response.Response{data=User} "User created"
+		// @Failure 400 {object} response.Response "Invalid input"
+		// @Failure 422 {object} response.Response "Validation error"
+		// @Router /users [post]
 		sub.POST("", s.createUser)
+
+		// @Summary Update user
+		// @Description Update an existing user
+		// @Tags users
+		// @Accept json
+		// @Produce json
+		// @Param id path int true "User ID"
+		// @Param user body User true "User data"
+		// @Success 200 {object} response.Response{data=User} "User updated"
+		// @Failure 400 {object} response.Response "Invalid input"
+		// @Failure 404 {object} response.Response "User not found"
+		// @Router /users/{id} [put]
 		sub.PUT("/:id", s.updateUser)
+
 		// DELETE is blocked by PermissionCheck middleware
 	}
 }
@@ -160,74 +204,6 @@ func init() {
 	// Service registration is handled by the registry package
 	// UsersService does not require any dependencies and is always available
 }
-
-// Example handler showing Swagger annotations (for documentation)
-// GetUsers godoc
-// @Summary List users with pagination
-// @Description Get a paginated list of users
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param per_page query int false "Items per page" default(10)
-// @Success 200 {object} response.Response{data=[]User} "Success"
-// @Failure 400 {object} response.Response "Bad request"
-// @Router /users [get]
-func (s *UsersService) GetUsers(c *gin.Context) {
-	// This is just for Swagger documentation
-	// The actual implementation is in listUsers
-}
-
-// GetUser godoc
-// @Summary Get user by ID
-// @Description Get a specific user by ID
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path int true "User ID"
-// @Success 200 {object} response.Response{data=User} "Success"
-// @Failure 404 {object} response.Response "User not found"
-// @Router /users/{id} [get]
-func (s *UsersService) GetUser(c *gin.Context) {}
-
-// CreateUser godoc
-// @Summary Create user
-// @Description Create a new user
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param user body User true "User data"
-// @Success 201 {object} response.Response{data=User} "User created"
-// @Failure 400 {object} response.Response "Invalid input"
-// @Failure 422 {object} response.Response "Validation error"
-// @Router /users [post]
-func (s *UsersService) CreateUser(c *gin.Context) {}
-
-// UpdateUser godoc
-// @Summary Update user
-// @Description Update an existing user
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path int true "User ID"
-// @Param user body User true "User data"
-// @Success 200 {object} response.Response{data=User} "User updated"
-// @Failure 400 {object} response.Response "Invalid input"
-// @Failure 404 {object} response.Response "User not found"
-// @Router /users/{id} [put]
-func (s *UsersService) UpdateUser(c *gin.Context) {}
-
-// DeleteUser godoc
-// @Summary Delete user
-// @Description Delete a user by ID
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path int true "User ID"
-// @Success 204 "User deleted"
-// @Failure 404 {object} response.Response "User not found"
-// @Router /users/{id} [delete]
-func (s *UsersService) DeleteUser(c *gin.Context) {}
 
 // ValidateAge is a custom validator for age
 func ValidateAge(fl validator.FieldLevel) bool {

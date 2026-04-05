@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"flag"
 	"fmt"
 	"os"
@@ -15,12 +16,14 @@ import (
 	"time"
 )
 
+//go:embed templates/*
+var templatesFS embed.FS
+
 // Configuration variables
 var (
-	SERVICES_DIR  = "internal/services/modules"
-	MODULE_NAME   = "stackyrd"
-	STRUCTURE_DIR = "scripts/service"
-	TESTS_DIR     = "tests/services"
+	SERVICES_DIR = "internal/services/modules"
+	MODULE_NAME  = "stackyrd"
+	TESTS_DIR    = "tests/services"
 )
 
 // ANSI Colors
@@ -45,6 +48,46 @@ const (
 	WHITE    = "\033[97m"
 	B_WHITE  = "\033[1;97m"
 )
+
+// Service patterns
+type ServicePattern struct {
+	Name        string
+	Description string
+	Template    string
+}
+
+var SERVICE_PATTERNS = []ServicePattern{
+	{
+		Name:        "Basic CRUD",
+		Description: "Standard Create, Read, Update, Delete operations",
+		Template:    "basic_crud",
+	},
+	{
+		Name:        "Read-Only",
+		Description: "Only list and get operations (no create/update/delete)",
+		Template:    "read_only",
+	},
+	{
+		Name:        "Write-Only",
+		Description: "Only create and update operations (no list/get)",
+		Template:    "write_only",
+	},
+	{
+		Name:        "Event-Driven",
+		Description: "Event publishing and subscription handlers",
+		Template:    "event_driven",
+	},
+	{
+		Name:        "WebSocket",
+		Description: "Real-time WebSocket communication",
+		Template:    "websocket",
+	},
+	{
+		Name:        "Batch Processing",
+		Description: "Batch operations with worker pool",
+		Template:    "batch_processing",
+	},
+}
 
 // Available dependencies
 type Dependency struct {
@@ -105,6 +148,15 @@ var AVAILABLE_DEPENDENCIES = []Dependency{
 	},
 }
 
+// Custom route definition
+type CustomRoute struct {
+	Method      string
+	Path        string
+	HandlerName string
+	Summary     string
+	Description string
+}
+
 // Service configuration
 type ServiceConfig struct {
 	ServiceName     string
@@ -113,6 +165,9 @@ type ServiceConfig struct {
 	Dependencies    []Dependency
 	HasDependencies bool
 	GenerateTests   bool
+	GenerateModel   bool
+	ServicePattern  ServicePattern
+	CustomRoutes    []CustomRoute
 	Verbose         bool
 	DryRun          bool
 }
@@ -219,14 +274,14 @@ func (ctx *ServiceContext) ensureProjectRoot(logger *Logger) error {
 
 		ctx.ProjectDir = projectRoot
 		ctx.ServicesDir = filepath.Join(projectRoot, SERVICES_DIR)
-		ctx.StructureDir = filepath.Join(projectRoot, STRUCTURE_DIR)
+		ctx.StructureDir = filepath.Join(projectRoot, "scripts/service")
 
 		logger.Success("Now in project root")
 	} else {
 		logger.Info("Already in project root")
 		ctx.ProjectDir = projectRoot
 		ctx.ServicesDir = filepath.Join(projectRoot, SERVICES_DIR)
-		ctx.StructureDir = filepath.Join(projectRoot, STRUCTURE_DIR)
+		ctx.StructureDir = filepath.Join(projectRoot, "scripts/service")
 	}
 
 	return nil
@@ -234,21 +289,36 @@ func (ctx *ServiceContext) ensureProjectRoot(logger *Logger) error {
 
 // promptServiceName prompts for the service name
 func (ctx *ServiceContext) promptServiceName(logger *Logger) error {
-	logger.Prompt("Enter service name (e.g., Orders, Inventory): ")
+	for {
+		logger.Prompt("Enter service name (e.g., Orders, Inventory): ")
 
-	var serviceName string
-	fmt.Scanln(&serviceName)
+		var serviceName string
+		fmt.Scanln(&serviceName)
 
-	if serviceName == "" {
-		return fmt.Errorf("service name cannot be empty")
+		if serviceName == "" {
+			logger.Error("Service name cannot be empty")
+			continue
+		}
+
+		// Capitalize first letter
+		serviceName = strings.ToUpper(serviceName[:1]) + serviceName[1:]
+
+		// Check for duplicates
+		exists, err := ctx.checkServiceExists(serviceName)
+		if err != nil {
+			logger.Error("Error checking for existing service: %v", err)
+			return err
+		}
+
+		if exists {
+			logger.Warn("A service with name '%s' already exists. Please choose a different name.", serviceName)
+			continue
+		}
+
+		ctx.Config.ServiceName = serviceName
+		logger.Success("Service name: %s", serviceName)
+		return nil
 	}
-
-	// Capitalize first letter
-	serviceName = strings.ToUpper(serviceName[:1]) + serviceName[1:]
-	ctx.Config.ServiceName = serviceName
-
-	logger.Success("Service name: %s", serviceName)
-	return nil
 }
 
 // promptWireName prompts for the wire name
@@ -291,6 +361,37 @@ func (ctx *ServiceContext) promptFileName(logger *Logger) error {
 	ctx.Config.FileName = fileName
 
 	logger.Success("File name: %s", fileName)
+	return nil
+}
+
+// promptServicePattern prompts for service pattern selection
+func (ctx *ServiceContext) promptServicePattern(logger *Logger) error {
+	logger.Info("Select service pattern:")
+	fmt.Println("")
+
+	for i, pattern := range SERVICE_PATTERNS {
+		fmt.Printf("  %s[%d]%s %s%s%s - %s\n", B_CYAN, i+1, RESET, B_WHITE, pattern.Name, RESET, pattern.Description)
+	}
+
+	fmt.Println("")
+
+	logger.Prompt("Enter pattern number (default: 1): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	if input == "" {
+		ctx.Config.ServicePattern = SERVICE_PATTERNS[0]
+	} else {
+		var idx int
+		if _, err := fmt.Sscanf(input, "%d", &idx); err != nil || idx < 1 || idx > len(SERVICE_PATTERNS) {
+			logger.Warn("Invalid pattern, using Basic CRUD")
+			idx = 1
+		}
+		ctx.Config.ServicePattern = SERVICE_PATTERNS[idx-1]
+	}
+
+	logger.Success("Selected pattern: %s", ctx.Config.ServicePattern.Name)
 	return nil
 }
 
@@ -359,6 +460,71 @@ func (ctx *ServiceContext) promptGenerateTests(logger *Logger) error {
 	return nil
 }
 
+// promptGenerateModel prompts for database model generation
+func (ctx *ServiceContext) promptGenerateModel(logger *Logger) error {
+	logger.Prompt("Generate database model (GORM)? (y/N, default: N): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	if strings.ToLower(input) == "y" || strings.ToLower(input) == "yes" {
+		ctx.Config.GenerateModel = true
+		logger.Success("Database model will be generated")
+	} else {
+		ctx.Config.GenerateModel = false
+		logger.Info("Skipping database model generation")
+	}
+
+	return nil
+}
+
+// promptCustomRoutes prompts for custom routes
+func (ctx *ServiceContext) promptCustomRoutes(logger *Logger) error {
+	logger.Prompt("Add custom routes? (y/N, default: N): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	if strings.ToLower(input) != "y" && strings.ToLower(input) != "yes" {
+		logger.Info("No custom routes added")
+		return nil
+	}
+
+	for {
+		route := CustomRoute{}
+
+		logger.Prompt("Enter route path (e.g., /search, /bulk): ")
+		fmt.Scanln(&route.Path)
+		if route.Path == "" {
+			break
+		}
+
+		logger.Prompt("Enter HTTP method (GET/POST/PUT/DELETE): ")
+		fmt.Scanln(&route.Method)
+		route.Method = strings.ToUpper(route.Method)
+
+		logger.Prompt("Enter handler summary (e.g., Search items): ")
+		fmt.Scanln(&route.Summary)
+
+		logger.Prompt("Enter handler description: ")
+		fmt.Scanln(&route.Description)
+
+		// Generate handler name from path
+		route.HandlerName = strings.ToLower(route.Method) + strings.ToUpper(route.Path[1:2]) + route.Path[2:]
+
+		ctx.Config.CustomRoutes = append(ctx.Config.CustomRoutes, route)
+		logger.Success("Added route: %s %s", route.Method, route.Path)
+
+		logger.Prompt("Add another route? (y/N): ")
+		fmt.Scanln(&input)
+		if strings.ToLower(input) != "y" && strings.ToLower(input) != "yes" {
+			break
+		}
+	}
+
+	return nil
+}
+
 // buildConstructorArgs builds the constructor arguments for tests
 func (ctx *ServiceContext) buildConstructorArgs() string {
 	if !ctx.Config.HasDependencies {
@@ -373,41 +539,6 @@ func (ctx *ServiceContext) buildConstructorArgs() string {
 	return ", " + strings.Join(args, ", ") + ", nil"
 }
 
-// generateTestFile generates the test file
-func (ctx *ServiceContext) generateTestFile(logger *Logger) error {
-	if !ctx.Config.GenerateTests {
-		return nil
-	}
-
-	logger.Info("Generating test file...")
-
-	// Read the test structure template
-	structurePath := filepath.Join(ctx.StructureDir, "structure_test")
-	template, err := os.ReadFile(structurePath)
-	if err != nil {
-		return fmt.Errorf("failed to read test structure template: %w", err)
-	}
-
-	content := string(template)
-	content = strings.ReplaceAll(content, "{{SERVICE_NAME}}", ctx.Config.ServiceName)
-	content = strings.ReplaceAll(content, "{{SERVICE_NAME_LOWER}}", strings.ToLower(ctx.Config.ServiceName))
-	content = strings.ReplaceAll(content, "{{WIRE_NAME}}", ctx.Config.WireName)
-	content = strings.ReplaceAll(content, "{{CONSTRUCTOR_ARGS}}", ctx.buildConstructorArgs())
-
-	// Clean up extra newlines
-	content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
-
-	// Write the file
-	testFileName := strings.ToLower(ctx.Config.ServiceName) + "_service_test.go"
-	filePath := filepath.Join(ctx.ProjectDir, TESTS_DIR, testFileName)
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write test file: %w", err)
-	}
-
-	logger.Success("Test file generated: %s", testFileName)
-	return nil
-}
-
 // displayConfiguration displays the service configuration
 func (ctx *ServiceContext) displayConfiguration(logger *Logger) {
 	fmt.Println("")
@@ -418,6 +549,7 @@ func (ctx *ServiceContext) displayConfiguration(logger *Logger) {
 	fmt.Printf(" %sService Name:%s %s\n", B_CYAN, RESET, ctx.Config.ServiceName)
 	fmt.Printf(" %sWire Name:%s %s\n", B_CYAN, RESET, ctx.Config.WireName)
 	fmt.Printf(" %sFile Name:%s %s\n", B_CYAN, RESET, ctx.Config.FileName)
+	fmt.Printf(" %sPattern:%s %s\n", B_CYAN, RESET, ctx.Config.ServicePattern.Name)
 	fmt.Printf(" %sFile Path:%s %s\n", B_CYAN, RESET, filepath.Join(ctx.ServicesDir, ctx.Config.FileName))
 
 	if len(ctx.Config.Dependencies) > 0 {
@@ -429,6 +561,16 @@ func (ctx *ServiceContext) displayConfiguration(logger *Logger) {
 		fmt.Printf("\n %sDependencies:%s None\n", B_CYAN, RESET)
 	}
 
+	if len(ctx.Config.CustomRoutes) > 0 {
+		fmt.Printf("\n %sCustom Routes:%s\n", B_CYAN, RESET)
+		for _, route := range ctx.Config.CustomRoutes {
+			fmt.Printf("   • %s %s\n", route.Method, route.Path)
+		}
+	}
+
+	fmt.Printf("\n %sGenerate Tests:%s %v\n", B_CYAN, RESET, ctx.Config.GenerateTests)
+	fmt.Printf(" %sGenerate Model:%s %v\n", B_CYAN, RESET, ctx.Config.GenerateModel)
+
 	fmt.Println(GRAY + "======================================================================" + RESET)
 }
 
@@ -437,6 +579,24 @@ func (ctx *ServiceContext) askUserForConfirmation(logger *Logger) error {
 	if ctx.Config.DryRun {
 		logger.Info("Dry run mode - skipping generation")
 		return nil
+	}
+
+	// Check for method duplication
+	conflicts, err := ctx.checkMethodDuplication(logger)
+	if err != nil {
+		logger.Warn("Error checking method duplication: %v", err)
+	}
+
+	if len(conflicts) > 0 {
+		logger.Error("Method duplication detected!")
+		fmt.Println("")
+		fmt.Println(" The following methods already exist in other services:")
+		for _, conflict := range conflicts {
+			fmt.Printf("   %s⚠%s %s\n", B_RED, RESET, conflict)
+		}
+		fmt.Println("")
+		logger.Warn("Please choose a different service name or modify your custom routes.")
+		os.Exit(1)
 	}
 
 	fmt.Printf("%sProceed with generation? (Y/n, timeout 10s): %s", B_YELLOW, RESET)
@@ -463,12 +623,12 @@ func (ctx *ServiceContext) askUserForConfirmation(logger *Logger) error {
 	return nil
 }
 
-// readStructureTemplate reads the structure template file
-func (ctx *ServiceContext) readStructureTemplate(logger *Logger) (string, error) {
-	structurePath := filepath.Join(ctx.StructureDir, "structure")
-	content, err := os.ReadFile(structurePath)
+// readTemplate reads a template from embedded filesystem
+func (ctx *ServiceContext) readTemplate(templateName string) (string, error) {
+	path := fmt.Sprintf("templates/%s.tmpl", templateName)
+	content, err := templatesFS.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read structure template: %w", err)
+		return "", fmt.Errorf("failed to read template %s: %w", templateName, err)
 	}
 	return string(content), nil
 }
@@ -589,12 +749,92 @@ func init() {
 }`, configKey, dependencyChecks.String(), ctx.Config.ServiceName, dependencyParams.String())
 }
 
+// buildSwaggerAnnotations builds Swagger annotations for routes
+func (ctx *ServiceContext) buildSwaggerAnnotations() string {
+	var annotations strings.Builder
+	serviceNameLower := strings.ToLower(ctx.Config.ServiceName)
+
+	// Standard CRUD annotations based on pattern
+	switch ctx.Config.ServicePattern.Template {
+	case "basic_crud":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "", "List "+serviceNameLower, "Get a list of all "+serviceNameLower, serviceNameLower, "200", "array"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "/:id", "Get "+serviceNameLower[:len(serviceNameLower)-1], "Get a specific "+serviceNameLower[:len(serviceNameLower)-1]+" by ID", serviceNameLower, "200", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("POST", "", "Create "+serviceNameLower[:len(serviceNameLower)-1], "Create a new "+serviceNameLower[:len(serviceNameLower)-1], serviceNameLower, "201", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("PUT", "/:id", "Update "+serviceNameLower[:len(serviceNameLower)-1], "Update an existing "+serviceNameLower[:len(serviceNameLower)-1], serviceNameLower, "200", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("DELETE", "/:id", "Delete "+serviceNameLower[:len(serviceNameLower)-1], "Delete a "+serviceNameLower[:len(serviceNameLower)-1], serviceNameLower, "204", ""))
+
+	case "read_only":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "", "List "+serviceNameLower, "Get a list of all "+serviceNameLower, serviceNameLower, "200", "array"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "/:id", "Get "+serviceNameLower[:len(serviceNameLower)-1], "Get a specific "+serviceNameLower[:len(serviceNameLower)-1]+" by ID", serviceNameLower, "200", "object"))
+
+	case "write_only":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("POST", "", "Create "+serviceNameLower[:len(serviceNameLower)-1], "Create a new "+serviceNameLower[:len(serviceNameLower)-1], serviceNameLower, "201", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("PUT", "/:id", "Update "+serviceNameLower[:len(serviceNameLower)-1], "Update an existing "+serviceNameLower[:len(serviceNameLower)-1], serviceNameLower, "200", "object"))
+
+	case "event_driven":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("POST", "/publish", "Publish event", "Publish an event to the "+serviceNameLower, serviceNameLower, "200", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "/subscribe", "Subscribe to events", "Subscribe to "+serviceNameLower+" events", serviceNameLower, "200", "stream"))
+
+	case "websocket":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "/ws", "WebSocket connection", "Establish WebSocket connection for "+serviceNameLower, serviceNameLower, "101", "websocket"))
+
+	case "batch_processing":
+		annotations.WriteString(ctx.buildSwaggerAnnotation("POST", "/batch", "Batch process", "Process multiple items in batch", serviceNameLower, "200", "object"))
+		annotations.WriteString(ctx.buildSwaggerAnnotation("GET", "/batch/status", "Get batch status", "Get status of batch processing", serviceNameLower, "200", "object"))
+	}
+
+	// Custom route annotations
+	for _, route := range ctx.Config.CustomRoutes {
+		annotations.WriteString(ctx.buildSwaggerAnnotation(route.Method, route.Path, route.Summary, route.Description, serviceNameLower, "200", "object"))
+	}
+
+	return annotations.String()
+}
+
+func (ctx *ServiceContext) buildSwaggerAnnotation(method, path, summary, description, tag, successCode, successType string) string {
+	produces := "application/json"
+	if successType == "stream" {
+		produces = "text/event-stream"
+	} else if successType == "websocket" {
+		produces = "text/plain"
+	}
+
+	annotation := fmt.Sprintf(`// @Summary %s
+// @Description %s
+// @Tags %s
+// @Accept json
+// @Produce %s
+`, summary, description, tag, produces)
+
+	if path != "" && strings.Contains(path, ":id") {
+		annotation += fmt.Sprintf(`// @Param id path int true "Item ID"
+`)
+	}
+
+	if method == "POST" || method == "PUT" {
+		annotation += fmt.Sprintf(`// @Param request body interface{} true "Request body"
+`)
+	}
+
+	if successType != "" {
+		annotation += fmt.Sprintf(`// @Success %s {object} response.Response "Success"
+`, successCode)
+	}
+
+	annotation += fmt.Sprintf(`// @Failure 400 {object} response.Response "Bad request"
+// @Failure 500 {object} response.Response "Internal server error"
+// @Router /%s%s [%s]
+`, strings.ToLower(ctx.Config.ServiceName), path, strings.ToLower(method))
+
+	return annotation + "\n"
+}
+
 // generateService generates the service Go file
 func (ctx *ServiceContext) generateService(logger *Logger) error {
 	logger.Info("Generating service file...")
 
-	// Read the structure template
-	template, err := ctx.readStructureTemplate(logger)
+	// Read the template based on service pattern
+	template, err := ctx.readTemplate(ctx.Config.ServicePattern.Template)
 	if err != nil {
 		return err
 	}
@@ -606,6 +846,7 @@ func (ctx *ServiceContext) generateService(logger *Logger) error {
 	assignments := ctx.buildAssignments()
 	initFunction := ctx.buildInitFunction()
 	serviceNameLower := strings.ToLower(ctx.Config.ServiceName)
+	swaggerAnnotations := ctx.buildSwaggerAnnotations()
 
 	// Replace placeholders
 	content := template
@@ -617,6 +858,15 @@ func (ctx *ServiceContext) generateService(logger *Logger) error {
 	content = strings.ReplaceAll(content, "{{PARAMS}}", params)
 	content = strings.ReplaceAll(content, "{{ASSIGNMENTS}}", assignments)
 	content = strings.ReplaceAll(content, "{{INIT_FUNCTION}}", initFunction)
+	content = strings.ReplaceAll(content, "{{SWAGGER_ANNOTATIONS}}", swaggerAnnotations)
+
+	// Handle model generation
+	if ctx.Config.GenerateModel {
+		modelContent := ctx.generateModelCode()
+		content = strings.ReplaceAll(content, "{{MODEL_CODE}}", modelContent)
+	} else {
+		content = strings.ReplaceAll(content, "{{MODEL_CODE}}", "")
+	}
 
 	// Clean up extra newlines
 	content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
@@ -631,6 +881,204 @@ func (ctx *ServiceContext) generateService(logger *Logger) error {
 	return nil
 }
 
+// generateModelCode generates GORM model code
+func (ctx *ServiceContext) generateModelCode() string {
+	modelName := ctx.Config.ServiceName[:len(ctx.Config.ServiceName)-1] // Remove 's' from service name
+	serviceNameLower := strings.ToLower(ctx.Config.ServiceName)
+
+	return fmt.Sprintf(`// %s represents the database model for %s
+type %s struct {
+	ID        uint   `+"`gorm:\"primaryKey\" json:\"id\"`"+`
+	Name      string `+"`gorm:\"size:255;not null\" json:\"name\"`"+`
+	CreatedAt time.Time `+"`json:\"created_at\"`"+`
+	UpdatedAt time.Time `+"`json:\"updated_at\"`"+`
+}
+
+func (%s) TableName() string {
+	return \"%s\"
+}`, modelName, serviceNameLower, modelName, modelName, serviceNameLower)
+}
+
+// checkServiceExists checks if a service with the given name already exists
+func (ctx *ServiceContext) checkServiceExists(serviceName string) (bool, error) {
+	// Convert service name to file name format
+	fileName := strings.ToLower(serviceName) + "_service.go"
+	filePath := filepath.Join(ctx.ServicesDir, fileName)
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+// checkMethodDuplication checks if any methods in the new service would conflict with existing services
+func (ctx *ServiceContext) checkMethodDuplication(logger *Logger) ([]string, error) {
+	var conflicts []string
+
+	// Get all service files in the modules directory
+	entries, err := os.ReadDir(ctx.ServicesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // Directory doesn't exist yet
+		}
+		return nil, err
+	}
+
+	// Collect all existing method names
+	existingMethods := make(map[string]string) // method -> file
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_service.go") {
+			continue
+		}
+
+		filePath := filepath.Join(ctx.ServicesDir, entry.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		// Extract method names from the file
+		methods := extractMethodNames(string(content))
+		for _, method := range methods {
+			if _, exists := existingMethods[method]; !exists {
+				existingMethods[method] = entry.Name()
+			}
+		}
+	}
+
+	// Get methods that will be generated based on pattern
+	newMethods := ctx.getPatternMethods()
+
+	// Check for conflicts
+	for _, method := range newMethods {
+		if existingFile, exists := existingMethods[method]; exists {
+			conflicts = append(conflicts, fmt.Sprintf("%s (already in %s)", method, existingFile))
+		}
+	}
+
+	// Check custom routes for conflicts
+	for _, route := range ctx.Config.CustomRoutes {
+		handlerName := route.HandlerName
+		if existingFile, exists := existingMethods[handlerName]; exists {
+			conflicts = append(conflicts, fmt.Sprintf("%s (already in %s)", handlerName, existingFile))
+		}
+	}
+
+	return conflicts, nil
+}
+
+// extractMethodNames extracts public method names from Go source code
+func extractMethodNames(content string) []string {
+	var methods []string
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for function definitions: func (s *ServiceName) MethodName(
+		if strings.HasPrefix(line, "func (") {
+			// Extract method name between ) and (
+			parts := strings.Split(line, ") ")
+			if len(parts) < 2 {
+				continue
+			}
+
+			secondPart := parts[1]
+			// Get the method name (before the opening parenthesis)
+			if idx := strings.Index(secondPart, "("); idx > 0 {
+				methodName := secondPart[:idx]
+				// Only include exported methods (starting with uppercase)
+				if len(methodName) > 0 && methodName[0] >= 'A' && methodName[0] <= 'Z' {
+					methods = append(methods, methodName)
+				}
+			}
+		}
+	}
+
+	return methods
+}
+
+// getPatternMethods returns the method names that will be generated for the current pattern
+func (ctx *ServiceContext) getPatternMethods() []string {
+	serviceName := ctx.Config.ServiceName
+	var methods []string
+
+	switch ctx.Config.ServicePattern.Template {
+	case "basic_crud":
+		methods = []string{
+			"List" + serviceName,
+			"Get" + serviceName[:len(serviceName)-1],
+			"Create" + serviceName[:len(serviceName)-1],
+			"Update" + serviceName[:len(serviceName)-1],
+			"Delete" + serviceName[:len(serviceName)-1],
+		}
+	case "read_only":
+		methods = []string{
+			"List" + serviceName,
+			"Get" + serviceName[:len(serviceName)-1],
+		}
+	case "write_only":
+		methods = []string{
+			"Create" + serviceName[:len(serviceName)-1],
+			"Update" + serviceName[:len(serviceName)-1],
+		}
+	case "event_driven":
+		methods = []string{
+			"Publish" + serviceName,
+			"Subscribe" + serviceName,
+		}
+	case "websocket":
+		methods = []string{
+			"HandleWebSocket" + serviceName,
+		}
+	case "batch_processing":
+		methods = []string{
+			"BatchProcess" + serviceName,
+			"GetBatchStatus" + serviceName,
+		}
+	}
+
+	return methods
+}
+
+// generateTestFile generates the test file
+func (ctx *ServiceContext) generateTestFile(logger *Logger) error {
+	if !ctx.Config.GenerateTests {
+		return nil
+	}
+
+	logger.Info("Generating test file...")
+
+	// Read the test template
+	template, err := ctx.readTemplate("test")
+	if err != nil {
+		return err
+	}
+
+	content := template
+	content = strings.ReplaceAll(content, "{{SERVICE_NAME}}", ctx.Config.ServiceName)
+	content = strings.ReplaceAll(content, "{{SERVICE_NAME_LOWER}}", strings.ToLower(ctx.Config.ServiceName))
+	content = strings.ReplaceAll(content, "{{WIRE_NAME}}", ctx.Config.WireName)
+	content = strings.ReplaceAll(content, "{{CONSTRUCTOR_ARGS}}", ctx.buildConstructorArgs())
+
+	// Clean up extra newlines
+	content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+
+	// Write the file
+	testFileName := strings.ToLower(ctx.Config.ServiceName) + "_service_test.go"
+	filePath := filepath.Join(ctx.ProjectDir, TESTS_DIR, testFileName)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write test file: %w", err)
+	}
+
+	logger.Success("Test file generated: %s", testFileName)
+	return nil
+}
+
 // displaySummary displays the generation summary
 func (ctx *ServiceContext) displaySummary(logger *Logger) {
 	fmt.Println("")
@@ -641,10 +1089,20 @@ func (ctx *ServiceContext) displaySummary(logger *Logger) {
 	fmt.Printf(" %s✓%s Service file created: %s\n", B_GREEN, RESET, ctx.Config.FileName)
 	fmt.Printf(" %s✓%s Service struct: %s\n", B_GREEN, RESET, ctx.Config.ServiceName)
 	fmt.Printf(" %s✓%s Wire name: %s\n", B_GREEN, RESET, ctx.Config.WireName)
+	fmt.Printf(" %s✓%s Service pattern: %s\n", B_GREEN, RESET, ctx.Config.ServicePattern.Name)
 	fmt.Printf(" %s✓%s Auto-registration: Enabled\n", B_GREEN, RESET)
+	fmt.Printf(" %s✓%s Swagger annotations: Generated\n", B_GREEN, RESET)
 
 	if len(ctx.Config.Dependencies) > 0 {
 		fmt.Printf(" %s✓%s Dependencies: %d configured\n", B_GREEN, RESET, len(ctx.Config.Dependencies))
+	}
+
+	if ctx.Config.GenerateModel {
+		fmt.Printf(" %s✓%s Database model: Generated\n", B_GREEN, RESET)
+	}
+
+	if ctx.Config.GenerateTests {
+		fmt.Printf(" %s✓%s Test file: Generated\n", B_GREEN, RESET)
 	}
 
 	fmt.Println("")
@@ -653,7 +1111,7 @@ func (ctx *ServiceContext) displaySummary(logger *Logger) {
 	fmt.Printf("      services:\n        %s: true\n", strings.ToLower(ctx.Config.ServiceName)+"_service")
 	fmt.Println("")
 	fmt.Println("   2. Implement business logic in handler methods")
-	fmt.Println("   3. Add swagger annotations for API documentation")
+	fmt.Println("   3. Regenerate Swagger docs: go run scripts/swagger/swagger.go")
 	fmt.Println("   4. Test the service endpoints")
 	fmt.Println("")
 	fmt.Println(GRAY + "======================================================================" + RESET)
@@ -735,8 +1193,11 @@ func main() {
 		{"Prompting for service name", ctx.promptServiceName},
 		{"Prompting for wire name", ctx.promptWireName},
 		{"Prompting for file name", ctx.promptFileName},
+		{"Selecting service pattern", ctx.promptServicePattern},
 		{"Prompting for dependencies", ctx.promptDependencies},
 		{"Prompting for test generation", ctx.promptGenerateTests},
+		{"Prompting for database model", ctx.promptGenerateModel},
+		{"Prompting for custom routes", ctx.promptCustomRoutes},
 		{"Displaying configuration", func(l *Logger) error {
 			ctx.displayConfiguration(l)
 			return nil

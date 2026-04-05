@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -15,12 +16,11 @@ import (
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 
-	"github.com/labstack/echo/v4"
-	echoMiddleware "github.com/labstack/echo/v4/middleware"
+	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	echo             *echo.Echo
+	gin              *gin.Engine
 	config           *config.Config
 	logger           *logger.Logger
 	dependencies     *registry.Dependencies
@@ -28,40 +28,26 @@ type Server struct {
 }
 
 func New(cfg *config.Config, l *logger.Logger) *Server {
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-	e.Use(echoMiddleware.Gzip())
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
 
-	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		l.Error("HTTP Error", err)
+	// Custom error handler
+	r.NoRoute(func(c *gin.Context) {
+		l.Warn("Endpoint not found", "path", c.Request.URL.Path, "method", c.Request.Method)
+		response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]interface{}{
+			"path":   c.Request.URL.Path,
+			"method": c.Request.Method,
+		})
+	})
 
-		if he, ok := err.(*echo.HTTPError); ok {
-			code := he.Code
-			message := "An unexpected error occurred"
-
-			if msg, ok := he.Message.(string); ok {
-				message = msg
-			}
-
-			if code == 404 {
-				message = "Endpoint not found. This incident will be reported."
-				response.Error(c, code, "ENDPOINT_NOT_FOUND", message, map[string]interface{}{
-					"path":   c.Request().URL.Path,
-					"method": c.Request().Method,
-				})
-				return
-			}
-
-			response.Error(c, code, "HTTP_ERROR", message)
-			return
-		}
-
-		response.InternalServerError(c, "An unexpected error occurred")
-	}
+	r.NoMethod(func(c *gin.Context) {
+		l.Warn("Method not allowed")
+		response.Error(c, http.StatusMethodNotAllowed, "HTTP_ERROR", "Method not allowed")
+	})
 
 	return &Server{
-		echo:   e,
+		gin:    r,
 		config: cfg,
 		logger: l,
 	}
@@ -85,14 +71,14 @@ func (s *Server) Start() error {
 	s.setConnectionDefaults()
 
 	s.logger.Info("Initializing Middleware...")
-	middleware.InitMiddlewares(s.echo, middleware.Config{
+	middleware.InitMiddlewares(s.gin, middleware.Config{
 		AuthType: s.config.Auth.Type,
 		Logger:   s.logger,
 	})
 
 	if s.config.Encryption.Enabled {
 		s.logger.Info("Initializing Encryption Middleware...")
-		s.echo.Use(middleware.EncryptionMiddleware(s.config, s.logger))
+		s.gin.Use(middleware.EncryptionMiddleware(s.config, s.logger))
 	}
 
 	s.logger.Info("Booting Services...")
@@ -108,14 +94,14 @@ func (s *Server) Start() error {
 		s.logger.Warn("No services registered!")
 	}
 
-	serviceRegistry.Boot(s.echo)
+	serviceRegistry.Boot(s.gin)
 	s.logger.Info("All services boot successfully")
 
 	port := s.config.Server.Port
 	s.logger.Info("HTTP server starting immediately", "port", port, "env", s.config.App.Env)
 	s.logger.Info("Infrastructure components initializing in background...")
 
-	return s.echo.Start(":" + port)
+	return s.gin.Run(":" + port)
 }
 
 func (s *Server) setConnectionDefaults() {
@@ -143,8 +129,8 @@ func (s *Server) setConnectionDefaults() {
 }
 
 func (s *Server) registerHealthEndpoints() {
-	s.echo.GET("/health", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{
+	s.gin.GET("/health", func(c *gin.Context) {
+		response.Success(c, map[string]interface{}{
 			"status":                  "ok",
 			"server_ready":            true,
 			"infrastructure":          s.infraInitManager.GetStatus(),
@@ -152,16 +138,16 @@ func (s *Server) registerHealthEndpoints() {
 		})
 	})
 
-	s.echo.GET("/health/infrastructure", func(c echo.Context) error {
-		return response.Success(c, s.infraInitManager.GetStatus())
+	s.gin.GET("/health/infrastructure", func(c *gin.Context) {
+		response.Success(c, s.infraInitManager.GetStatus())
 	})
 
-	s.echo.POST("/restart", func(c echo.Context) error {
+	s.gin.POST("/restart", func(c *gin.Context) {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			os.Exit(1)
 		}()
-		return response.Success(c, map[string]string{"status": "restarting", "message": "Service is restarting..."})
+		response.Success(c, map[string]string{"status": "restarting", "message": "Service is restarting..."})
 	})
 }
 

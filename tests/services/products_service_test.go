@@ -1,69 +1,76 @@
-package services_test
+package services
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"stackyrd/internal/services/modules"
-	testhelpers "stackyrd/pkg/testing"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/response"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestNewProductsService(t *testing.T) {
-	service := modules.NewProductsService(true)
-	if service == nil {
-		t.Fatal("expected service to be created")
-	}
-	if !service.Enabled() {
-		t.Error("expected service to be enabled")
-	}
-	if service.Name() != "Products Service" {
-		t.Errorf("expected name 'Products Service', got %q", service.Name())
-	}
-	if service.WireName() != "products-service" {
-		t.Errorf("expected wire name 'products-service', got %q", service.WireName())
-	}
+func setupProductsTestRouter(service *modules.ProductsService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	group := r.Group("/api/v1")
+	service.RegisterRoutes(group)
+	return r
 }
 
-func TestProductsServiceDisabled(t *testing.T) {
-	service := modules.NewProductsService(false)
-	if service.Enabled() {
-		t.Error("expected service to be disabled")
-	}
+func TestProductsService_Name(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewProductsService(true, l)
+	assert.Equal(t, "Products Service", service.Name())
 }
 
-func TestProductsServiceEndpoints(t *testing.T) {
-	service := modules.NewProductsService(true)
+func TestProductsService_WireName(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewProductsService(true, l)
+	assert.Equal(t, "products", service.WireName())
+}
+
+func TestProductsService_Enabled(t *testing.T) {
+	l := logger.New(false, nil)
+
+	service := modules.NewProductsService(true, l)
+	assert.True(t, service.Enabled())
+
+	disabledService := modules.NewProductsService(false, l)
+	assert.False(t, disabledService.Enabled())
+}
+
+func TestProductsService_Endpoints(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewProductsService(true, l)
 	endpoints := service.Endpoints()
-	if len(endpoints) != 1 {
-		t.Fatalf("expected 1 endpoint, got %d", len(endpoints))
-	}
-	if endpoints[0] != "/products" {
-		t.Errorf("expected endpoint '/products', got %q", endpoints[0])
-	}
+
+	assert.Contains(t, endpoints, "/products")
 }
 
-func TestProductsServiceRegisterRoutes(t *testing.T) {
-	service := modules.NewProductsService(true)
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("RegisterRoutes panicked: %v", r)
-		}
-	}()
+func TestProductsService_GetProducts(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewProductsService(true, l)
+	router := setupProductsTestRouter(service)
 
-	e := testhelpers.NewTestEcho()
-	g := e.Group("/api/v1")
-	service.RegisterRoutes(g)
+	req, _ := http.NewRequest("GET", "/api/v1/products", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp response.Response
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
-func BenchmarkProductsServiceName(b *testing.B) {
-	service := modules.NewProductsService(true)
-	for i := 0; i < b.N; i++ {
-		_ = service.Name()
-	}
-}
-
-func BenchmarkProductsServiceEnabled(b *testing.B) {
-	service := modules.NewProductsService(true)
-	for i := 0; i < b.N; i++ {
-		_ = service.Enabled()
-	}
+func TestProductsService_DisabledService(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewProductsService(false, l)
+	assert.False(t, service.Enabled())
 }

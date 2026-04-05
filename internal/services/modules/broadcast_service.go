@@ -3,16 +3,18 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 	"stackyrd/pkg/utils"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // SimpleStreamGenerator creates automated demo events for streams
@@ -79,7 +81,6 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 			event := events[i%len(events)]
 			i++
 
-			// Add metadata
 			data := event.Data
 			if data == nil {
 				data = make(map[string]interface{})
@@ -93,8 +94,7 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 	}
 }
 
-// ServiceH is a super simple demo of using the broadcast utility
-// Shows how easy it is to add event streaming to any service!
+// BroadcastService is a demo of using the broadcast utility
 type BroadcastService struct {
 	enabled     bool
 	broadcaster *utils.EventBroadcaster
@@ -127,7 +127,7 @@ func (s *BroadcastService) Endpoints() []string {
 	return []string{"/events/stream/{stream_id}", "/events/broadcast", "/events/streams"}
 }
 
-func (s *BroadcastService) RegisterRoutes(g *echo.Group) {
+func (s *BroadcastService) RegisterRoutes(g *gin.RouterGroup) {
 	events := g.Group("/events")
 	events.GET("/stream/:stream_id", s.streamEvents)
 	events.POST("/broadcast", s.broadcastEvent)
@@ -136,30 +136,17 @@ func (s *BroadcastService) RegisterRoutes(g *echo.Group) {
 	events.POST("/stream/:stream_id/stop", s.stopStream)
 }
 
-// =========================================
-// HANDLER METHODS - Using Broadcast Utility
-// =========================================
-
-// StreamEvents godoc
-// @Summary Stream events from a specific stream
-// @Description Subscribe to Server-Sent Events (SSE) for a specific stream
-// @Tags events
-// @Accept json
-// @Produce text/event-stream
-// @Param stream_id path string true "Stream ID"
-// @Success 200 {string} string "SSE stream"
-// @Failure 404 {object} response.Response "Stream not found"
-// @Router /events/stream/{stream_id} [get]
-func (s *BroadcastService) streamEvents(c echo.Context) error {
+// streamEvents handles SSE connections
+func (s *BroadcastService) streamEvents(c *gin.Context) {
 	streamID := c.Param("stream_id")
 	client := s.broadcaster.Subscribe(streamID)
 	defer s.broadcaster.Unsubscribe(client.ID)
 
 	// SSE headers
-	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
-	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
-	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
-	c.Response().Header().Set("Access-Control-Allow-Origin", "*")
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Send connection event
 	initialEvent := utils.EventData{
@@ -178,15 +165,15 @@ func (s *BroadcastService) streamEvents(c echo.Context) error {
 		select {
 		case event := <-client.Channel:
 			if err := s.sendSSEEvent(c, event); err != nil {
-				return nil
+				return
 			}
-		case <-c.Request().Context().Done():
-			return nil
+		case <-c.Request.Context().Done():
+			return
 		}
 	}
 }
 
-func (s *BroadcastService) broadcastEvent(c echo.Context) error {
+func (s *BroadcastService) broadcastEvent(c *gin.Context) {
 	type BroadcastRequest struct {
 		StreamID string                 `json:"stream_id,omitempty"`
 		Type     string                 `json:"type" validate:"required"`
@@ -195,24 +182,26 @@ func (s *BroadcastService) broadcastEvent(c echo.Context) error {
 	}
 
 	var req BroadcastRequest
-	if err := c.Bind(&req); err != nil {
-		return response.BadRequest(c, "Invalid request body")
+	if err := request.Bind(c, &req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
 	}
 
 	if req.Type == "" || req.Message == "" {
-		return response.BadRequest(c, "Type and message are required")
+		response.BadRequest(c, "Type and message are required")
+		return
 	}
 
 	if req.StreamID == "" {
 		s.broadcaster.BroadcastToAll(req.Type, req.Message, req.Data)
-		return response.Success(c, nil, "Event broadcasted to all streams")
+		response.Success(c, nil, "Event broadcasted to all streams")
 	} else {
 		s.broadcaster.Broadcast(req.StreamID, req.Type, req.Message, req.Data)
-		return response.Success(c, nil, fmt.Sprintf("Event broadcasted to stream: %s", req.StreamID))
+		response.Success(c, nil, fmt.Sprintf("Event broadcasted to stream: %s", req.StreamID))
 	}
 }
 
-func (s *BroadcastService) getActiveStreams(c echo.Context) error {
+func (s *BroadcastService) getActiveStreams(c *gin.Context) {
 	activeStreams := s.broadcaster.GetActiveStreams()
 	totalClients := s.broadcaster.GetTotalClients()
 	streamCount := s.broadcaster.GetStreamCount()
@@ -232,54 +221,54 @@ func (s *BroadcastService) getActiveStreams(c echo.Context) error {
 		"service":       "broadcast_service",
 	}
 
-	return response.Success(c, result, "Active streams retrieved")
+	response.Success(c, result, "Active streams retrieved")
 }
 
-func (s *BroadcastService) startStream(c echo.Context) error {
+func (s *BroadcastService) startStream(c *gin.Context) {
 	streamID := c.Param("stream_id")
 
 	if generator, exists := s.streams[streamID]; exists {
 		generator.Start()
-		return response.Success(c, nil, fmt.Sprintf("Stream '%s' restarted", streamID))
+		response.Success(c, nil, fmt.Sprintf("Stream '%s' restarted", streamID))
+		return
 	}
 
 	generator := NewSimpleStreamGenerator(streamID, s.broadcaster)
 	s.streams[streamID] = generator
 	generator.Start()
 
-	return response.Created(c, nil, fmt.Sprintf("Stream '%s' created and started", streamID))
+	response.Created(c, nil, fmt.Sprintf("Stream '%s' created and started", streamID))
 }
 
-func (s *BroadcastService) stopStream(c echo.Context) error {
+func (s *BroadcastService) stopStream(c *gin.Context) {
 	streamID := c.Param("stream_id")
 
 	generator, exists := s.streams[streamID]
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Stream '%s' not found", streamID))
+		response.NotFound(c, fmt.Sprintf("Stream '%s' not found", streamID))
+		return
 	}
 
 	generator.Stop()
 	delete(s.streams, streamID)
 
-	return response.Success(c, nil, fmt.Sprintf("Stream '%s' stopped and removed", streamID))
+	response.Success(c, nil, fmt.Sprintf("Stream '%s' stopped and removed", streamID))
 }
 
-// =========================================
-// HELPER METHODS
-// =========================================
-
-func (s *BroadcastService) sendSSEEvent(c echo.Context, event utils.EventData) error {
+func (s *BroadcastService) sendSSEEvent(c *gin.Context, event utils.EventData) error {
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(c.Response(), "data: %s\n\n", eventJSON)
+	_, err = fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON)
 	if err != nil {
 		return err
 	}
 
-	c.Response().Flush()
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
 	return nil
 }
 
@@ -293,7 +282,7 @@ func (s *BroadcastService) startDemoStreams() {
 	}
 }
 
-// Auto-registration function - called when package is imported
+// Auto-registration function
 func init() {
 	registry.RegisterService("broadcast_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		return NewBroadcastService(config.Services.IsEnabled("broadcast_service"), logger)

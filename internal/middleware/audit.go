@@ -5,149 +5,112 @@ import (
 
 	"stackyrd/pkg/logger"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // AuditConfig holds audit logging configuration
 type AuditConfig struct {
 	Logger           *logger.Logger
-	Skipper          func(c echo.Context) bool
 	LogRequestBody   bool
 	LogHeaders       bool
 	SensitiveHeaders []string
+	SkipPaths        []string
 }
 
-// DefaultAuditConfig returns default audit configuration
-func DefaultAuditConfig(log *logger.Logger) AuditConfig {
-	return AuditConfig{
-		Logger:         log,
-		LogRequestBody: false,
-		LogHeaders:     false,
-		SensitiveHeaders: []string{
-			"Authorization",
-			"Cookie",
-			"X-Api-Key",
-		},
-	}
+// Default audit configuration
+var defaultAuditConfig = AuditConfig{
+	LogRequestBody:   false,
+	LogHeaders:       false,
+	SensitiveHeaders: []string{"Authorization", "Cookie", "Set-Cookie"},
+	SkipPaths:        []string{"/health", "/health/infrastructure"},
 }
 
-// AuditLog represents an audit log entry
-type AuditLog struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	Method      string                 `json:"method"`
-	Path        string                 `json:"path"`
-	Query       string                 `json:"query,omitempty"`
-	StatusCode  int                    `json:"status_code"`
-	Latency     time.Duration          `json:"latency"`
-	UserID      string                 `json:"user_id,omitempty"`
-	Username    string                 `json:"username,omitempty"`
-	IP          string                 `json:"ip"`
-	UserAgent   string                 `json:"user_agent"`
-	RequestID   string                 `json:"request_id,omitempty"`
-	RequestBody interface{}            `json:"request_body,omitempty"`
-	Headers     map[string]string      `json:"headers,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+// AuditWithConfig creates audit logging middleware with custom configuration
+func AuditWithConfig(l *logger.Logger) gin.HandlerFunc {
+	return Audit(defaultAuditConfig, l)
 }
 
-// Audit returns audit logging middleware
-func Audit(config ...AuditConfig) echo.MiddlewareFunc {
-	var cfg AuditConfig
-	if len(config) > 0 {
-		cfg = config[0]
-	} else {
-		cfg = DefaultAuditConfig(nil)
-	}
+// AuditSkipHealthCheck creates audit logging middleware that skips health check endpoints
+func AuditSkipHealthCheck(l *logger.Logger) gin.HandlerFunc {
+	config := defaultAuditConfig
+	config.Logger = l
+	return Audit(config, l)
+}
 
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if cfg.Skipper != nil && cfg.Skipper(c) {
-				return next(c)
+// Audit creates audit logging middleware
+func Audit(config AuditConfig, l *logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Skip configured paths
+		for _, path := range config.SkipPaths {
+			if c.Request.URL.Path == path {
+				c.Next()
+				return
 			}
+		}
 
-			start := time.Now()
-			req := c.Request()
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
 
-			err := next(c)
+		c.Next()
 
-			latency := time.Since(start)
+		latency := time.Since(start)
+		statusCode := c.Writer.Status()
 
-			auditLog := AuditLog{
-				Timestamp:  start,
-				Method:     req.Method,
-				Path:       req.URL.Path,
-				Query:      req.URL.RawQuery,
-				StatusCode: c.Response().Status,
-				Latency:    latency,
-				IP:         c.RealIP(),
-				UserAgent:  req.UserAgent(),
-				RequestID:  c.Response().Header().Get(echo.HeaderXRequestID),
-			}
+		// Build log fields
+		fields := map[string]interface{}{
+			"method":     c.Request.Method,
+			"path":       path,
+			"query":      query,
+			"status":     statusCode,
+			"latency":    latency.String(),
+			"client_ip":  c.ClientIP(),
+			"user_agent": c.Request.UserAgent(),
+			"request_id": c.Writer.Header().Get("X-Request-ID"),
+		}
 
-			if userID := c.Get("user_id"); userID != nil {
-				auditLog.UserID = userID.(string)
-			}
+		// Add user info if available
+		if userID, exists := c.Get("user_id"); exists {
+			fields["user_id"] = userID
+		}
+		if username, exists := c.Get("username"); exists {
+			fields["username"] = username
+		}
 
-			if username := c.Get("username"); username != nil {
-				auditLog.Username = username.(string)
-			}
-
-			if cfg.LogHeaders {
-				headers := make(map[string]string)
-				for key, values := range req.Header {
-					skip := false
-					for _, sensitive := range cfg.SensitiveHeaders {
-						if key == sensitive {
-							skip = true
-							break
-						}
-					}
-					if !skip && len(values) > 0 {
-						headers[key] = values[0]
+		// Log headers if configured
+		if config.LogHeaders {
+			headers := make(map[string]string)
+			for name, values := range c.Request.Header {
+				// Skip sensitive headers
+				skip := false
+				for _, sensitive := range config.SensitiveHeaders {
+					if name == sensitive {
+						skip = true
+						break
 					}
 				}
-				auditLog.Headers = headers
-			}
-
-			if cfg.Logger != nil {
-				logMsg := "Audit log"
-				logFields := []interface{}{
-					"method", auditLog.Method,
-					"path", auditLog.Path,
-					"status", auditLog.StatusCode,
-					"latency", auditLog.Latency.String(),
-					"ip", auditLog.IP,
-				}
-
-				if auditLog.UserID != "" {
-					logFields = append(logFields, "user_id", auditLog.UserID)
-				}
-
-				if auditLog.Username != "" {
-					logFields = append(logFields, "username", auditLog.Username)
-				}
-
-				if auditLog.StatusCode >= 400 {
-					cfg.Logger.Warn(logMsg, logFields...)
-				} else {
-					cfg.Logger.Info(logMsg, logFields...)
+				if !skip {
+					for _, v := range values {
+						headers[name] = v
+					}
 				}
 			}
+			fields["headers"] = headers
+		}
 
-			return err
+		// Convert fields map to keyvals slice
+		keyvals := make([]interface{}, 0, len(fields)*2)
+		for k, v := range fields {
+			keyvals = append(keyvals, k, v)
+		}
+
+		// Log with appropriate level based on status code
+		if statusCode >= 500 {
+			l.Error("API Request", nil, keyvals...)
+		} else if statusCode >= 400 {
+			l.Warn("API Request", keyvals...)
+		} else {
+			l.Info("API Request", keyvals...)
 		}
 	}
-}
-
-// AuditWithConfig returns audit middleware with custom config
-func AuditWithConfig(log *logger.Logger) echo.MiddlewareFunc {
-	return Audit(DefaultAuditConfig(log))
-}
-
-// AuditSkipHealthCheck returns audit middleware that skips health check endpoints
-func AuditSkipHealthCheck(log *logger.Logger) echo.MiddlewareFunc {
-	cfg := DefaultAuditConfig(log)
-	cfg.Skipper = func(c echo.Context) bool {
-		return c.Request().URL.Path == "/health" || c.Request().URL.Path == "/health/infrastructure"
-	}
-	return Audit(cfg)
 }

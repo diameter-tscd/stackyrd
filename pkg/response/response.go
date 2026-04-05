@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
 )
 
 // Response represents the standard API response structure
@@ -39,10 +39,10 @@ type Meta struct {
 
 // PaginationRequest represents standard pagination parameters
 type PaginationRequest struct {
-	Page    int    `query:"page" json:"page"`
-	PerPage int    `query:"per_page" json:"per_page"`
-	Sort    string `query:"sort" json:"sort,omitempty"`
-	Order   string `query:"order" json:"order,omitempty"` // asc, desc
+	Page    int    `form:"page" json:"page"`
+	PerPage int    `form:"per_page" json:"per_page"`
+	Sort    string `form:"sort" json:"sort,omitempty"`
+	Order   string `form:"order" json:"order,omitempty"` // asc, desc
 }
 
 // GetPage returns the page number (default: 1)
@@ -78,13 +78,13 @@ func (p *PaginationRequest) GetOrder() string {
 }
 
 // Success sends a successful response
-func Success(c echo.Context, data interface{}, message ...string) error {
+func Success(c *gin.Context, data interface{}, message ...string) {
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
-	return c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
@@ -96,13 +96,13 @@ func Success(c echo.Context, data interface{}, message ...string) error {
 }
 
 // SuccessWithMeta sends a successful response with metadata
-func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...string) error {
+func SuccessWithMeta(c *gin.Context, data interface{}, meta *Meta, message ...string) {
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
-	return c.JSON(http.StatusOK, Response{
+	c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
@@ -115,13 +115,13 @@ func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...st
 }
 
 // Created sends a 201 Created response
-func Created(c echo.Context, data interface{}, message ...string) error {
+func Created(c *gin.Context, data interface{}, message ...string) {
 	msg := "Resource created successfully"
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
-	return c.JSON(http.StatusCreated, Response{
+	c.JSON(http.StatusCreated, Response{
 		Success:       true,
 		Status:        http.StatusCreated,
 		Message:       msg,
@@ -133,83 +133,83 @@ func Created(c echo.Context, data interface{}, message ...string) error {
 }
 
 // NoContent sends a 204 No Content response
-func NoContent(c echo.Context) error {
-	return c.NoContent(http.StatusNoContent)
+func NoContent(c *gin.Context) {
+	c.Status(http.StatusNoContent)
 }
 
 // BadRequest sends a 400 Bad Request error response
-func BadRequest(c echo.Context, message string, details ...map[string]interface{}) error {
-	return Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
+func BadRequest(c *gin.Context, message string, details ...map[string]interface{}) {
+	Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
 }
 
 // Unauthorized sends a 401 Unauthorized error response
-func Unauthorized(c echo.Context, message ...string) error {
+func Unauthorized(c *gin.Context, message ...string) {
 	msg := "Unauthorized access"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	return Error(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
+	Error(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
 }
 
 // Forbidden sends a 403 Forbidden error response
-func Forbidden(c echo.Context, message ...string) error {
+func Forbidden(c *gin.Context, message ...string) {
 	msg := "Access forbidden"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	return Error(c, http.StatusForbidden, "FORBIDDEN", msg)
+	Error(c, http.StatusForbidden, "FORBIDDEN", msg)
 }
 
 // NotFound sends a 404 Not Found error response
-func NotFound(c echo.Context, message ...string) error {
+func NotFound(c *gin.Context, message ...string) {
 	msg := "Resource not found"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	return Error(c, http.StatusNotFound, "NOT_FOUND", msg)
+	Error(c, http.StatusNotFound, "NOT_FOUND", msg)
 }
 
 // Conflict sends a 409 Conflict error response
-func Conflict(c echo.Context, message string, details ...map[string]interface{}) error {
-	return Error(c, http.StatusConflict, "CONFLICT", message, details...)
+func Conflict(c *gin.Context, message string, details ...map[string]interface{}) {
+	Error(c, http.StatusConflict, "CONFLICT", message, details...)
 }
 
 // ValidationError sends a 422 Unprocessable Entity error response
-func ValidationError(c echo.Context, message string, details map[string]string) error {
+func ValidationError(c *gin.Context, message string, details map[string]string) {
 	// Convert map[string]string to map[string]interface{} for the error details
 	errorDetails := make(map[string]interface{})
 	for k, v := range details {
 		errorDetails[k] = v
 	}
-	return Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, errorDetails)
+	Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, errorDetails)
 }
 
 // InternalServerError sends a 500 Internal Server Error response
-func InternalServerError(c echo.Context, message ...string) error {
+func InternalServerError(c *gin.Context, message ...string) {
 	msg := "Internal server error"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	return Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
+	Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
 }
 
 // ServiceUnavailable sends a 503 Service Unavailable error response
-func ServiceUnavailable(c echo.Context, message ...string) error {
+func ServiceUnavailable(c *gin.Context, message ...string) {
 	msg := "Service temporarily unavailable"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	return Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
+	Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
 }
 
 // Error sends a generic error response with custom status code
-func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) error {
+func Error(c *gin.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) {
 	var errorDetails map[string]interface{}
 	if len(details) > 0 {
 		errorDetails = details[0]
 	}
 
-	return c.JSON(statusCode, Response{
+	c.JSON(statusCode, Response{
 		Success: false,
 		Status:  statusCode,
 		Error: &ErrorDetail{
@@ -224,21 +224,16 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 }
 
 // getCorrelationID extracts or generates the correlation ID
-func getCorrelationID(c echo.Context) string {
-	// Try standard Echo request ID
-	id := c.Response().Header().Get(echo.HeaderXRequestID)
+func getCorrelationID(c *gin.Context) string {
+	// Try standard request ID
+	id := c.GetHeader("X-Request-ID")
 	if id == "" {
-		id = c.Request().Header.Get(echo.HeaderXRequestID)
-	}
-	if id == "" {
-		id = c.Request().Header.Get("X-Correlation-ID")
+		id = c.GetHeader("X-Correlation-ID")
 	}
 
 	// If still empty, generate a new one
 	if id == "" {
 		id = uuid.New().String()
-		// Ideally we should set it back to response header so client knows it
-		c.Response().Header().Set(echo.HeaderXRequestID, id)
 	}
 	return id
 }

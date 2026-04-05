@@ -7,7 +7,7 @@ import (
 
 	"stackyrd/pkg/logger"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // Config holds middleware configuration
@@ -17,73 +17,70 @@ type Config struct {
 }
 
 // InitMiddlewares registers global middlewares and returns specific ones for use
-func InitMiddlewares(e *echo.Echo, cfg Config) {
+func InitMiddlewares(r *gin.Engine, cfg Config) {
 	// Request ID
-	e.Use(RequestID())
+	r.Use(RequestID())
 
 	// Custom Logger Middleware
-	e.Use(Logger(cfg.Logger))
+	r.Use(Logger(cfg.Logger))
 
 	// Global Permission Middleware (Allow all except DELETE for demo purposes)
 	// In a real app, this might be selective
-	e.Use(PermissionCheck(cfg.Logger))
+	r.Use(PermissionCheck(cfg.Logger))
 }
 
-func RequestID() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Basic implementation, Echo has its own middleware.RequestID() too
-			return next(c)
+func RequestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Generate request ID if not present
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
 		}
+		c.Set("X-Request-ID", requestID)
+		c.Writer.Header().Set("X-Request-ID", requestID)
+		c.Next()
 	}
 }
 
-func Logger(l *logger.Logger) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			start := time.Now()
+func Logger(l *logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
 
-			err := next(c)
+		c.Next()
 
-			req := c.Request()
-			res := c.Response()
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		method := c.Request.Method
+		path := c.Request.URL.Path
 
-			status := res.Status
-			method := req.Method
-			path := req.URL.Path
-			latency := time.Since(start)
+		msg := fmt.Sprintf("%d | %s | %s | %v", status, method, path, latency)
 
-			msg := fmt.Sprintf("%d | %s | %s | %v", status, method, path, latency)
-
-			if status >= 500 {
-				l.Error(msg, err)
-			} else if status >= 400 {
-				l.Warn(msg)
-			} else {
-				l.Info(msg)
-			}
-			return err
+		if status >= 500 {
+			l.Error(msg, nil)
+		} else if status >= 400 {
+			l.Warn(msg)
+		} else {
+			l.Info(msg)
 		}
 	}
 }
 
 // PermissionCheck enforces "allow accept permission except data deletion"
-func PermissionCheck(l *logger.Logger) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// This middleware intercepts all requests.
-			// "Accept permission" implies we default to allow, but strictly block generic DELETE actions
-			// if they are considered "delete data".
+func PermissionCheck(l *logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// This middleware intercepts all requests.
+		// "Accept permission" implies we default to allow, but strictly block generic DELETE actions
+		// if they are considered "delete data".
 
-			if c.Request().Method == http.MethodDelete {
-				l.Warn("Blocked DELETE attempt due to permission policy", "path", c.Request().URL.Path, "ip", c.RealIP())
-				return c.JSON(http.StatusForbidden, map[string]string{
-					"error": "Permission Denied: DELETE actions are restricted.",
-				})
-			}
-
-			// For other methods (GET, POST, PUT, PATCH), we "accept permission" (proceed).
-			return next(c)
+		if c.Request.Method == http.MethodDelete {
+			l.Warn("Blocked DELETE attempt due to permission policy", "path", c.Request.URL.Path, "ip", c.ClientIP())
+			c.JSON(http.StatusForbidden, map[string]string{
+				"error": "Permission Denied: DELETE actions are restricted.",
+			})
+			c.Abort()
+			return
 		}
+
+		c.Next()
 	}
 }

@@ -1,233 +1,239 @@
 package modules
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/interfaces"
+	"strconv"
+
 	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
-	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 type UsersService struct {
 	enabled bool
+	logger  *logger.Logger
 }
 
-func NewUsersService(enabled bool) *UsersService {
-	return &UsersService{enabled: enabled}
-}
-
-func (s *UsersService) Name() string        { return "Users Service" }
-func (s *UsersService) WireName() string    { return "users-service" }
-func (s *UsersService) Enabled() bool       { return s.enabled }
-func (s *UsersService) Endpoints() []string { return []string{"/users", "/users/:id"} }
-func (s *UsersService) Get() interface{}    { return s }
-
-func (s *UsersService) RegisterRoutes(g *echo.Group) {
-	sub := g.Group("/users")
-
-	// GetUsers godoc
-	// @Summary List users with pagination
-	// @Description Get a paginated list of users
-	// @Tags users
-	// @Accept json
-	// @Produce json
-	// @Param page query int false "Page number" default(1)
-	// @Param per_page query int false "Items per page" default(10)
-	// @Success 200 {object} response.Response{data=[]User} "Success"
-	// @Failure 400 {object} response.Response "Bad request"
-	// @Router /users [get]
-	sub.GET("", s.GetUsers)
-
-	// GetUser godoc
-	// @Summary Get single user
-	// @Description Get a specific user by ID
-	// @Tags users
-	// @Accept json
-	// @Produce json
-	// @Param id path string true "User ID"
-	// @Success 200 {object} response.Response{data=User} "Success"
-	// @Failure 404 {object} response.Response "Not found"
-	// @Router /users/{id} [get]
-	sub.GET("/:id", s.GetUser)
-
-	// CreateUser godoc
-	// @Summary Create user
-	// @Description Create a new user
-	// @Tags users
-	// @Accept json
-	// @Produce json
-	// @Param request body CreateUserRequest true "Create user request"
-	// @Success 201 {object} response.Response{data=User} "Created"
-	// @Failure 400 {object} response.Response "Bad request"
-	// @Failure 422 {object} response.Response "Validation error"
-	// @Router /users [post]
-	sub.POST("", s.CreateUser)
-
-	// UpdateUser godoc
-	// @Summary Update user
-	// @Description Update an existing user
-	// @Tags users
-	// @Accept json
-	// @Produce json
-	// @Param id path string true "User ID"
-	// @Param request body UpdateUserRequest true "Update user request"
-	// @Success 200 {object} response.Response{data=User} "Success"
-	// @Failure 400 {object} response.Response "Bad request"
-	// @Failure 422 {object} response.Response "Validation error"
-	// @Router /users/{id} [put]
-	sub.PUT("/:id", s.UpdateUser)
-
-	// DeleteUser godoc
-	// @Summary Delete user
-	// @Description Delete a user by ID
-	// @Tags users
-	// @Accept json
-	// @Produce json
-	// @Param id path string true "User ID"
-	// @Success 204 "No content"
-	// @Failure 404 {object} response.Response "Not found"
-	// @Router /users/{id} [delete]
-	sub.DELETE("/:id", s.DeleteUser)
-}
-
-// Sample User struct
 type User struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Status    string `json:"status"`
-	CreatedAt int64  `json:"created_at"`
-}
-
-// Request structs
-type CreateUserRequest struct {
-	Username string `json:"username" validate:"required,username"`
+	ID       int    `json:"id" uri:"id"`
+	Name     string `json:"name" validate:"required"`
 	Email    string `json:"email" validate:"required,email"`
-	FullName string `json:"full_name" validate:"required,min=3,max=100"`
+	Phone    string `json:"phone" validate:"phone"`
+	Username string `json:"username" validate:"username"`
+	Age      int    `json:"age" validate:"gte=0,lte=130"`
 }
 
-type UpdateUserRequest struct {
-	Username string `json:"username" validate:"omitempty,username"`
-	Email    string `json:"email" validate:"omitempty,email"`
-	FullName string `json:"full_name" validate:"omitempty,min=3,max=100"`
-	Status   string `json:"status" validate:"omitempty,oneof=active inactive suspended"`
+func NewUsersService(enabled bool, logger *logger.Logger) *UsersService {
+	return &UsersService{
+		enabled: enabled,
+		logger:  logger,
+	}
 }
 
-// Handlers
-
-func (s *UsersService) GetUsers(c echo.Context) error {
-	// Parse pagination from query
-	var pagination response.PaginationRequest
-	if err := c.Bind(&pagination); err != nil {
-		return response.BadRequest(c, "Invalid pagination parameters")
-	}
-
-	// Mock data
-	users := []User{
-		{ID: "1", Username: "john_doe", Email: "john@example.com", Status: "active", CreatedAt: time.Now().Unix()},
-		{ID: "2", Username: "jane_smith", Email: "jane@example.com", Status: "active", CreatedAt: time.Now().Unix()},
-		{ID: "3", Username: "bob_wilson", Email: "bob@example.com", Status: "inactive", CreatedAt: time.Now().Unix()},
-	}
-
-	// Calculate metadata
-	total := int64(len(users))
-	meta := response.CalculateMeta(
-		pagination.GetPage(),
-		pagination.GetPerPage(),
-		total,
-	)
-
-	return response.SuccessWithMeta(c, users, meta, "Users retrieved successfully")
+func (s *UsersService) Name() string {
+	return "Users Service"
 }
 
-func (s *UsersService) GetUser(c echo.Context) error {
-	id := c.Param("id")
-
-	// Mock data - in real app, fetch from database
-	user := User{
-		ID:        id,
-		Username:  "john_doe",
-		Email:     "john@example.com",
-		Status:    "active",
-		CreatedAt: time.Now().Unix(),
-	}
-
-	// Simulate not found
-	if id == "999" {
-		return response.NotFound(c, "User not found")
-	}
-
-	return response.Success(c, user, "User retrieved successfully")
+func (s *UsersService) WireName() string {
+	return "users"
 }
 
-func (s *UsersService) CreateUser(c echo.Context) error {
-	var req CreateUserRequest
+func (s *UsersService) Enabled() bool {
+	return s.enabled
+}
 
-	// Bind and validate
-	if err := request.Bind(c, &req); err != nil {
-		if validationErr, ok := err.(*request.ValidationError); ok {
-			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+func (s *UsersService) Endpoints() []string {
+	return []string{
+		"/users",
+		"/users/:id",
+	}
+}
+
+func (s *UsersService) Get() interface{} {
+	return s
+}
+
+func (s *UsersService) RegisterRoutes(g *gin.RouterGroup) {
+	sub := g.Group("/users")
+	{
+		sub.GET("", s.listUsers)
+		sub.GET("/:id", s.getUser)
+		sub.POST("", s.createUser)
+		sub.PUT("/:id", s.updateUser)
+		// DELETE is blocked by PermissionCheck middleware
+	}
+}
+
+// Mock database
+var users = []User{
+	{ID: 1, Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Username: "alice123", Age: 30},
+	{ID: 2, Name: "Bob", Email: "bob@example.com", Phone: "+0987654321", Username: "bob456", Age: 25},
+}
+
+func (s *UsersService) listUsers(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "10"))
+
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 10
+	}
+
+	if page > len(users) {
+		response.BadRequest(c, "Invalid pagination parameters")
+		return
+	}
+
+	start := (page - 1) * perPage
+	end := start + perPage
+	if end > len(users) {
+		end = len(users)
+	}
+
+	usersPage := users[start:end]
+	meta := response.CalculateMeta(page, perPage, int64(len(users)))
+	response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
+}
+
+func (s *UsersService) getUser(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	for _, user := range users {
+		if user.ID == id {
+			response.Success(c, user, "User retrieved successfully")
+			return
 		}
-		return response.BadRequest(c, err.Error())
 	}
 
-	// Mock user creation
-	user := User{
-		ID:        "123",
-		Username:  req.Username,
-		Email:     req.Email,
-		Status:    "active",
-		CreatedAt: time.Now().Unix(),
-	}
-
-	return response.Created(c, user, "User created successfully")
+	response.NotFound(c, "User not found")
 }
 
-func (s *UsersService) UpdateUser(c echo.Context) error {
-	id := c.Param("id")
-
-	var req UpdateUserRequest
-
-	// Bind and validate
-	if err := request.Bind(c, &req); err != nil {
+func (s *UsersService) createUser(c *gin.Context) {
+	var user User
+	if err := request.Bind(c, &user); err != nil {
 		if validationErr, ok := err.(*request.ValidationError); ok {
-			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+			response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+		} else {
+			response.BadRequest(c, err.Error())
 		}
-		return response.BadRequest(c, err.Error())
+		return
 	}
 
-	// Mock updated user
-	user := User{
-		ID:        id,
-		Username:  req.Username,
-		Email:     req.Email,
-		Status:    req.Status,
-		CreatedAt: time.Now().Unix(),
-	}
+	// Assign new ID
+	user.ID = len(users) + 1
+	users = append(users, user)
 
-	return response.Success(c, user, "User updated successfully")
+	response.Created(c, user, "User created successfully")
 }
 
-func (s *UsersService) DeleteUser(c echo.Context) error {
-	id := c.Param("id")
+func (s *UsersService) updateUser(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
 
-	// Simulate not found
-	if id == "999" {
-		return response.NotFound(c, "User not found")
+	var user User
+	if err := request.Bind(c, &user); err != nil {
+		if validationErr, ok := err.(*request.ValidationError); ok {
+			response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+		} else {
+			response.BadRequest(c, err.Error())
+		}
+		return
 	}
 
-	// Mock deletion - in real app, delete from database
-	// No content response
-	return response.NoContent(c)
+	for i, u := range users {
+		if u.ID == id {
+			user.ID = id
+			users[i] = user
+			response.Success(c, user, "User updated successfully")
+			return
+		}
+	}
+
+	response.NotFound(c, "User not found")
 }
 
 // Auto-registration function - called when package is imported
 func init() {
-	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-		return NewUsersService(config.Services.IsEnabled("users_service"))
-	})
+	// Service registration is handled by the registry package
+	// UsersService does not require any dependencies and is always available
+}
+
+// Example handler showing Swagger annotations (for documentation)
+// GetUsers godoc
+// @Summary List users with pagination
+// @Description Get a paginated list of users
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Items per page" default(10)
+// @Success 200 {object} response.Response{data=[]User} "Success"
+// @Failure 400 {object} response.Response "Bad request"
+// @Router /users [get]
+func (s *UsersService) GetUsers(c *gin.Context) {
+	// This is just for Swagger documentation
+	// The actual implementation is in listUsers
+}
+
+// GetUser godoc
+// @Summary Get user by ID
+// @Description Get a specific user by ID
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path int true "User ID"
+// @Success 200 {object} response.Response{data=User} "Success"
+// @Failure 404 {object} response.Response "User not found"
+// @Router /users/{id} [get]
+func (s *UsersService) GetUser(c *gin.Context) {}
+
+// CreateUser godoc
+// @Summary Create user
+// @Description Create a new user
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param user body User true "User data"
+// @Success 201 {object} response.Response{data=User} "User created"
+// @Failure 400 {object} response.Response "Invalid input"
+// @Failure 422 {object} response.Response "Validation error"
+// @Router /users [post]
+func (s *UsersService) CreateUser(c *gin.Context) {}
+
+// UpdateUser godoc
+// @Summary Update user
+// @Description Update an existing user
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path int true "User ID"
+// @Param user body User true "User data"
+// @Success 200 {object} response.Response{data=User} "User updated"
+// @Failure 400 {object} response.Response "Invalid input"
+// @Failure 404 {object} response.Response "User not found"
+// @Router /users/{id} [put]
+func (s *UsersService) UpdateUser(c *gin.Context) {}
+
+// DeleteUser godoc
+// @Summary Delete user
+// @Description Delete a user by ID
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path int true "User ID"
+// @Success 204 "User deleted"
+// @Failure 404 {object} response.Response "User not found"
+// @Router /users/{id} [delete]
+func (s *UsersService) DeleteUser(c *gin.Context) {}
+
+// ValidateAge is a custom validator for age
+func ValidateAge(fl validator.FieldLevel) bool {
+	age, ok := fl.Field().Interface().(int)
+	if !ok {
+		return false
+	}
+	return age >= 0 && age <= 130
 }

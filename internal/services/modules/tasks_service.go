@@ -9,9 +9,10 @@ import (
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -30,7 +31,6 @@ type TasksService struct {
 
 func NewTasksService(db *infrastructure.PostgresManager, enabled bool, logger *logger.Logger) *TasksService {
 	if enabled && db != nil && db.ORM != nil {
-		// Auto-migrate the schema
 		if err := db.ORM.AutoMigrate(&Task{}); err != nil {
 			logger.Error("Error migrating Task model", err)
 		}
@@ -46,7 +46,6 @@ func (s *TasksService) Name() string     { return "Tasks Service" }
 func (s *TasksService) WireName() string { return "tasks-service" }
 
 func (s *TasksService) Enabled() bool {
-	// Service is enabled only if configured AND DB is available
 	return s.enabled && s.db != nil && s.db.ORM != nil
 }
 
@@ -54,7 +53,7 @@ func (s *TasksService) Get() interface{} { return s }
 
 func (s *TasksService) Endpoints() []string { return []string{"/tasks"} }
 
-func (s *TasksService) RegisterRoutes(g *echo.Group) {
+func (s *TasksService) RegisterRoutes(g *gin.RouterGroup) {
 	sub := g.Group("/tasks")
 	sub.GET("", s.listTasks)
 	sub.POST("", s.createTask)
@@ -71,19 +70,17 @@ func (s *TasksService) RegisterRoutes(g *echo.Group) {
 // @Success 200 {object} response.Response "Tasks retrieved successfully"
 // @Failure 500 {object} response.Response "Failed to retrieve tasks"
 // @Router /tasks [get]
-func (s *TasksService) listTasks(c echo.Context) error {
+func (s *TasksService) listTasks(c *gin.Context) {
 	var tasks []Task
 
-	// Use async GORM operation to avoid blocking main thread
 	result := s.db.GORMFindAsync(context.Background(), &tasks)
-
-	// Wait for the async operation to complete
 	_, err := result.Wait()
 	if err != nil {
-		return response.InternalServerError(c, err.Error())
+		response.InternalServerError(c, err.Error())
+		return
 	}
 
-	return response.Success(c, tasks)
+	response.Success(c, tasks)
 }
 
 // createTask godoc
@@ -97,22 +94,21 @@ func (s *TasksService) listTasks(c echo.Context) error {
 // @Failure 400 {object} response.Response "Invalid input"
 // @Failure 500 {object} response.Response "Failed to create task"
 // @Router /tasks [post]
-func (s *TasksService) createTask(c echo.Context) error {
+func (s *TasksService) createTask(c *gin.Context) {
 	task := new(Task)
-	if err := c.Bind(task); err != nil {
-		return response.BadRequest(c, "Invalid input")
+	if err := request.Bind(c, task); err != nil {
+		response.BadRequest(c, "Invalid input")
+		return
 	}
 
-	// Use async GORM operation to avoid blocking main thread
 	result := s.db.GORMCreateAsync(context.Background(), task)
-
-	// Wait for the async operation to complete
 	_, err := result.Wait()
 	if err != nil {
-		return response.InternalServerError(c, err.Error())
+		response.InternalServerError(c, err.Error())
+		return
 	}
 
-	return response.Created(c, task)
+	response.Created(c, task)
 }
 
 // updateTask godoc
@@ -128,29 +124,30 @@ func (s *TasksService) createTask(c echo.Context) error {
 // @Failure 404 {object} response.Response "Task not found"
 // @Failure 500 {object} response.Response "Failed to update task"
 // @Router /tasks/{id} [put]
-func (s *TasksService) updateTask(c echo.Context) error {
+func (s *TasksService) updateTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task Task
 
-	// First check if task exists using async operation
 	findResult := s.db.GORMFirstAsync(context.Background(), &task, id)
 	_, err := findResult.Wait()
 	if err != nil {
-		return response.NotFound(c, "Task not found")
+		response.NotFound(c, "Task not found")
+		return
 	}
 
-	if err := c.Bind(&task); err != nil {
-		return response.BadRequest(c, "Invalid input")
+	if err := request.Bind(c, &task); err != nil {
+		response.BadRequest(c, "Invalid input")
+		return
 	}
 
-	// Use async GORM update operation
 	updateResult := s.db.GORMUpdateAsync(context.Background(), &task, task, "id = ?", id)
 	_, err = updateResult.Wait()
 	if err != nil {
-		return response.InternalServerError(c, err.Error())
+		response.InternalServerError(c, err.Error())
+		return
 	}
 
-	return response.Success(c, task)
+	response.Success(c, task)
 }
 
 // deleteTask godoc
@@ -163,20 +160,18 @@ func (s *TasksService) updateTask(c echo.Context) error {
 // @Success 200 {object} response.Response "Task deleted successfully"
 // @Failure 500 {object} response.Response "Failed to delete task"
 // @Router /tasks/{id} [delete]
-func (s *TasksService) deleteTask(c echo.Context) error {
+func (s *TasksService) deleteTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task Task
 
-	// Use async GORM delete operation
 	result := s.db.GORMDeleteAsync(context.Background(), &task, "id = ?", id)
-
-	// Wait for the async operation to complete
 	_, err := result.Wait()
 	if err != nil {
-		return response.InternalServerError(c, err.Error())
+		response.InternalServerError(c, err.Error())
+		return
 	}
 
-	return response.Success(c, nil, "Task deleted")
+	response.Success(c, nil, "Task deleted")
 }
 
 // Auto-registration function - called when package is imported

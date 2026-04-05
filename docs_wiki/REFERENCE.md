@@ -1064,7 +1064,7 @@ func (c *ExternalAPIClient) MakeRequest(endpoint string, data interface{}) error
 ### Webhook Handling
 
 ```go
-func (s *WebhookService) HandleWebhook(c echo.Context) error {
+func (s *WebhookService) HandleWebhook(c *gin.Context) error {
     // Verify webhook signature
     signature := c.Request().Header.Get("X-Signature")
     if !s.verifySignature(c.Request().Body, signature) {
@@ -1086,7 +1086,7 @@ func (s *WebhookService) HandleWebhook(c echo.Context) error {
 ### File Upload Handling
 
 ```go
-func (s *UploadService) HandleUpload(c echo.Context) error {
+func (s *UploadService) HandleUpload(c *gin.Context) error {
     file, err := c.FormFile("file")
     if err != nil {
         return response.BadRequest(c, "No file provided")

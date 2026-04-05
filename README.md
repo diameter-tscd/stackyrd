@@ -95,4 +95,4 @@ Apache License Version 2.0: [LICENSE](LICENSE)
 
 ---
 
-**Built using Go, Echo, Alpine.js, Tailwind CSS**
+**Built using Go, Gin, Alpine.js, Tailwind CSS**

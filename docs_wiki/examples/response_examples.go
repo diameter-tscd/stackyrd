@@ -4,23 +4,24 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // Example 1: Simple Success Response
-func exampleSuccess(c echo.Context) error {
+func exampleSuccess(c *gin.Context) {
 	data := map[string]string{
 		"message": "Hello World",
 		"version": "1.0.0",
 	}
-	return response.Success(c, data, "Request successful")
+	response.Success(c, data, "Request successful")
 }
 
 // Example 2: Paginated Response
-func examplePagination(c echo.Context) error {
+func examplePagination(c *gin.Context) {
 	var pagination response.PaginationRequest
-	if err := c.Bind(&pagination); err != nil {
-		return response.BadRequest(c, "Invalid pagination parameters")
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		response.BadRequest(c, "Invalid pagination parameters")
+		return
 	}
 
 	// Get data (example)
@@ -33,7 +34,7 @@ func examplePagination(c echo.Context) error {
 	total := int64(100)
 	meta := response.CalculateMeta(pagination.GetPage(), pagination.GetPerPage(), total)
 
-	return response.SuccessWithMeta(c, items, meta)
+	response.SuccessWithMeta(c, items, meta)
 }
 
 // Example 3: Request Validation
@@ -44,15 +45,17 @@ type CreateItemRequest struct {
 	Category    string `json:"category" validate:"required,oneof=electronics books clothing"`
 }
 
-func exampleValidation(c echo.Context) error {
+func exampleValidation(c *gin.Context) {
 	var req CreateItemRequest
 
 	// Bind and validate
 	if err := request.Bind(c, &req); err != nil {
 		if validationErr, ok := err.(*request.ValidationError); ok {
-			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+			response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+			return
 		}
-		return response.BadRequest(c, err.Error())
+		response.BadRequest(c, err.Error())
+		return
 	}
 
 	// Process valid request
@@ -64,31 +67,34 @@ func exampleValidation(c echo.Context) error {
 		"category":    req.Category,
 	}
 
-	return response.Created(c, item, "Item created successfully")
+	response.Created(c, item, "Item created successfully")
 }
 
 // Example 4: Error Handling
-func exampleErrors(c echo.Context) error {
+func exampleErrors(c *gin.Context) {
 	id := c.Param("id")
 
 	// Not found error
 	if id == "999" {
-		return response.NotFound(c, "Item not found")
+		response.NotFound(c, "Item not found")
+		return
 	}
 
 	// Unauthorized error
-	if c.Request().Header.Get("Authorization") == "" {
-		return response.Unauthorized(c, "Authentication required")
+	if c.GetHeader("Authorization") == "" {
+		response.Unauthorized(c, "Authentication required")
+		return
 	}
 
 	// Forbidden error
 	if !hasPermission() {
-		return response.Forbidden(c, "Insufficient permissions")
+		response.Forbidden(c, "Insufficient permissions")
+		return
 	}
 
 	// Success
 	item := map[string]string{"id": id, "name": "Example Item"}
-	return response.Success(c, item)
+	response.Success(c, item)
 }
 
 func hasPermission() bool {
@@ -96,9 +102,9 @@ func hasPermission() bool {
 }
 
 // Example 5: Search with Filters
-func exampleSearch(c echo.Context) error {
+func exampleSearch(c *gin.Context) {
 	var search request.SearchRequest
-	c.Bind(&search)
+	c.ShouldBindQuery(&search)
 
 	// Use helper methods
 	query := search.GetQuery()
@@ -115,26 +121,26 @@ func exampleSearch(c echo.Context) error {
 		"filter_count": len(search.Filter),
 	})
 
-	return response.SuccessWithMeta(c, results, meta, "Search completed")
+	response.SuccessWithMeta(c, results, meta, "Search completed")
 }
 
 // Example 6: Custom Error with Details
-func exampleCustomError(c echo.Context) error {
+func exampleCustomError(c *gin.Context) {
 	details := map[string]interface{}{
 		"field":         "email",
 		"reason":        "already exists",
 		"suggested_fix": "Use a different email or login",
 	}
 
-	return response.Conflict(c, "Email already registered", details)
+	response.Conflict(c, "Email already registered", details)
 }
 
 // Example 7: No Content Response
-func exampleDelete(c echo.Context) error {
+func exampleDelete(c *gin.Context) {
 	id := c.Param("id")
 
 	// Delete item
 	_ = id // Simulate deletion
 
-	return response.NoContent(c)
+	response.NoContent(c)
 }

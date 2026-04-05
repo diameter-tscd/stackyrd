@@ -72,7 +72,7 @@ package modules
 
 import (
     "stackyrd/pkg/response"
-    "github.com/labstack/echo/v4"
+    "github.com/gin-gonic/gin"
 )
 
 type HelloService struct {
@@ -87,11 +87,11 @@ func (s *HelloService) Name() string        { return "Hello Service" }
 func (s *HelloService) Enabled() bool       { return s.enabled }
 func (s *HelloService) Endpoints() []string { return []string{"/hello"} }
 
-func (s *HelloService) RegisterRoutes(g *echo.Group) {
+func (s *HelloService) RegisterRoutes(g *gin.RouterGroup) {
     g.GET("/hello", s.hello)
 }
 
-func (s *HelloService) hello(c echo.Context) error {
+func (s *HelloService) hello(c *gin.Context) error {
     return response.Success(c, map[string]string{
         "message": "Hello, World!",
         "status":  "running",

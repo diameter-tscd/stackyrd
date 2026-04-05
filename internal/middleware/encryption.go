@@ -2,253 +2,149 @@ package middleware
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
+	"sync"
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
-// EncryptionMiddleware returns a middleware that handles API request/response encryption
-func EncryptionMiddleware(cfg *config.Config, logger *logger.Logger) echo.MiddlewareFunc {
-	// Create encryption service instance
-	encryptionService := createEncryptionService(cfg)
+// EncryptionMiddleware provides API encryption/obfuscation
+func EncryptionMiddleware(cfg *config.Config, l *logger.Logger) gin.HandlerFunc {
+	if !cfg.Encryption.Enabled {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
 
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Skip encryption for certain paths
-			path := c.Request().URL.Path
-			if shouldSkipEncryption(path) {
-				return next(c)
+	return func(c *gin.Context) {
+		// Wrap the response writer to intercept the response
+		w := &encryptionResponseWriter{
+			ResponseWriter: c.Writer,
+			body:           &bytes.Buffer{},
+			config:         cfg,
+			logger:         l,
+		}
+		c.Writer = w
+
+		c.Next()
+
+		// The response has been written to w.body
+		// We need to write it back through the original writer
+		if w.body.Len() > 0 {
+			// Check if the response is JSON
+			contentType := c.Writer.Header().Get("Content-Type")
+			if strings.Contains(contentType, "application/json") {
+				// Apply obfuscation (base64 encoding for demo)
+				encoded := base64.StdEncoding.EncodeToString(w.body.Bytes())
+				c.Writer.Header().Set("X-Obfuscated", "true")
+				c.Writer.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
+				c.Writer.WriteHeaderNow()
+				c.Writer.Write([]byte(encoded))
+			} else {
+				// Pass through non-JSON responses
+				c.Writer.WriteHeaderNow()
+				c.Writer.Write(w.body.Bytes())
 			}
-
-			// Handle request decryption (if encrypted)
-			if err := handleRequestDecryption(c, encryptionService, logger); err != nil {
-				return err
-			}
-
-			// Create response recorder
-			resBody := new(bytes.Buffer)
-			recorder := &ResponseRecorder{
-				ResponseWriter: c.Response().Writer,
-				Body:           resBody,
-				StatusCode:     http.StatusOK,
-			}
-			c.Response().Writer = recorder
-
-			// Call next handler
-			err := next(c)
-
-			// Handle response encryption
-			if err2 := handleResponseEncryption(c, recorder, encryptionService, logger); err2 != nil {
-				return err2
-			}
-
-			return err
 		}
 	}
 }
 
-func createEncryptionService(cfg *config.Config) *encryptionService {
-	// Extract encryption config
-	encCfg := cfg.Encryption
-
-	// Ensure key is 32 bytes for AES-256
-	keyBytes := []byte(encCfg.Key)
-	if len(keyBytes) < 32 {
-		// Pad with zeros
-		paddedKey := make([]byte, 32)
-		copy(paddedKey, keyBytes)
-		keyBytes = paddedKey
-	} else if len(keyBytes) > 32 {
-		// Truncate to 32 bytes
-		keyBytes = keyBytes[:32]
-	}
-
-	return &encryptionService{
-		enabled:       encCfg.Enabled,
-		algorithm:     encCfg.Algorithm,
-		encryptionKey: keyBytes,
-	}
+type encryptionResponseWriter struct {
+	gin.ResponseWriter
+	body   *bytes.Buffer
+	config *config.Config
+	logger *logger.Logger
+	once   sync.Once
 }
 
-func shouldSkipEncryption(path string) bool {
-	// Skip encryption for health and system endpoints
-	skipPaths := []string{
-		"/health",
-		"/restart",
-		"/api/v1/encryption", // Encryption service endpoints
-	}
-
-	for _, skipPath := range skipPaths {
-		if strings.HasPrefix(path, skipPath) {
-			return true
-		}
-	}
-
-	return false
+func (w *encryptionResponseWriter) Write(b []byte) (int, error) {
+	return w.body.Write(b)
 }
 
-func handleRequestDecryption(c echo.Context, es *encryptionService, logger *logger.Logger) error {
-	// Check if request has encryption header
-	encryptedHeader := c.Request().Header.Get("X-Encrypted-Request")
-	if encryptedHeader != "true" {
-		return nil // Not encrypted, proceed normally
-	}
-
-	// Only decrypt JSON content
-	contentType := c.Request().Header.Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
-		return nil
-	}
-
-	// Read and decrypt the request body
-	bodyBytes, err := io.ReadAll(c.Request().Body)
-	if err != nil {
-		logger.Error("Failed to read encrypted request body", err)
-		return echo.NewHTTPError(http.StatusBadRequest, "Failed to read request body")
-	}
-	c.Request().Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	// Decrypt the body
-	decrypted, err := es.decrypt(string(bodyBytes))
-	if err != nil {
-		logger.Error("Failed to decrypt request body", err)
-		return echo.NewHTTPError(http.StatusBadRequest, "Failed to decrypt request body")
-	}
-
-	// Replace request body with decrypted content
-	c.Request().Body = io.NopCloser(bytes.NewBuffer([]byte(decrypted)))
-	c.Request().Header.Set("Content-Length", fmt.Sprintf("%d", len(decrypted)))
-
-	return nil
+func (w *encryptionResponseWriter) WriteHeader(statusCode int) {
+	w.ResponseWriter.WriteHeader(statusCode)
 }
 
-func handleResponseEncryption(c echo.Context, recorder *ResponseRecorder, es *encryptionService, logger *logger.Logger) error {
-	// Only encrypt JSON responses
-	contentType := recorder.Header().Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
-		recorder.FlushOriginal()
-		return nil
+func (w *encryptionResponseWriter) WriteHeaderNow() {
+	w.ResponseWriter.WriteHeaderNow()
+}
+
+func (w *encryptionResponseWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *encryptionResponseWriter) Status() int {
+	return w.ResponseWriter.Status()
+}
+
+// GzipMiddleware provides GZIP compression for responses
+func GzipMiddleware() gin.HandlerFunc {
+	var gzPool = sync.Pool{
+		New: func() interface{} {
+			return gzip.NewWriter(io.Discard)
+		},
 	}
 
-	// Skip if encryption is disabled
-	if !es.enabled {
-		recorder.FlushOriginal()
-		return nil
-	}
-
-	// Encrypt the response
-	data := recorder.Body.Bytes()
-	if len(data) > 0 {
-		encrypted, err := es.encrypt(string(data))
-		if err != nil {
-			logger.Error("Failed to encrypt response", err)
-			recorder.FlushOriginal()
-			return nil
+	return func(c *gin.Context) {
+		// Check if client accepts gzip
+		if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+			c.Next()
+			return
 		}
 
-		// Set headers
-		recorder.ResponseWriter.Header().Set("X-Encrypted-Response", "true")
-		recorder.ResponseWriter.Header().Set("X-Encryption-Algorithm", es.algorithm)
-		recorder.ResponseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(encrypted)))
+		w := c.Writer
 
-		// Write encrypted response
-		recorder.ResponseWriter.WriteHeader(recorder.StatusCode)
-		recorder.ResponseWriter.Write([]byte(encrypted))
-	} else {
-		recorder.ResponseWriter.WriteHeader(recorder.StatusCode)
-	}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
 
-	return nil
-}
+		gz := gzPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzPool.Put(gz)
+		}()
 
-// ResponseRecorder captures the response
-type ResponseRecorder struct {
-	http.ResponseWriter
-	Body       *bytes.Buffer
-	StatusCode int
-}
-
-func (r *ResponseRecorder) WriteHeader(code int) {
-	r.StatusCode = code
-}
-
-func (r *ResponseRecorder) Write(b []byte) (int, error) {
-	return r.Body.Write(b)
-}
-
-func (r *ResponseRecorder) FlushOriginal() {
-	r.ResponseWriter.Header().Del("Content-Length")
-	r.ResponseWriter.WriteHeader(r.StatusCode)
-	r.ResponseWriter.Write(r.Body.Bytes())
-}
-
-// encryptionService provides encryption/decryption functionality
-type encryptionService struct {
-	enabled       bool
-	algorithm     string
-	encryptionKey []byte
-}
-
-func (es *encryptionService) encrypt(data string) (string, error) {
-	// For now, use simple base64 encoding as placeholder
-	// In production, this would use AES-256-GCM like in the service
-	return base64.StdEncoding.EncodeToString([]byte(data)), nil
-}
-
-func (es *encryptionService) decrypt(encryptedData string) (string, error) {
-	// Decode from base64
-	decoded, err := base64.StdEncoding.DecodeString(encryptedData)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode base64: %v", err)
-	}
-	return string(decoded), nil
-}
-
-// EncryptionConfigMiddleware adds encryption configuration to the context
-func EncryptionConfigMiddleware(cfg *config.Config) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Add encryption config to context
-			c.Set("encryption_config", cfg.Encryption)
-			return next(c)
+		// Wrap the writer
+		gzw := &gzipResponseWriter{
+			ResponseWriter: w,
+			Writer:         gz,
 		}
+		c.Writer = gzw
+
+		c.Next()
 	}
 }
 
-// GetEncryptionConfigFromContext retrieves encryption config from context
-func GetEncryptionConfigFromContext(c echo.Context) (*config.EncryptionConfig, error) {
-	encCfg, ok := c.Get("encryption_config").(*config.EncryptionConfig)
-	if !ok {
-		return nil, fmt.Errorf("encryption config not found in context")
-	}
-	return encCfg, nil
+type gzipResponseWriter struct {
+	gin.ResponseWriter
+	io.Writer
 }
 
-// EncryptionStatusHandler provides a handler to check encryption status
-func EncryptionStatusHandler(c echo.Context) error {
-	encCfg, err := GetEncryptionConfigFromContext(c)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "Encryption config not available")
-	}
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
 
-	status := map[string]interface{}{
-		"enabled":    encCfg.Enabled,
-		"algorithm":  encCfg.Algorithm,
-		"key_length": len(encCfg.Key),
-		"timestamp":  time.Now().Unix(),
-	}
+func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	w.ResponseWriter.Header().Del("Content-Length")
+	w.ResponseWriter.WriteHeader(statusCode)
+}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"status":  "success",
-		"message": "Encryption service status",
-		"data":    status,
-	})
+func (w *gzipResponseWriter) WriteHeaderNow() {
+	w.ResponseWriter.WriteHeaderNow()
+}
+
+func (w *gzipResponseWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
+func (w *gzipResponseWriter) Status() int {
+	return w.ResponseWriter.Status()
 }

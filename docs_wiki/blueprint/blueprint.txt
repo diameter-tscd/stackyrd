@@ -9,7 +9,7 @@ This project is a sophisticated Go-based boilerplate application with a modular 
 
 ### Key Characteristics:
 - **Language**: Go (Golang)
-- **Framework**: Echo for HTTP services
+- **Framework**: Gin for HTTP services
 - **ORM**: GORM for database operations with auto-migration
 - **Architecture**: Modular, service-oriented with multi-tenant support
 - **UI**: Terminal User Interface (TUI) using Bubble Tea
@@ -217,10 +217,10 @@ All services implement the `Service` interface:
 
 ```go
 type Service interface {
-    Name() string                      // Display name
-    RegisterRoutes(g *echo.Group)      // Register HTTP routes
-    Enabled() bool                     // Service active status
-    Endpoints() []string               // List of endpoints
+    Name() string                          // Display name
+    RegisterRoutes(g *gin.RouterGroup)     // Register HTTP routes
+    Enabled() bool                         // Service active status
+    Endpoints() []string                   // List of endpoints
 }
 ```
 
@@ -240,7 +240,7 @@ func (s *UsersService) Name() string { return "Users Service" }
 func (s *UsersService) Enabled() bool { return s.enabled }
 func (s *UsersService) Endpoints() []string { return []string{"/users", "/users/:id"} }
 
-func (s *UsersService) RegisterRoutes(g *echo.Group) {
+func (s *UsersService) RegisterRoutes(g *gin.RouterGroup) {
     sub := g.Group("/users")
     sub.GET("", s.listUsers)
     sub.GET("/:id", s.getUser)
@@ -1786,7 +1786,7 @@ stackyrd/
 
 ### 11.2 Technical Highlights
 
-- **Echo Framework**: High-performance HTTP server
+- **Gin Framework**: High-performance HTTP server
 - **Bubble Tea**: Modern TUI framework
 - **GORM**: ORM for database operations
 - **Validator**: Request validation library
@@ -1932,7 +1932,7 @@ This project complies with open-source licensing best practices:
 The project uses various third-party dependencies, each with their own licenses. Key dependencies include:
 
 - **Go Standard Library**: BSD-style license (automatically compliant)
-- **Echo Framework**: MIT License
+- **Gin Framework**: MIT License
 - **GORM**: MIT License
 - **Bubble Tea**: MIT License
 - **MongoDB Go Driver**: Apache License 2.0

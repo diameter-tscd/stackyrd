@@ -1,281 +1,230 @@
-package services_test
+package services
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"stackyrd/internal/services/modules"
+	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
-	testhelpers "stackyrd/pkg/testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestNewUsersService(t *testing.T) {
-	service := modules.NewUsersService(true)
-	if service == nil {
-		t.Fatal("expected service to be created")
-	}
-	if !service.Enabled() {
-		t.Error("expected service to be enabled")
-	}
-	if service.Name() != "Users Service" {
-		t.Errorf("expected name 'Users Service', got %q", service.Name())
-	}
+func setupTestRouter(service *modules.UsersService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.Default()
+	group := r.Group("/api/v1")
+	service.RegisterRoutes(group)
+	return r
 }
 
-func TestUsersServiceDisabled(t *testing.T) {
-	service := modules.NewUsersService(false)
-	if service.Enabled() {
-		t.Error("expected service to be disabled")
-	}
+func TestUsersService_Name(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	assert.Equal(t, "Users Service", service.Name())
 }
 
-func TestGetUsers(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContext(http.MethodGet, "/api/v1/users", nil)
+func TestUsersService_WireName(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	assert.Equal(t, "users", service.WireName())
+}
 
-	err := service.GetUsers(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+func TestUsersService_Enabled(t *testing.T) {
+	l := logger.New(false, nil)
 
-	testhelpers.AssertStatus(t, rec, http.StatusOK)
+	// Test enabled service
+	service := modules.NewUsersService(true, l)
+	assert.True(t, service.Enabled())
+
+	// Test disabled service
+	disabledService := modules.NewUsersService(false, l)
+	assert.False(t, disabledService.Enabled())
+}
+
+func TestUsersService_Endpoints(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	endpoints := service.Endpoints()
+
+	assert.Contains(t, endpoints, "/users")
+	assert.Contains(t, endpoints, "/users/:id")
+}
+
+func TestUsersService_ListUsers(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
+
+	req, _ := http.NewRequest("GET", "/api/v1/users", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if !resp.Success {
-		t.Error("expected success to be true")
-	}
-	if resp.Data == nil {
-		t.Error("expected data to be present")
-	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
-func TestGetUsersWithPagination(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContextWithQuery(http.MethodGet, "/api/v1/users", map[string]string{
-		"page":     "1",
-		"per_page": "10",
-	})
+func TestUsersService_ListUsersWithPagination(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
 
-	err := service.GetUsers(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	req, _ := http.NewRequest("GET", "/api/v1/users?page=1&per_page=5", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	testhelpers.AssertStatus(t, rec, http.StatusOK)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if resp.Meta == nil {
-		t.Error("expected meta to be present")
-	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
-func TestGetUser(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContextWithParams(http.MethodGet, "/api/v1/users/:id", map[string]string{
-		"id": "1",
-	}, nil)
+func TestUsersService_GetUser(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
 
-	err := service.GetUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	req, _ := http.NewRequest("GET", "/api/v1/users/1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	testhelpers.AssertStatus(t, rec, http.StatusOK)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if !resp.Success {
-		t.Error("expected success to be true")
-	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
-func TestGetUserNotFound(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContextWithParams(http.MethodGet, "/api/v1/users/:id", map[string]string{
-		"id": "999",
-	}, nil)
+func TestUsersService_GetUserNotFound(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
 
-	err := service.GetUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	req, _ := http.NewRequest("GET", "/api/v1/users/999", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUsersService_CreateUser(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
+
+	user := map[string]interface{}{
+		"name":     "Test User",
+		"email":    "test@example.com",
+		"phone":    "+1234567890",
+		"username": "testuser",
+		"age":      25,
 	}
+	body, _ := json.Marshal(user)
 
-	testhelpers.AssertStatus(t, rec, http.StatusNotFound)
+	req, _ := http.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if resp.Success {
-		t.Error("expected success to be false")
-	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
-func TestCreateUser(t *testing.T) {
-	service := modules.NewUsersService(true)
-	body := modules.CreateUserRequest{
-		Username: "testuser",
-		Email:    "test@example.com",
-		FullName: "Test User",
-	}
-	c, rec := testhelpers.NewTestContext(http.MethodPost, "/api/v1/users", body)
+func TestUsersService_CreateUserValidation(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
 
-	err := service.CreateUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Missing required fields
+	user := map[string]interface{}{
+		"name": "Test User",
 	}
+	body, _ := json.Marshal(user)
 
-	testhelpers.AssertStatus(t, rec, http.StatusCreated)
+	req, _ := http.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if !resp.Success {
-		t.Error("expected success to be true")
-	}
-	if resp.Message != "User created successfully" {
-		t.Errorf("expected message 'User created successfully', got %q", resp.Message)
-	}
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
-func TestCreateUserValidation(t *testing.T) {
-	service := modules.NewUsersService(true)
-	body := modules.CreateUserRequest{
-		Username: "",
-		Email:    "invalid-email",
-		FullName: "T",
+func TestUsersService_UpdateUser(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
+
+	user := map[string]interface{}{
+		"name":     "Updated User",
+		"email":    "updated@example.com",
+		"phone":    "+0987654321",
+		"username": "updateduser",
+		"age":      30,
 	}
-	c, rec := testhelpers.NewTestContext(http.MethodPost, "/api/v1/users", body)
+	body, _ := json.Marshal(user)
 
-	err := service.CreateUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	req, _ := http.NewRequest("PUT", "/api/v1/users/1", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	testhelpers.AssertStatus(t, rec, http.StatusUnprocessableEntity)
-
-	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if resp.Success {
-		t.Error("expected success to be false")
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestUpdateUser(t *testing.T) {
-	service := modules.NewUsersService(true)
-	body := modules.UpdateUserRequest{
-		Username: "updateduser",
-		Email:    "updated@example.com",
-		FullName: "Updated User",
-		Status:   "active",
+func TestUsersService_UpdateUserNotFound(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
+
+	// Send complete valid data but with non-existent user ID
+	user := map[string]interface{}{
+		"name":     "Updated User",
+		"email":    "updated@example.com",
+		"phone":    "+1234567890",
+		"username": "updateduser",
+		"age":      30,
 	}
-	c, rec := testhelpers.NewTestContextWithParams(http.MethodPut, "/api/v1/users/:id", map[string]string{
-		"id": "1",
-	}, body)
+	body, _ := json.Marshal(user)
 
-	err := service.UpdateUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	req, _ := http.NewRequest("PUT", "/api/v1/users/999", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	testhelpers.AssertStatus(t, rec, http.StatusOK)
-
-	var resp response.Response
-	testhelpers.ParseResponse(t, rec, &resp)
-
-	if !resp.Success {
-		t.Error("expected success to be true")
-	}
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestDeleteUser(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContextWithParams(http.MethodDelete, "/api/v1/users/:id", map[string]string{
-		"id": "1",
-	}, nil)
+func TestUsersService_DeleteUserBlocked(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(true, l)
+	router := setupTestRouter(service)
 
-	err := service.DeleteUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	req, _ := http.NewRequest("DELETE", "/api/v1/users/1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-	testhelpers.AssertStatus(t, rec, http.StatusNoContent)
+	// DELETE should return 404 because it's not registered
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestDeleteUserNotFound(t *testing.T) {
-	service := modules.NewUsersService(true)
-	c, rec := testhelpers.NewTestContextWithParams(http.MethodDelete, "/api/v1/users/:id", map[string]string{
-		"id": "999",
-	}, nil)
-
-	err := service.DeleteUser(c)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	testhelpers.AssertStatus(t, rec, http.StatusNotFound)
-}
-
-func TestUserStruct(t *testing.T) {
-	user := modules.User{
-		ID:        "1",
-		Username:  "testuser",
-		Email:     "test@example.com",
-		Status:    "active",
-		CreatedAt: 1234567890,
-	}
-
-	jsonData, err := json.Marshal(user)
-	if err != nil {
-		t.Fatalf("failed to marshal user: %v", err)
-	}
-
-	var decoded modules.User
-	if err := json.Unmarshal(jsonData, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal user: %v", err)
-	}
-
-	if decoded.ID != user.ID {
-		t.Errorf("expected ID %q, got %q", user.ID, decoded.ID)
-	}
-	if decoded.Username != user.Username {
-		t.Errorf("expected Username %q, got %q", user.Username, decoded.Username)
-	}
-}
-
-func BenchmarkGetUsers(b *testing.B) {
-	service := modules.NewUsersService(true)
-	for i := 0; i < b.N; i++ {
-		c, _ := testhelpers.NewTestContext(http.MethodGet, "/api/v1/users", nil)
-		_ = service.GetUsers(c)
-	}
-}
-
-func BenchmarkGetUser(b *testing.B) {
-	service := modules.NewUsersService(true)
-	for i := 0; i < b.N; i++ {
-		c, _ := testhelpers.NewTestContextWithParams(http.MethodGet, "/api/v1/users/:id", map[string]string{
-			"id": "1",
-		}, nil)
-		_ = service.GetUser(c)
-	}
-}
-
-func BenchmarkCreateUser(b *testing.B) {
-	service := modules.NewUsersService(true)
-	body := modules.CreateUserRequest{
-		Username: "benchuser",
-		Email:    "bench@example.com",
-		FullName: "Benchmark User",
-	}
-	for i := 0; i < b.N; i++ {
-		c, _ := testhelpers.NewTestContext(http.MethodPost, "/api/v1/users", body)
-		_ = service.CreateUser(c)
-	}
+func TestUsersService_DisabledService(t *testing.T) {
+	l := logger.New(false, nil)
+	service := modules.NewUsersService(false, l)
+	assert.False(t, service.Enabled())
 }

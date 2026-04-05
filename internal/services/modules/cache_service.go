@@ -8,9 +8,10 @@ import (
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 type CacheService struct {
@@ -36,7 +37,7 @@ type CacheRequest struct {
 	TTL   int    `json:"ttl_seconds"` // Optional
 }
 
-func (s *CacheService) RegisterRoutes(g *echo.Group) {
+func (s *CacheService) RegisterRoutes(g *gin.RouterGroup) {
 	sub := g.Group("/cache")
 
 	// GET /cache/:key
@@ -56,13 +57,14 @@ func (s *CacheService) RegisterRoutes(g *echo.Group) {
 // @Success 200 {object} response.Response "Success"
 // @Failure 404 {object} response.Response "Key not found or expired"
 // @Router /cache/{key} [get]
-func (s *CacheService) GetCachedValue(c echo.Context) error {
+func (s *CacheService) GetCachedValue(c *gin.Context) {
 	key := c.Param("key")
 	val, found := s.store.Get(key)
 	if !found {
-		return response.NotFound(c, "Key not found or expired")
+		response.NotFound(c, "Key not found or expired")
+		return
 	}
-	return response.Success(c, map[string]string{"key": key, "value": val})
+	response.Success(c, map[string]string{"key": key, "value": val})
 }
 
 // SetCachedValue godoc
@@ -76,17 +78,18 @@ func (s *CacheService) GetCachedValue(c echo.Context) error {
 // @Success 200 {object} response.Response "Cached successfully"
 // @Failure 400 {object} response.Response "Invalid body"
 // @Router /cache/{key} [post]
-func (s *CacheService) SetCachedValue(c echo.Context) error {
+func (s *CacheService) SetCachedValue(c *gin.Context) {
 	key := c.Param("key")
 	var req CacheRequest
-	if err := c.Bind(&req); err != nil {
-		return response.BadRequest(c, "Invalid body")
+	if err := request.Bind(c, &req); err != nil {
+		response.BadRequest(c, "Invalid body")
+		return
 	}
 
 	ttl := time.Duration(req.TTL) * time.Second
 	s.store.Set(key, req.Value, ttl)
 
-	return response.Success(c, map[string]string{
+	response.Success(c, map[string]string{
 		"message": "Cached successfully",
 		"key":     key,
 		"ttl":     ttl.String(),

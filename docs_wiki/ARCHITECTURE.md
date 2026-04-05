@@ -4,7 +4,7 @@ This document provides a high-level overview of stackyrd's architecture, design 
 
 ## System Overview
 
-stackyrd is a modular, service-oriented Go application framework built on top of the Echo web framework. It emphasizes clean architecture, dependency injection, and production readiness with comprehensive monitoring and infrastructure integrations.
+stackyrd is a modular, service-oriented Go application framework built on top of the Gin web framework. It emphasizes clean architecture, dependency injection, and production readiness with comprehensive monitoring and infrastructure integrations.
 
 ## Core Architecture Principles
 
@@ -92,7 +92,7 @@ stackyrd/
 ### Request Flow
 
 ```
-1. HTTP Request → 2. Echo Router → 3. Middleware → 4. Handler → 5. Response
+1. HTTP Request → 2. Gin Router → 3. Middleware → 4. Handler → 5. Response
 
    ↓                    ↓                ↓              ↓             ↓
    Client            Routing          Auth/Logging   Business Logic  JSON

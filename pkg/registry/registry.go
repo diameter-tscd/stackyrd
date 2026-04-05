@@ -6,7 +6,7 @@ import (
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // ServiceFactory creates a service instance with dependencies
@@ -108,8 +108,8 @@ func (r *ServiceRegistry) GetServices() []interfaces.Service {
 }
 
 // Boot initializes enabled services and registers their routes
-func (r *ServiceRegistry) Boot(e *echo.Echo) {
-	api := e.Group("/api/v1")
+func (r *ServiceRegistry) Boot(engine *gin.Engine) {
+	api := engine.Group("/api/v1")
 
 	for _, s := range r.services {
 		if s.Enabled() {
@@ -123,9 +123,9 @@ func (r *ServiceRegistry) Boot(e *echo.Echo) {
 }
 
 // BootService boots a single service (for dynamic registration)
-func (r *ServiceRegistry) BootService(e *echo.Echo, s interfaces.Service) {
+func (r *ServiceRegistry) BootService(engine *gin.Engine, s interfaces.Service) {
 	if s.Enabled() {
-		api := e.Group("/api/v1")
+		api := engine.Group("/api/v1")
 		r.logger.Info("Starting Service...", "service", s.Name())
 		s.RegisterRoutes(api)
 		r.logger.Info("Service Started", "service", s.Name())

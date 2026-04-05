@@ -1,7 +1,7 @@
 package interfaces
 
 import (
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
 // Service defines the interface that all services must implement
@@ -18,8 +18,8 @@ type Service interface {
 	// Endpoints returns a list of endpoint patterns this service handles
 	Endpoints() []string
 
-	// RegisterRoutes registers the service's routes with the Echo router
-	RegisterRoutes(g *echo.Group)
+	// RegisterRoutes registers the service's routes with the Gin router
+	RegisterRoutes(g *gin.RouterGroup)
 
 	// Get service
 	Get() interface{}

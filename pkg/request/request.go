@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"github.com/labstack/echo/v4"
 )
 
 var validate *validator.Validate
@@ -21,8 +21,8 @@ func init() {
 }
 
 // Bind binds and validates request data
-func Bind(c echo.Context, req interface{}) error {
-	if err := c.Bind(req); err != nil {
+func Bind(c *gin.Context, req interface{}) error {
+	if err := c.ShouldBind(req); err != nil {
 		return fmt.Errorf("invalid request format: %w", err)
 	}
 
@@ -121,7 +121,7 @@ func validateUsername(fl validator.FieldLevel) bool {
 
 // IDRequest represents a request with a single ID
 type IDRequest struct {
-	ID string `param:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 // IDsRequest represents a request with multiple IDs
@@ -131,10 +131,10 @@ type IDsRequest struct {
 
 // SearchRequest represents a search request
 type SearchRequest struct {
-	Query  string            `query:"q" json:"query"`
-	Filter map[string]string `query:"filter" json:"filter,omitempty"`
-	Page   int               `query:"page" json:"page"`
-	Limit  int               `query:"limit" json:"limit"`
+	Query  string            `form:"q" json:"query"`
+	Filter map[string]string `form:"filter" json:"filter,omitempty"`
+	Page   int               `form:"page" json:"page"`
+	Limit  int               `form:"limit" json:"limit"`
 }
 
 // GetQuery returns the search query
@@ -163,8 +163,8 @@ func (r *SearchRequest) GetLimit() int {
 
 // DateRangeRequest represents a date range filter
 type DateRangeRequest struct {
-	StartDate string `query:"start_date" json:"start_date"`
-	EndDate   string `query:"end_date" json:"end_date"`
+	StartDate string `form:"start_date" json:"start_date"`
+	EndDate   string `form:"end_date" json:"end_date"`
 }
 
 // Validate validates the date range
@@ -184,8 +184,8 @@ func (r *DateRangeRequest) Validate() error {
 
 // SortRequest represents sorting parameters
 type SortRequest struct {
-	SortBy    string `query:"sort_by" json:"sort_by"`
-	SortOrder string `query:"sort_order" json:"sort_order"` // asc or desc
+	SortBy    string `form:"sort_by" json:"sort_by"`
+	SortOrder string `form:"sort_order" json:"sort_order"` // asc or desc
 }
 
 // GetSortBy returns the sort field (default: created_at)

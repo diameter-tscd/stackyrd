@@ -3,30 +3,33 @@ package modules
 import (
 	"context"
 	"fmt"
+
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Product represents a product stored in MongoDB
 type Product struct {
-	Name        string   `json:"name" bson:"name"`
-	Description string   `json:"description" bson:"description"`
-	Price       float64  `json:"price" bson:"price"`
-	Category    string   `json:"category" bson:"category"`
-	InStock     bool     `json:"in_stock" bson:"in_stock"`
-	Quantity    int      `json:"quantity" bson:"quantity"`
-	Tags        []string `json:"tags" bson:"tags"`
+	ID          primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Name        string             `json:"name" bson:"name"`
+	Description string             `json:"description" bson:"description"`
+	Price       float64            `json:"price" bson:"price"`
+	Category    string             `json:"category" bson:"category"`
+	InStock     bool               `json:"in_stock" bson:"in_stock"`
+	Quantity    int                `json:"quantity" bson:"quantity"`
+	Tags        []string           `json:"tags" bson:"tags"`
 }
 
-// ServiceG demonstrates using multiple MongoDB connections with NoSQL operations
-// This service shows how to work with different MongoDB databases dynamically
+// MongoDBService demonstrates using multiple MongoDB connections with NoSQL operations
 type MongoDBService struct {
 	enabled                bool
 	mongoConnectionManager *infrastructure.MongoConnectionManager
@@ -53,10 +56,9 @@ func (s *MongoDBService) Endpoints() []string {
 }
 func (s *MongoDBService) Get() interface{} { return s }
 
-func (s *MongoDBService) RegisterRoutes(g *echo.Group) {
+func (s *MongoDBService) RegisterRoutes(g *gin.RouterGroup) {
 	sub := g.Group("/products")
 
-	// Routes with tenant parameter for database selection
 	sub.GET("/:tenant", s.listProductsByTenant)
 	sub.POST("/:tenant", s.createProduct)
 	sub.GET("/:tenant/:id", s.getProductByTenant)
@@ -77,396 +79,357 @@ func (s *MongoDBService) RegisterRoutes(g *echo.Group) {
 // @Failure 404 {object} response.Response "Tenant database not found"
 // @Failure 500 {object} response.Response "Failed to query tenant database"
 // @Router /products/{tenant} [get]
-func (s *MongoDBService) listProductsByTenant(c echo.Context) error {
+func (s *MongoDBService) listProductsByTenant(c *gin.Context) {
 	tenant := c.Param("tenant")
+	if tenant == "" {
+		response.BadRequest(c, "Tenant identifier is required")
+		return
+	}
 
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Use async MongoDB operation to avoid blocking main thread
-	cursorResult := dbConn.FindAsync(context.Background(), "products", bson.M{})
-
-	// Wait for the async operation to complete
-	cursor, err := cursorResult.Wait()
+	ctx := context.Background()
+	cursor, err := conn.Find(ctx, "products", bson.M{})
 	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, err))
+		s.logger.Error("Failed to query products", err, "tenant", tenant)
+		response.InternalServerError(c, "Failed to query tenant database")
+		return
 	}
-	defer cursor.Close(context.Background())
+	defer cursor.Close(ctx)
 
-	var products []bson.M
-	if err := cursor.All(context.Background(), &products); err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to decode products: %v", err))
+	var products []Product
+	if err := cursor.All(ctx, &products); err != nil {
+		s.logger.Error("Failed to decode products", err)
+		response.InternalServerError(c, "Failed to decode products")
+		return
 	}
 
-	return response.Success(c, products, fmt.Sprintf("Products retrieved from tenant '%s' database", tenant))
+	response.Success(c, products, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
 }
 
 // createProduct godoc
-// @Summary Create product in tenant database
+// @Summary Create a product for tenant
 // @Description Create a new product in a specific tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
 // @Param request body Product true "Product data"
-// @Success 201 {object} response.Response "Product created in tenant database"
+// @Success 201 {object} response.Response "Product created successfully"
 // @Failure 400 {object} response.Response "Invalid product data"
 // @Failure 404 {object} response.Response "Tenant database not found"
-// @Failure 500 {object} response.Response "Failed to create product"
 // @Router /products/{tenant} [post]
-func (s *MongoDBService) createProduct(c echo.Context) error {
+func (s *MongoDBService) createProduct(c *gin.Context) {
 	tenant := c.Param("tenant")
-
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	if tenant == "" {
+		response.BadRequest(c, "Tenant identifier is required")
+		return
 	}
 
 	var product Product
-	if err := c.Bind(&product); err != nil {
-		return response.BadRequest(c, "Invalid product data")
+	if err := request.Bind(c, &product); err != nil {
+		response.BadRequest(c, "Invalid product data")
+		return
 	}
 
-	// Validate required fields
-	if product.Name == "" {
-		return response.BadRequest(c, "Product name is required")
-	}
-	if product.Price < 0 {
-		return response.BadRequest(c, "Product price cannot be negative")
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	if !exists {
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Set default values
-	if product.Quantity == 0 {
-		product.Quantity = 0
-	}
-	product.InStock = product.Quantity > 0
-
-	// Insert into tenant's database
-	result, err := dbConn.InsertOne(context.Background(), "products", product)
+	ctx := context.Background()
+	result, err := conn.InsertOne(ctx, "products", product)
 	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to create product in tenant '%s' database: %v", tenant, err))
+		s.logger.Error("Failed to create product", err, "tenant", tenant)
+		response.InternalServerError(c, "Failed to create product")
+		return
 	}
 
-	// Create response with the generated ID
-	responseData := bson.M{
-		"_id":         result.InsertedID,
-		"name":        product.Name,
-		"description": product.Description,
-		"price":       product.Price,
-		"category":    product.Category,
-		"in_stock":    product.InStock,
-		"quantity":    product.Quantity,
-		"tags":        product.Tags,
-	}
-
-	return response.Created(c, responseData, fmt.Sprintf("Product created in tenant '%s' database", tenant))
+	response.Created(c, map[string]interface{}{
+		"id":      result.InsertedID,
+		"tenant":  tenant,
+		"product": product,
+	}, fmt.Sprintf("Product created in tenant '%s'", tenant))
 }
 
 // getProductByTenant godoc
-// @Summary Get product by tenant
+// @Summary Get product by tenant and ID
 // @Description Retrieve a specific product from a tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
 // @Param id path string true "Product ID"
-// @Success 200 {object} response.Response "Product retrieved from tenant database"
-// @Failure 400 {object} response.Response "Invalid product ID format"
-// @Failure 404 {object} response.Response "Tenant database or product not found"
-// @Failure 500 {object} response.Response "Failed to query tenant database"
+// @Success 200 {object} response.Response "Product retrieved successfully"
+// @Failure 400 {object} response.Response "Invalid product ID"
+// @Failure 404 {object} response.Response "Product or tenant not found"
 // @Router /products/{tenant}/{id} [get]
-func (s *MongoDBService) getProductByTenant(c echo.Context) error {
+func (s *MongoDBService) getProductByTenant(c *gin.Context) {
 	tenant := c.Param("tenant")
 	id := c.Param("id")
 
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	if tenant == "" || id == "" {
+		response.BadRequest(c, "Tenant and product ID are required")
+		return
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		response.BadRequest(c, "Invalid product ID format")
+		return
+	}
+
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Find product using ObjectID
-	objectID, err := infrastructure.StringToObjectID(id)
+	ctx := context.Background()
+	var product Product
+	err = conn.FindOne(ctx, "products", bson.M{"_id": objectID}).Decode(&product)
 	if err != nil {
-		return response.BadRequest(c, "Invalid product ID format")
+		response.NotFound(c, "Product not found")
+		return
 	}
 
-	filter := bson.M{"_id": objectID}
-	var product bson.M
-	err = dbConn.FindOne(context.Background(), "products", filter).Decode(&product)
-	if err != nil {
-		if err.Error() == "mongo: no documents in result" {
-			return response.NotFound(c, fmt.Sprintf("Product not found in tenant '%s' database", tenant))
-		}
-		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, err))
-	}
-
-	return response.Success(c, product, fmt.Sprintf("Product retrieved from tenant '%s' database", tenant))
+	response.Success(c, product, "Product retrieved successfully")
 }
 
 // updateProduct godoc
-// @Summary Update product in tenant database
-// @Description Update a product in a specific tenant's database
+// @Summary Update a product for tenant
+// @Description Update an existing product in a tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
 // @Param id path string true "Product ID"
-// @Param request body map[string]interface{} true "Product update data"
-// @Success 200 {object} response.Response "Product updated in tenant database"
-// @Failure 400 {object} response.Response "Invalid product ID format or update data"
-// @Failure 404 {object} response.Response "Tenant database or product not found"
-// @Failure 500 {object} response.Response "Failed to update product"
+// @Param request body Product true "Updated product data"
+// @Success 200 {object} response.Response "Product updated successfully"
+// @Failure 400 {object} response.Response "Invalid data"
+// @Failure 404 {object} response.Response "Product or tenant not found"
 // @Router /products/{tenant}/{id} [put]
-func (s *MongoDBService) updateProduct(c echo.Context) error {
+func (s *MongoDBService) updateProduct(c *gin.Context) {
 	tenant := c.Param("tenant")
 	id := c.Param("id")
 
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	if tenant == "" || id == "" {
+		response.BadRequest(c, "Tenant and product ID are required")
+		return
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		response.BadRequest(c, "Invalid product ID format")
+		return
+	}
+
+	var product Product
+	if err := request.Bind(c, &product); err != nil {
+		response.BadRequest(c, "Invalid product data")
+		return
+	}
+
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Parse ObjectID
-	objectID, err := infrastructure.StringToObjectID(id)
+	ctx := context.Background()
+	update := bson.M{
+		"$set": bson.M{
+			"name":        product.Name,
+			"description": product.Description,
+			"price":       product.Price,
+			"category":    product.Category,
+			"in_stock":    product.InStock,
+			"quantity":    product.Quantity,
+			"tags":        product.Tags,
+		},
+	}
+
+	result, err := conn.UpdateOne(ctx, "products", bson.M{"_id": objectID}, update)
 	if err != nil {
-		return response.BadRequest(c, "Invalid product ID format")
-	}
-
-	// Get update data
-	var updateData bson.M
-	if err := c.Bind(&updateData); err != nil {
-		return response.BadRequest(c, "Invalid update data")
-	}
-
-	// Remove _id from update data if present
-	delete(updateData, "_id")
-
-	// Update in_stock based on quantity if quantity is being updated
-	if quantity, ok := updateData["quantity"].(float64); ok {
-		updateData["in_stock"] = quantity > 0
-	}
-
-	// Update product
-	filter := bson.M{"_id": objectID}
-	update := bson.M{"$set": updateData}
-
-	result, err := dbConn.UpdateOne(context.Background(), "products", filter, update)
-	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to update product in tenant '%s' database: %v", tenant, err))
+		s.logger.Error("Failed to update product", err, "tenant", tenant)
+		response.InternalServerError(c, "Failed to update product")
+		return
 	}
 
 	if result.MatchedCount == 0 {
-		return response.NotFound(c, fmt.Sprintf("Product not found in tenant '%s' database", tenant))
+		response.NotFound(c, "Product not found")
+		return
 	}
 
-	return response.Success(c, bson.M{"modified_count": result.ModifiedCount}, fmt.Sprintf("Product updated in tenant '%s' database", tenant))
+	response.Success(c, nil, "Product updated successfully")
 }
 
 // deleteProduct godoc
-// @Summary Delete product from tenant database
-// @Description Delete a product from a specific tenant's database
+// @Summary Delete a product for tenant
+// @Description Delete a product from a tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
 // @Param id path string true "Product ID"
-// @Success 200 {object} response.Response "Product deleted from tenant database"
-// @Failure 400 {object} response.Response "Invalid product ID format"
-// @Failure 404 {object} response.Response "Tenant database or product not found"
-// @Failure 500 {object} response.Response "Failed to delete product"
+// @Success 200 {object} response.Response "Product deleted successfully"
+// @Failure 400 {object} response.Response "Invalid product ID"
+// @Failure 404 {object} response.Response "Product or tenant not found"
 // @Router /products/{tenant}/{id} [delete]
-func (s *MongoDBService) deleteProduct(c echo.Context) error {
+func (s *MongoDBService) deleteProduct(c *gin.Context) {
 	tenant := c.Param("tenant")
 	id := c.Param("id")
 
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	if tenant == "" || id == "" {
+		response.BadRequest(c, "Tenant and product ID are required")
+		return
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		response.BadRequest(c, "Invalid product ID format")
+		return
+	}
+
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Parse ObjectID
-	objectID, err := infrastructure.StringToObjectID(id)
+	ctx := context.Background()
+	result, err := conn.DeleteOne(ctx, "products", bson.M{"_id": objectID})
 	if err != nil {
-		return response.BadRequest(c, "Invalid product ID format")
-	}
-
-	// Delete product
-	filter := bson.M{"_id": objectID}
-	result, err := dbConn.DeleteOne(context.Background(), "products", filter)
-	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to delete product from tenant '%s' database: %v", tenant, err))
+		s.logger.Error("Failed to delete product", err, "tenant", tenant)
+		response.InternalServerError(c, "Failed to delete product")
+		return
 	}
 
 	if result.DeletedCount == 0 {
-		return response.NotFound(c, fmt.Sprintf("Product not found in tenant '%s' database", tenant))
+		response.NotFound(c, "Product not found")
+		return
 	}
 
-	return response.Success(c, bson.M{"deleted_count": result.DeletedCount}, fmt.Sprintf("Product deleted from tenant '%s' database", tenant))
+	response.Success(c, nil, "Product deleted successfully")
 }
 
 // searchProducts godoc
-// @Summary Search products in tenant database
-// @Description Search products with various filters in a tenant's database
+// @Summary Search products for tenant
+// @Description Search products in a tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
-// @Param name query string false "Search by product name"
-// @Param category query string false "Filter by category"
-// @Param in_stock query boolean false "Filter by stock availability"
-// @Param min_price query number false "Minimum price filter"
-// @Param max_price query number false "Maximum price filter"
-// @Param tags query string false "Filter by tags (comma-separated)"
-// @Success 200 {object} response.Response "Products found"
-// @Failure 404 {object} response.Response "Tenant database not found"
-// @Failure 500 {object} response.Response "Failed to search products"
+// @Param q query string false "Search query"
+// @Success 200 {object} response.Response "Search results"
+// @Failure 400 {object} response.Response "Missing tenant"
 // @Router /products/{tenant}/search [get]
-func (s *MongoDBService) searchProducts(c echo.Context) error {
+func (s *MongoDBService) searchProducts(c *gin.Context) {
 	tenant := c.Param("tenant")
+	if tenant == "" {
+		response.BadRequest(c, "Tenant identifier is required")
+		return
+	}
 
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	query := c.Query("q")
+
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
 	}
 
-	// Build search filter from query parameters
-	filter := bson.M{}
-
-	if name := c.QueryParam("name"); name != "" {
-		filter["name"] = bson.M{"$regex": name, "$options": "i"}
-	}
-
-	if category := c.QueryParam("category"); category != "" {
-		filter["category"] = category
-	}
-
-	if inStock := c.QueryParam("in_stock"); inStock != "" {
-		if inStock == "true" {
-			filter["in_stock"] = true
-		} else if inStock == "false" {
-			filter["in_stock"] = false
+	ctx := context.Background()
+	var filter bson.M
+	if query != "" {
+		filter = bson.M{
+			"$or": []bson.M{
+				{"name": bson.M{"$regex": query, "$options": "i"}},
+				{"description": bson.M{"$regex": query, "$options": "i"}},
+				{"category": bson.M{"$regex": query, "$options": "i"}},
+			},
 		}
+	} else {
+		filter = bson.M{}
 	}
 
-	if minPrice := c.QueryParam("min_price"); minPrice != "" {
-		if minPriceFloat := infrastructure.StringToFloat(minPrice); minPriceFloat >= 0 {
-			if priceFilter, exists := filter["price"]; exists {
-				if priceMap, ok := priceFilter.(bson.M); ok {
-					priceMap["$gte"] = minPriceFloat
-				}
-			} else {
-				filter["price"] = bson.M{"$gte": minPriceFloat}
-			}
-		}
-	}
-
-	if maxPrice := c.QueryParam("max_price"); maxPrice != "" {
-		if maxPriceFloat := infrastructure.StringToFloat(maxPrice); maxPriceFloat > 0 {
-			if priceFilter, exists := filter["price"]; exists {
-				if priceMap, ok := priceFilter.(bson.M); ok {
-					priceMap["$lte"] = maxPriceFloat
-				}
-			} else {
-				filter["price"] = bson.M{"$lte": maxPriceFloat}
-			}
-		}
-	}
-
-	if tags := c.QueryParam("tags"); tags != "" {
-		filter["tags"] = bson.M{"$in": infrastructure.StringToStringSlice(tags)}
-	}
-
-	// Execute search
-	cursor, err := dbConn.Find(context.Background(), "products", filter)
+	cursor, err := conn.Find(ctx, "products", filter)
 	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to search products in tenant '%s' database: %v", tenant, err))
+		s.logger.Error("Failed to search products", err)
+		response.InternalServerError(c, "Failed to search products")
+		return
 	}
-	defer cursor.Close(context.Background())
+	defer cursor.Close(ctx)
 
-	var products []bson.M
-	if err := cursor.All(context.Background(), &products); err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to decode search results: %v", err))
+	var products []Product
+	if err := cursor.All(ctx, &products); err != nil {
+		s.logger.Error("Failed to decode products", err)
+		response.InternalServerError(c, "Failed to decode products")
+		return
 	}
 
-	return response.Success(c, products, fmt.Sprintf("Found %d products in tenant '%s' database", len(products), tenant))
+	response.Success(c, products, fmt.Sprintf("Found %d products", len(products)))
 }
 
 // getProductAnalytics godoc
-// @Summary Get product analytics
-// @Description Get analytics for products in a tenant's database
+// @Summary Get product analytics for tenant
+// @Description Get aggregated product analytics from a tenant's database
 // @Tags products
 // @Accept json
 // @Produce json
 // @Param tenant path string true "Tenant identifier"
-// @Success 200 {object} response.Response "Product analytics for tenant database"
-// @Failure 404 {object} response.Response "Tenant database not found"
-// @Failure 500 {object} response.Response "Failed to aggregate product analytics"
+// @Success 200 {object} response.Response "Analytics data"
+// @Failure 400 {object} response.Response "Missing tenant"
 // @Router /products/{tenant}/analytics [get]
-func (s *MongoDBService) getProductAnalytics(c echo.Context) error {
+func (s *MongoDBService) getProductAnalytics(c *gin.Context) {
 	tenant := c.Param("tenant")
-
-	// Get the database connection for this tenant
-	dbConn, exists := s.mongoConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	if tenant == "" {
+		response.BadRequest(c, "Tenant identifier is required")
+		return
 	}
 
-	// Aggregation pipeline for analytics
+	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
+	if !exists {
+		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found", tenant))
+		return
+	}
+
+	ctx := context.Background()
 	pipeline := []bson.M{
 		{
 			"$group": bson.M{
-				"_id":            "$category",
-				"total_products": bson.M{"$sum": 1},
-				"avg_price":      bson.M{"$avg": "$price"},
-				"min_price":      bson.M{"$min": "$price"},
-				"max_price":      bson.M{"$max": "$price"},
-				"total_quantity": bson.M{"$sum": "$quantity"},
-				"in_stock_count": bson.M{
-					"$sum": bson.M{
-						"$cond": []interface{}{"$in_stock", 1, 0},
-					},
-				},
+				"_id":        "$category",
+				"count":      bson.M{"$sum": 1},
+				"avgPrice":   bson.M{"$avg": "$price"},
+				"totalValue": bson.M{"$sum": bson.M{"$multiply": []interface{}{"$price", "$quantity"}}},
 			},
 		},
-		{
-			"$sort": bson.M{"total_products": -1},
-		},
 	}
 
-	cursor, err := dbConn.Aggregate(context.Background(), "products", pipeline)
+	cursor, err := conn.Aggregate(ctx, "products", pipeline)
 	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to aggregate product analytics for tenant '%s': %v", tenant, err))
+		s.logger.Error("Failed to get analytics", err)
+		response.InternalServerError(c, "Failed to get analytics")
+		return
 	}
-	defer cursor.Close(context.Background())
+	defer cursor.Close(ctx)
 
 	var analytics []bson.M
-	if err := cursor.All(context.Background(), &analytics); err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to decode analytics results: %v", err))
+	if err := cursor.All(ctx, &analytics); err != nil {
+		s.logger.Error("Failed to decode analytics", err)
+		response.InternalServerError(c, "Failed to decode analytics")
+		return
 	}
 
-	// Get overall statistics
-	totalProducts, _ := dbConn.CountDocuments(context.Background(), "products", bson.M{})
-	inStockProducts, _ := dbConn.CountDocuments(context.Background(), "products", bson.M{"in_stock": true})
-
-	result := bson.M{
-		"total_products":     totalProducts,
-		"in_stock_products":  inStockProducts,
-		"out_of_stock":       totalProducts - inStockProducts,
-		"category_breakdown": analytics,
-	}
-
-	return response.Success(c, result, fmt.Sprintf("Product analytics for tenant '%s' database", tenant))
+	response.Success(c, analytics, "Analytics retrieved successfully")
 }
 
-// Auto-registration function - called when package is imported
+// Auto-registration function
 func init() {
 	registry.RegisterService("mongodb_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
@@ -475,11 +438,11 @@ func init() {
 			return nil
 		}
 
-		mongoConnectionManager, ok := registry.GetTyped[infrastructure.MongoConnectionManager](deps, "grafana")
+		mongoManager, ok := registry.GetTyped[infrastructure.MongoConnectionManager](deps, "mongo")
 		if !helper.RequireDependency("MongoConnectionManager", ok) {
 			return nil
 		}
 
-		return NewMongoDBService(&mongoConnectionManager, true, logger)
+		return NewMongoDBService(&mongoManager, true, logger)
 	})
 }

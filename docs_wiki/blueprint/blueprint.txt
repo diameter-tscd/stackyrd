@@ -906,8 +906,7 @@ The project includes comprehensive build scripts for automated compilation, back
 **Features:**
 - **Embedded Templates**: All templates are embedded directly in the Go binary using `//go:embed` - no external template files needed
 - **6 Service Patterns**: Choose from Basic CRUD, Read-Only, Write-Only, Event-Driven, WebSocket, or Batch Processing patterns
-- **Interactive Prompts**: Guides through service name, wire name, file name, pattern selection, and dependency selection
-- **Dependency Selection**: Choose from 8 available infrastructure dependencies
+- **Interactive Prompts**: Guides through service name, wire name, file name, pattern selection
 - **Optional Database Model**: Auto-generates GORM model code when selected
 - **Automatic Swagger Annotations**: Generates Swagger documentation based on selected service pattern
 - **Custom Route Builder**: Interactive custom route definition with method, path, summary, and description
@@ -917,15 +916,6 @@ The project includes comprehensive build scripts for automated compilation, back
 - **Import Deduplication**: Automatically deduplicates imports when multiple dependencies share the same package
 - **Auto-Registration**: Generates init() function for automatic service registration
 
-**Available Dependencies:**
-1. PostgresManager - PostgreSQL database connection manager
-2. PostgresConnectionManager - Multi-tenant PostgreSQL connection manager
-3. MongoConnectionManager - Multi-tenant MongoDB connection manager
-4. RedisManager - Redis cache manager
-5. KafkaManager - Kafka message queue manager
-6. MinIOManager - MinIO object storage manager
-7. GrafanaManager - Grafana monitoring dashboard manager
-8. CronManager - Cron job scheduler manager
 
 **Service Patterns:**
 1. **Basic CRUD** - Standard Create, Read, Update, Delete operations
@@ -962,8 +952,8 @@ go run service.go --verbose
 - Test file: `tests/services/{service_name}_service_test.go` (optional)
 
 **Service Template Includes:**
-- Service struct with enabled flag and dependency fields
-- Constructor with dependency injection
+- Service struct with enabled flag
+- Constructor
 - Interface implementation (Name, WireName, Enabled, Endpoints, Get, RegisterRoutes)
 - Handler methods based on selected pattern
 - Auto-registration init function with dependency checks

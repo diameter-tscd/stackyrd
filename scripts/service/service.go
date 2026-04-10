@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -89,65 +88,6 @@ var SERVICE_PATTERNS = []ServicePattern{
 	},
 }
 
-// Available dependencies
-type Dependency struct {
-	Name        string
-	Package     string
-	Type        string
-	Description string
-}
-
-var AVAILABLE_DEPENDENCIES = []Dependency{
-	{
-		Name:        "PostgresManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.PostgresManager",
-		Description: "PostgreSQL database connection manager",
-	},
-	{
-		Name:        "PostgresConnectionManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.PostgresConnectionManager",
-		Description: "Multi-tenant PostgreSQL connection manager",
-	},
-	{
-		Name:        "MongoConnectionManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.MongoConnectionManager",
-		Description: "Multi-tenant MongoDB connection manager",
-	},
-	{
-		Name:        "RedisManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.RedisManager",
-		Description: "Redis cache manager",
-	},
-	{
-		Name:        "KafkaManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.KafkaManager",
-		Description: "Kafka message queue manager",
-	},
-	{
-		Name:        "MinIOManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.MinIOManager",
-		Description: "MinIO object storage manager",
-	},
-	{
-		Name:        "GrafanaManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.GrafanaManager",
-		Description: "Grafana monitoring dashboard manager",
-	},
-	{
-		Name:        "CronManager",
-		Package:     "stackyrd/pkg/infrastructure",
-		Type:        "*infrastructure.CronManager",
-		Description: "Cron job scheduler manager",
-	},
-}
-
 // Custom route definition
 type CustomRoute struct {
 	Method      string
@@ -159,17 +99,15 @@ type CustomRoute struct {
 
 // Service configuration
 type ServiceConfig struct {
-	ServiceName     string
-	WireName        string
-	FileName        string
-	Dependencies    []Dependency
-	HasDependencies bool
-	GenerateTests   bool
-	GenerateModel   bool
-	ServicePattern  ServicePattern
-	CustomRoutes    []CustomRoute
-	Verbose         bool
-	DryRun          bool
+	ServiceName    string
+	WireName       string
+	FileName       string
+	GenerateTests  bool
+	GenerateModel  bool
+	ServicePattern ServicePattern
+	CustomRoutes   []CustomRoute
+	Verbose        bool
+	DryRun         bool
 }
 
 // ServiceContext holds the generation state
@@ -395,53 +333,6 @@ func (ctx *ServiceContext) promptServicePattern(logger *Logger) error {
 	return nil
 }
 
-// promptDependencies prompts for dependencies with selection
-func (ctx *ServiceContext) promptDependencies(logger *Logger) error {
-	logger.Info("Available dependencies:")
-	fmt.Println("")
-
-	for i, dep := range AVAILABLE_DEPENDENCIES {
-		fmt.Printf("  %s[%d]%s %s%s%s - %s\n", B_CYAN, i+1, RESET, B_WHITE, dep.Name, RESET, dep.Description)
-	}
-
-	fmt.Printf("\n  %s[0]%s %sNone%s - No dependencies\n", B_CYAN, RESET, B_WHITE, RESET)
-	fmt.Println("")
-
-	logger.Prompt("Enter dependency numbers (comma-separated, e.g., 1,3,5): ")
-
-	var input string
-	fmt.Scanln(&input)
-
-	if input == "" || input == "0" {
-		logger.Success("No dependencies selected")
-		return nil
-	}
-
-	// Parse selected dependencies
-	selectedIndices := strings.Split(input, ",")
-	for _, idxStr := range selectedIndices {
-		idxStr = strings.TrimSpace(idxStr)
-		var idx int
-		if _, err := fmt.Sscanf(idxStr, "%d", &idx); err != nil {
-			logger.Warn("Invalid index: %s, skipping", idxStr)
-			continue
-		}
-
-		if idx < 1 || idx > len(AVAILABLE_DEPENDENCIES) {
-			logger.Warn("Index out of range: %d, skipping", idx)
-			continue
-		}
-
-		dep := AVAILABLE_DEPENDENCIES[idx-1]
-		ctx.Config.Dependencies = append(ctx.Config.Dependencies, dep)
-		logger.Success("Selected: %s", dep.Name)
-	}
-
-	ctx.Config.HasDependencies = len(ctx.Config.Dependencies) > 0
-
-	return nil
-}
-
 // promptGenerateTests prompts for test file generation
 func (ctx *ServiceContext) promptGenerateTests(logger *Logger) error {
 	logger.Prompt("Generate test file? (y/N, default: N): ")
@@ -527,16 +418,7 @@ func (ctx *ServiceContext) promptCustomRoutes(logger *Logger) error {
 
 // buildConstructorArgs builds the constructor arguments for tests
 func (ctx *ServiceContext) buildConstructorArgs() string {
-	if !ctx.Config.HasDependencies {
-		return ", nil"
-	}
-
-	var args []string
-	for range ctx.Config.Dependencies {
-		args = append(args, "nil")
-	}
-
-	return ", " + strings.Join(args, ", ") + ", nil"
+	return ", nil"
 }
 
 // displayConfiguration displays the service configuration
@@ -551,15 +433,6 @@ func (ctx *ServiceContext) displayConfiguration(logger *Logger) {
 	fmt.Printf(" %sFile Name:%s %s\n", B_CYAN, RESET, ctx.Config.FileName)
 	fmt.Printf(" %sPattern:%s %s\n", B_CYAN, RESET, ctx.Config.ServicePattern.Name)
 	fmt.Printf(" %sFile Path:%s %s\n", B_CYAN, RESET, filepath.Join(ctx.ServicesDir, ctx.Config.FileName))
-
-	if len(ctx.Config.Dependencies) > 0 {
-		fmt.Printf("\n %sDependencies:%s\n", B_CYAN, RESET)
-		for _, dep := range ctx.Config.Dependencies {
-			fmt.Printf("   • %s - %s\n", dep.Name, dep.Type)
-		}
-	} else {
-		fmt.Printf("\n %sDependencies:%s None\n", B_CYAN, RESET)
-	}
 
 	if len(ctx.Config.CustomRoutes) > 0 {
 		fmt.Printf("\n %sCustom Routes:%s\n", B_CYAN, RESET)
@@ -635,118 +508,40 @@ func (ctx *ServiceContext) readTemplate(templateName string) (string, error) {
 
 // buildImports builds the import statements
 func (ctx *ServiceContext) buildImports() string {
-	if !ctx.Config.HasDependencies {
-		return ""
-	}
-
-	// Use a map to deduplicate imports
-	importMap := make(map[string]bool)
-	for _, dep := range ctx.Config.Dependencies {
-		importMap[dep.Package] = true
-	}
-
-	// Convert map keys to slice
-	var imports []string
-	for pkg := range importMap {
-		imports = append(imports, fmt.Sprintf(`	"%s"`, pkg))
-	}
-
-	// Sort for consistent output
-	sort.Strings(imports)
-
-	return strings.Join(imports, "\n")
+	return ""
 }
 
 // buildFields builds the struct fields
 func (ctx *ServiceContext) buildFields() string {
-	if !ctx.Config.HasDependencies {
-		return ""
-	}
-
-	var fields []string
-	for _, dep := range ctx.Config.Dependencies {
-		fieldName := strings.ToLower(dep.Name[:1]) + dep.Name[1:]
-		fields = append(fields, fmt.Sprintf("\t%s %s", fieldName, dep.Type))
-	}
-
-	return strings.Join(fields, "\n")
+	return ""
 }
 
 // buildParams builds the constructor parameters
 func (ctx *ServiceContext) buildParams() string {
-	if !ctx.Config.HasDependencies {
-		return ""
-	}
-
-	var params []string
-	for _, dep := range ctx.Config.Dependencies {
-		fieldName := strings.ToLower(dep.Name[:1]) + dep.Name[1:]
-		params = append(params, fmt.Sprintf("\t%s %s,", fieldName, dep.Type))
-	}
-
-	return strings.Join(params, "\n")
+	return ""
 }
 
 // buildAssignments builds the constructor assignments
 func (ctx *ServiceContext) buildAssignments() string {
-	if !ctx.Config.HasDependencies {
-		return ""
-	}
-
-	var assignments []string
-	for _, dep := range ctx.Config.Dependencies {
-		fieldName := strings.ToLower(dep.Name[:1]) + dep.Name[1:]
-		assignments = append(assignments, fmt.Sprintf("\t\t%s: %s,", fieldName, fieldName))
-	}
-
-	return strings.Join(assignments, "\n")
+	return ""
 }
 
 // buildInitFunction builds the init function for auto-registration
 func (ctx *ServiceContext) buildInitFunction() string {
 	configKey := strings.ToLower(ctx.Config.ServiceName) + "_service"
 
-	var dependencyChecks strings.Builder
-	var dependencyParams strings.Builder
-
-	if ctx.Config.HasDependencies {
-		dependencyChecks.WriteString(`		helper := registry.NewServiceHelper(config, logger, deps)
-		
-		if !helper.IsServiceEnabled("` + configKey + `") {
-			return nil
-		}
-		
-`)
-
-		for _, dep := range ctx.Config.Dependencies {
-			varName := strings.ToLower(dep.Name[:1]) + dep.Name[1:]
-
-			dependencyChecks.WriteString(fmt.Sprintf(`		%s, ok := registry.GetTyped[%s](deps, "%s")
-		if !ok {
-			logger.Warn("%s not available, skipping service")
-			return nil
-		}
-		
-`, varName, dep.Type, strings.ToLower(dep.Name[:1])+dep.Name[1:], dep.Name))
-
-			dependencyParams.WriteString(fmt.Sprintf(", %s", varName))
-		}
-	} else {
-		dependencyChecks.WriteString(`		helper := registry.NewServiceHelper(config, logger, deps)
-		
-		if !helper.IsServiceEnabled("` + configKey + `") {
-			return nil
-		}
-		
-`)
-	}
-
 	return fmt.Sprintf(`// Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("%s", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-%s		return New%s(true%s, logger)
+		helper := registry.NewServiceHelper(config, logger, deps)
+		
+		if !helper.IsServiceEnabled("%s") {
+			return nil
+		}
+		
+		return New%s(true, logger)
 	})
-}`, configKey, dependencyChecks.String(), ctx.Config.ServiceName, dependencyParams.String())
+}`, configKey, configKey, ctx.Config.ServiceName)
 }
 
 // buildSwaggerAnnotations builds Swagger annotations for routes
@@ -1093,10 +888,6 @@ func (ctx *ServiceContext) displaySummary(logger *Logger) {
 	fmt.Printf(" %s✓%s Auto-registration: Enabled\n", B_GREEN, RESET)
 	fmt.Printf(" %s✓%s Swagger annotations: Generated\n", B_GREEN, RESET)
 
-	if len(ctx.Config.Dependencies) > 0 {
-		fmt.Printf(" %s✓%s Dependencies: %d configured\n", B_GREEN, RESET, len(ctx.Config.Dependencies))
-	}
-
 	if ctx.Config.GenerateModel {
 		fmt.Printf(" %s✓%s Database model: Generated\n", B_GREEN, RESET)
 	}
@@ -1194,7 +985,6 @@ func main() {
 		{"Prompting for wire name", ctx.promptWireName},
 		{"Prompting for file name", ctx.promptFileName},
 		{"Selecting service pattern", ctx.promptServicePattern},
-		{"Prompting for dependencies", ctx.promptDependencies},
 		{"Prompting for test generation", ctx.promptGenerateTests},
 		{"Prompting for database model", ctx.promptGenerateModel},
 		{"Prompting for custom routes", ctx.promptCustomRoutes},

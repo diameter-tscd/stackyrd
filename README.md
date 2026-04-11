@@ -10,7 +10,7 @@
 </div>
 <br>
 
-stackyrd is a production-ready application framework featuring modular architecture, comprehensive monitoring, real-time dashboards, and extensive infrastructure integrations. Built for scalability and ease of deployment.
+Stackyrd is a sophisticated service fabric designed to bridge the gap between rapid development and enterprise-grade stability. It provides a standardized, battle-tested foundation for building distributed systems in Go, focusing on observable infrastructure, asynchronous performance, and security by default.
 
 ## Quick Start
 
@@ -43,7 +43,7 @@ go run scripts/build/build.go
 ## Screenshots
 
 ### CLI UI
-![Console](.assets/Recording_Console.gif)
+![Console](.assets/console.gif)
 
 ## Key Features
 

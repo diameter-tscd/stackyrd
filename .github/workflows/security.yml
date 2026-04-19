@@ -6,8 +6,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, master, development ]
-  pull_request:
-    branches: [ main, master, development ]
 
 jobs:
   golang-security:

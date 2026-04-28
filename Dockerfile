@@ -5,8 +5,8 @@ FROM golang:1.25.5-alpine3.23 AS builder
 
 WORKDIR /app
 
-# Install build dependencies and UPX for compression
-RUN apk add --no-cache upx
+# # Install build dependencies and UPX for compression
+# RUN apk add --no-cache upx
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -24,8 +24,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -trimpath \
     -o main ./cmd/app
 
-# Compress binary with UPX (ultra-brute for maximum compression)
-RUN upx --ultra-brute main
+# # Compress binary with UPX (ultra-brute for maximum compression)
+# RUN upx --ultra-brute main
 
 # Test stage
 FROM builder AS test
@@ -45,7 +45,7 @@ COPY --from=builder /app/main /main
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
+# Expose ports for main API server 
 EXPOSE 8080 9090
 
 # Use non-root user (already set by distroless)
@@ -75,7 +75,7 @@ RUN go build -o main ./cmd/app
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
+# Expose ports for main API server 
 EXPOSE 8080 9090
 
 # Run the application
@@ -93,7 +93,7 @@ COPY --from=builder /app/main /main
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
+# Expose ports for main API server 
 EXPOSE 8080 9090
 
 # Use non-root user (already set by distroless)
@@ -113,15 +113,13 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
-# Copy web assets for monitoring
-COPY web/ ./web/
 
 # Configure for Docker environment
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
-EXPOSE 8080 9090
+# Expose ports for main API server 
+EXPOSE 8080
 
 # Run the application
 CMD ["./main"]
@@ -139,15 +137,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
-# Copy web assets for monitoring
-COPY web/ ./web/
-
 # Configure for Docker environment
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
-EXPOSE 8080 9090
+# Expose ports for main API server 
+EXPOSE 8080
 
 # Run the application
 CMD ["./main"]
@@ -160,9 +155,6 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
-# Copy web assets for monitoring
-COPY web/ ./web/
-
 # Copy CA certificates for HTTPS
 COPY --from=alpine:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -170,8 +162,8 @@ COPY --from=alpine:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
-EXPOSE 8080 9090
+# Expose ports for main API server 
+EXPOSE 8080
 
 # Run the application
 CMD ["./main"]
@@ -188,8 +180,8 @@ COPY --from=builder /app/main /main
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
 
-# Expose ports for main API server and monitoring server
-EXPOSE 8080 9090
+# Expose ports for main API server 
+EXPOSE 8080
 
 # Use non-root user (already set by distroless)
 USER nonroot:nonroot

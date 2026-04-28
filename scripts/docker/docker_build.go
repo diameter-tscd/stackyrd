@@ -1,13 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -94,16 +95,69 @@ func NewDockerLogger(verbose bool) *DockerLogger {
 	return &DockerLogger{verbose: verbose}
 }
 
+// findProjectRoot searches up the directory tree for go.mod
+func findProjectRoot(startDir string) (string, error) {
+	current := startDir
+
+	for {
+		// Check if go.mod exists in current directory
+		goModPath := filepath.Join(current, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return current, nil
+		}
+
+		// Move up one directory
+		parent := filepath.Dir(current)
+
+		// If we've reached the root directory, stop
+		if parent == current {
+			break
+		}
+
+		current = parent
+	}
+
+	return "", fmt.Errorf("go.mod not found in directory tree")
+}
+
+// ensureProjectRoot finds the project root and changes to it if needed
+func (ctx *DockerBuildContext) ensureProjectRoot(logger *DockerLogger) error {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	logger.Info("Starting from: %s", currentDir)
+
+	// Find project root by looking for go.mod
+	projectRoot, err := findProjectRoot(currentDir)
+	if err != nil {
+		return fmt.Errorf("failed to find project root: %w", err)
+	}
+
+	if projectRoot != currentDir {
+		logger.Info("Changing to project root: %s", projectRoot)
+		if err := os.Chdir(projectRoot); err != nil {
+			return fmt.Errorf("failed to change directory to %s: %w", projectRoot, err)
+		}
+
+		// Update context with new working directory
+		ctx.ProjectDir = projectRoot
+
+		logger.Success("Now in project root")
+	} else {
+		logger.Info("Already in project root")
+	}
+
+	return nil
+}
+
 // printDockerBanner prints the Docker build banner
-func printDockerBanner(appName, imageName, target string) {
+func printDockerBanner() {
 	fmt.Println("")
 	fmt.Println("   " + P_PURPLE + " /\\ " + RESET)
 	fmt.Println("   " + P_PURPLE + "(  )" + RESET + "   " + B_PURPLE + "Docker Builder" + RESET + " " + GRAY + "by" + RESET + " " + B_WHITE + "diameter-tscd" + RESET)
 	fmt.Println("   " + P_PURPLE + " \\/ " + RESET)
-	fmt.Println(GRAY + "----------------------------------------------------------------------" + RESET)
-	fmt.Println("   " + B_CYAN + "App Name:" + RESET + " " + B_WHITE + appName + RESET)
-	fmt.Println("   " + B_CYAN + "Image Name:" + RESET + " " + B_WHITE + imageName + RESET)
-	fmt.Println("   " + B_CYAN + "Target:" + RESET + " " + B_WHITE + target + RESET)
 	fmt.Println(GRAY + "----------------------------------------------------------------------" + RESET)
 }
 
@@ -135,7 +189,6 @@ func printDockerSuccess(logger *DockerLogger, imageName, target string) {
 
 	fmt.Println(GRAY + "======================================================================" + RESET)
 	fmt.Println("")
-	fmt.Println(B_CYAN + "Usage examples:" + RESET)
 
 	// Show relevant usage examples based on what was built
 	if target == "dev" || target == "all" {
@@ -380,33 +433,94 @@ func setupSignalHandler(cancel context.CancelFunc) {
 	}()
 }
 
+// promptWithDefault prompts user for input with a default value
+func promptWithDefault(prompt, defaultValue string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s%s%s [%s]: ", B_CYAN, prompt, RESET, B_WHITE+defaultValue+RESET)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return defaultValue
+	}
+	return input
+}
+
+// selectTarget displays a menu for target selection and returns the selected target
+func selectTarget(logger *DockerLogger) string {
+	targets := []struct {
+		number int
+		name   string
+		desc   string
+	}{
+		{1, "all", "Build all images (test, dev, prod)"},
+		{2, "test", "Build and run tests only"},
+		{3, "dev", "Build development image"},
+		{4, "prod", "Build production image"},
+		{5, "prod-slim", "Build slim production image"},
+		{6, "prod-minimal", "Build minimal production image"},
+		{7, "ultra-prod", "Build ultra production image"},
+		{8, "ultra-all", "Build all ultra images"},
+		{9, "ultra-dev", "Build ultra development image"},
+		{10, "ultra-test", "Build and run ultra tests"},
+	}
+
+	fmt.Println("")
+	fmt.Println(B_PURPLE + "Select Build Target:" + RESET)
+	fmt.Println(GRAY + "----------------------------------------" + RESET)
+	for _, t := range targets {
+		fmt.Printf("  %s%2d%s) %s%-20s%s %s\n", B_WHITE, t.number, RESET, B_CYAN, t.name, RESET, GRAY+"("+t.desc+")"+RESET)
+	}
+	fmt.Println(GRAY + "----------------------------------------" + RESET)
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("%sEnter number (1-10) [%s]: %s", B_YELLOW, "1", RESET)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input == "" {
+			input = "1"
+		}
+
+		num, err := strconv.Atoi(input)
+		if err == nil && num >= 1 && num <= 10 {
+			return targets[num-1].name
+		}
+		logger.Error("Invalid selection. Please enter a number between 1 and 10.")
+	}
+}
+
+// askVerbose asks if verbose logging should be enabled
+func askVerbose(logger *DockerLogger) bool {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%sEnable verbose logging? (y/N) [%s]: %s", B_CYAN, "N", RESET)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "y" || input == "yes"
+}
+
 // main function
 func main() {
-	// Parse command line flags
-	var verbose = flag.Bool("verbose", false, "Enable verbose logging")
-	flag.Parse()
-
-	// Parse arguments
-	args := flag.Args()
-	appName := DEFAULT_APP_NAME
-	imageName := DEFAULT_IMAGE_NAME
-	target := DEFAULT_TARGET
-
-	if len(args) > 0 {
-		appName = args[0]
-	}
-	if len(args) > 1 {
-		imageName = args[1]
-	}
-	if len(args) > 2 {
-		target = args[2]
-	}
-
-	// Initialize logger
-	logger := NewDockerLogger(*verbose)
-
 	// Clear the terminal screen
 	fmt.Print("\033[H\033[2J")
+
+	// Initialize a temporary logger for interactive prompts
+	tempLogger := NewDockerLogger(false)
+
+	// Interactive selection
+	printDockerBanner()
+
+	// Select target interactively
+	target := selectTarget(tempLogger)
+
+	// Configure app name and image name
+	appName := promptWithDefault("Enter app name", DEFAULT_APP_NAME)
+	imageName := promptWithDefault("Enter image name", DEFAULT_IMAGE_NAME)
+
+	// Ask for verbose mode
+	verbose := askVerbose(tempLogger)
+
+	// Initialize logger
+	logger := NewDockerLogger(verbose)
 
 	// Get project directory
 	projectDir, err := os.Getwd()
@@ -421,14 +535,11 @@ func main() {
 			AppName:   appName,
 			ImageName: imageName,
 			Target:    target,
-			Verbose:   *verbose,
+			Verbose:   verbose,
 		},
 		ProjectDir: projectDir,
 		Step:       0,
 	}
-
-	// Print banner
-	printDockerBanner(appName, imageName, target)
 
 	// Create context with cancellation for graceful shutdown
 	_, cancel := context.WithCancel(context.Background())
@@ -524,6 +635,12 @@ func main() {
 		{"Cleaning up dangling images", func(l *DockerLogger, img string) error {
 			return ctx.cleanupDanglingImages(l)
 		}},
+	}
+
+	// First ensure we are in project root
+	if err := ctx.ensureProjectRoot(logger); err != nil {
+		logger.Error("%v", err)
+		os.Exit(1)
 	}
 
 	// Execute validation steps first

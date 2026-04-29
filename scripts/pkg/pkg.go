@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -24,7 +25,7 @@ const (
 	INDEX_URL          = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master/index"
 	BASE_DOWNLOAD_URL  = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master"
 	INSTALL_ROOT       = "pkg/infrastructure"
-	FILE_WHITELIST     = `\.yrd$` // Only allow .yrd files for download
+	FILE_WHITELIST     = `\.yrd$|\.go$` // Only allow .yrd and .go files for download
 	SCRIPT_BINARY_PATH = "scripts/pkg/"
 )
 
@@ -52,8 +53,9 @@ const (
 
 // PackageInfo holds the available versions and their files for a single package
 type PackageInfo struct {
-	Name     string              // e.g. "cloud/aws/ec2"
-	Versions map[string][]string // version -> list of yrd filenames
+	Name      string              // e.g. "cloud/aws/ec2"
+	Versions  map[string][]string // version -> list of filenames
+	FilePaths map[string][]string // version -> list of full file paths (relative to repo root, without ./)
 }
 
 // InstallConfig holds runtime options
@@ -257,8 +259,9 @@ func fetchIndex(logger *Logger) ([]*PackageInfo, error) {
 		pkg, exists := packagesMap[pkgPath]
 		if !exists {
 			pkg = &PackageInfo{
-				Name:     pkgPath,
-				Versions: make(map[string][]string),
+				Name:      pkgPath,
+				Versions:  make(map[string][]string),
+				FilePaths: make(map[string][]string),
 			}
 			packagesMap[pkgPath] = pkg
 		}
@@ -273,6 +276,9 @@ func fetchIndex(logger *Logger) ([]*PackageInfo, error) {
 		}
 		if !found {
 			pkg.Versions[version] = append(pkg.Versions[version], filename)
+			// Store the full path (without ./) for dynamic URL construction
+			fullPath := path // path already has the ./ removed
+			pkg.FilePaths[version] = append(pkg.FilePaths[version], fullPath)
 		}
 	}
 
@@ -712,12 +718,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create target directory
-	// targetDir := filepath.Join(ctx.InstallRoot, selectedPkg.Name, selectedVersion)
-	// if err := os.MkdirAll(targetDir, 0755); err != nil {
-	// 	logger.Error("Failed to create target directory: %v", err)
-	// 	os.Exit(1)
-	// }
+	// Extract path string from filepaths
+	var packageFileName string
+	for _, v := range selectedPkg.FilePaths[selectedVersion] {
+		if strings.Contains(v, ".yrd") {
+			packageFileName = path.Base(v)
+			packageFileName = strings.ReplaceAll(packageFileName, ".yrd", ".go")
+			break
+		}
+	}
+
+	// Check if package is already installed
+	if info, err := os.Stat(ctx.InstallRoot); err == nil && info.IsDir() {
+		entries, _ := os.ReadDir(ctx.InstallRoot)
+		installed := false
+		for _, e := range entries {
+			if e.Name() == packageFileName {
+				installed = true
+				break
+			}
+		}
+		if installed {
+			logger.Info("Package %s@%s is already installed at %s", selectedPkg.Name, selectedVersion, ctx.InstallRoot)
+			printSuccess(ctx.InstallRoot)
+			os.Exit(0)
+		}
+	}
 
 	// Download files directly to target directory
 	if err := downloadFiles(selectedPkg.Name, selectedVersion, files, ctx.InstallRoot, logger); err != nil {
@@ -747,9 +773,22 @@ func main() {
 		logger.Warn("go mod tidy failed: %v (non-fatal, continuing...)", err)
 	}
 
-	// Recommend package documentation
-	readmeURL := fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-pkg/blob/master/%s/%s/README.md", selectedPkg.Name, selectedVersion)
-	logger.Info("Recommended: Read the package documentation at: %s", readmeURL)
+	// Recommend package documentation - dynamically get README URL from stored file paths
+	readmeURL := ""
+	if filePaths, ok := selectedPkg.FilePaths[selectedVersion]; ok {
+		for _, fullPath := range filePaths {
+			if strings.HasSuffix(fullPath, "README.md") {
+				// Construct the GitHub blob URL using the full path from index
+				readmeURL = fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-pkg/blob/master/%s", fullPath)
+				break
+			}
+		}
+	}
+	if readmeURL != "" {
+		logger.Info("Recommended: Read the package documentation at: %s", readmeURL)
+	} else {
+		logger.Info("No README.md found for this package version")
+	}
 
 	// Final success message
 	printSuccess(ctx.InstallRoot)

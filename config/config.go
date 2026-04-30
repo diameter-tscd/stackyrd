@@ -2,7 +2,6 @@ package config
 
 import (
 	"strings"
-	"time"
 
 	"github.com/spf13/viper"
 )
@@ -45,23 +44,9 @@ type Config struct {
 	Mongo               MongoConfig         `mapstructure:"mongo"`
 	MongoMultiConfig    MongoMultiConfig    `mapstructure:"mongo"`
 	Grafana             GrafanaConfig       `mapstructure:"grafana"`
-	Monitoring          MonitoringConfig    `mapstructure:"monitoring"`
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
-}
-
-type MonitoringConfig struct {
-	UpdatePeriod   time.Duration  `mapstructure:"update_period"`
-	Enabled        bool           `mapstructure:"enabled"`
-	UploadDir      string         `mapstructure:"upload_dir"`
-	Password       string         `mapstructure:"password"`
-	Title          string         `mapstructure:"title"`
-	Subtitle       string         `mapstructure:"subtitle"`
-	MaxPhotoSizeMB int            `mapstructure:"max_photo_size_mb"`
-	MinIO          MinIOConfig    `mapstructure:"minio"`
-	External       ExternalConfig `mapstructure:"external"`
-	ObfuscateAPI   bool           `mapstructure:"obfuscate_api"`
 }
 
 type MinIOConfig struct {

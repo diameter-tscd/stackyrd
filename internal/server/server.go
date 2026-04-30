@@ -152,24 +152,16 @@ func (s *Server) registerHealthEndpoints() {
 	s.gin.GET("/health/infrastructure", func(c *gin.Context) {
 		response.Success(c, s.infraInitManager.GetStatus())
 	})
-
-	s.gin.POST("/restart", func(c *gin.Context) {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			os.Exit(1)
-		}()
-		response.Success(c, map[string]string{"status": "restarting", "message": "Service is restarting..."})
-	})
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
+	utils.ClearScreen()
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
 	go func() {
 		time.Sleep(10 * time.Second)
 		logger.Warn("Maximum shutdown time is 20s, force shutdown when timeout.")
 		logger.Fatal("Graceful shutdown timed out, force shutdown.", nil)
-		utils.ClearScreen()
 		os.Exit(1)
 	}()
 

@@ -52,7 +52,6 @@ type Config struct {
 }
 
 type MonitoringConfig struct {
-	Port           string         `mapstructure:"port"`
 	UpdatePeriod   time.Duration  `mapstructure:"update_period"`
 	Enabled        bool           `mapstructure:"enabled"`
 	UploadDir      string         `mapstructure:"upload_dir"`

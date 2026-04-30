@@ -6,12 +6,23 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/process"
+)
+
+var (
+	// GetMemSelf
+	stats            runtime.MemStats
+	statsMutex       sync.RWMutex
+	memSelfState     bool
+	memSelfLastFetch time.Time
+	memSelfInterval  time.Duration
+	memSelfValue     uint64
 )
 
 // GetSystemStats gathers CPU and Memory usage.
@@ -98,6 +109,34 @@ func GetDiskUsage() (map[string]interface{}, error) {
 		"used_gb":      usage.Used / 1024 / 1024 / 1024,
 		"used_percent": usage.UsedPercent,
 	}, nil
+}
+
+// GetMemSelf gathers stackyrd memory usage.
+func GetMemSelf() uint64 {
+	if !memSelfState {
+		go func() {
+			for {
+				statsMutex.Lock()
+				runtime.ReadMemStats(&stats)
+				statsMutex.Unlock()
+				time.Sleep(5 * time.Second)
+			}
+		}()
+
+		memSelfInterval = 5 * time.Second
+		memSelfValue = 0
+		memSelfState = true
+		return 0
+	} else {
+		if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
+			statsMutex.RLock()
+			alloc := stats.Sys
+			statsMutex.RUnlock()
+			memSelfValue = alloc / 1024 / 1024
+			memSelfLastFetch = time.Now()
+		}
+		return memSelfValue
+	}
 }
 
 // GetNetworkInfo gathers hostname and IP.

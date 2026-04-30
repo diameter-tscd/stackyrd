@@ -170,8 +170,5 @@ func (cm *ConfigManager) GetDefaultConfig() *config.Config {
 		Server: config.ServerConfig{
 			Port: DefaultServerPort,
 		},
-		Monitoring: config.MonitoringConfig{
-			Port: DefaultMonitoringPort,
-		},
 	}
 }

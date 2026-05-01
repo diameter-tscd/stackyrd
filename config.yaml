@@ -6,7 +6,7 @@ app:
   banner_path: "banner.txt"
   startup_delay: 3        # seconds to display boot screen (0 to skip)
   quiet_startup: true     # suppress console logs (TUI only, logs still go to monitoring)
-  enable_tui: false       # enable fancy TUI mode (false = traditional console logging)
+  enable_tui: true        # enable fancy TUI mode (false = traditional console logging)
 
 server:   
   port: "8080"
@@ -116,7 +116,3 @@ encryption:
   key: ""
   rotate_keys: false
   key_rotation_interval: "24h"
-
-plugins:
-  enabled: true
-  dir: "./plugins"  # directory containing .so plugin files

@@ -47,7 +47,6 @@ type Config struct {
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
-	Plugins             PluginConfig        `mapstructure:"plugins"`
 }
 
 type MinIOConfig struct {
@@ -181,11 +180,6 @@ type GrafanaConfig struct {
 	APIKey   string `mapstructure:"api_key"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
-}
-
-type PluginConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Dir     string `mapstructure:"dir"` // directory containing .so plugin files
 }
 
 // LoadConfig loads configuration from local file or URL

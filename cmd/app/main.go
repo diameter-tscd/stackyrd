@@ -10,7 +10,7 @@ import (
 
 // @title stackyrd API
 // @version 1.0
-// @description stackyrd API Documentation
+// @description stackyrd API Documentation - A modular Go API framework
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support

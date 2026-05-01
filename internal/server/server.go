@@ -12,7 +12,9 @@ import (
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
+	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 	"stackyrd/pkg/utils"
@@ -26,6 +28,7 @@ type Server struct {
 	logger           *logger.Logger
 	dependencies     *registry.Dependencies
 	infraInitManager *infrastructure.InfraInitManager
+	pluginManager    *plugin.Manager
 }
 
 func New(cfg *config.Config, l *logger.Logger) *Server {
@@ -47,10 +50,18 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 		response.Error(c, http.StatusMethodNotAllowed, "HTTP_ERROR", "Method not allowed")
 	})
 
+	// Initialize plugin manager if plugins are enabled
+	var pluginManager *plugin.Manager
+	if cfg.Plugins.Enabled {
+		pluginManager = plugin.NewManager(cfg.Plugins.Dir, l)
+		l.Info("Plugin system initialized", "plugin_dir", cfg.Plugins.Dir)
+	}
+
 	return &Server{
-		gin:    r,
-		config: cfg,
-		logger: l,
+		gin:           r,
+		config:        cfg,
+		logger:        l,
+		pluginManager: pluginManager,
 	}
 }
 
@@ -98,6 +109,30 @@ func (s *Server) Start() error {
 	serviceRegistry.Boot(s.gin)
 	s.logger.Info("All services boot successfully")
 
+	// Load and register plugins if enabled
+	if s.pluginManager != nil {
+		s.logger.Info("Loading plugins...")
+		if err := s.pluginManager.LoadAllPlugins(); err != nil {
+			s.logger.Warn("Failed to load some plugins", "error", err)
+		}
+
+		// Register plugin routes
+		s.pluginManager.RegisterRoutes(func(plug interfaces.Plugin) {
+			// Create a route group for this plugin
+			pluginGroup := s.gin.Group("/plugins/" + plug.Name())
+			plug.RegisterRoutes(pluginGroup)
+			s.logger.Info("Registered plugin routes", "plugin", plug.Name(), "version", plug.Version())
+		})
+
+		s.logger.Info("Plugin system ready", "loaded_plugins", len(s.pluginManager.ListPlugins()))
+
+		// Add plugin management endpoints
+		s.gin.GET("/plugins", s.handleListPlugins)
+		s.gin.GET("/plugins/:name", s.handleGetPlugin)
+		s.gin.DELETE("/plugins/:name", s.handleUnloadPlugin)
+		s.logger.Info("Plugin management endpoints registered at /plugins")
+	}
+
 	// Register Swagger UI
 	if s.config.Swagger.Enabled {
 		s.logger.Info("Registering Swagger UI documentation...")
@@ -137,6 +172,48 @@ func (s *Server) setConnectionDefaults() {
 			}
 		}
 	}
+}
+
+// handleListPlugins returns a list of all loaded plugins
+func (s *Server) handleListPlugins(c *gin.Context) {
+	plugins := s.pluginManager.ListPlugins()
+	result := make([]map[string]interface{}, 0, len(plugins))
+	for _, p := range plugins {
+		result = append(result, map[string]interface{}{
+			"name":        p.Name(),
+			"version":     p.Version(),
+			"description": p.Description(),
+		})
+	}
+	response.Success(c, result)
+}
+
+// handleGetPlugin returns details about a specific plugin
+func (s *Server) handleGetPlugin(c *gin.Context) {
+	name := c.Param("name")
+	plug, ok := s.pluginManager.GetPlugin(name)
+	if !ok {
+		response.Error(c, http.StatusNotFound, "PLUGIN_NOT_FOUND", "Plugin not found")
+		return
+	}
+	response.Success(c, map[string]interface{}{
+		"name":        plug.Name(),
+		"version":     plug.Version(),
+		"description": plug.Description(),
+	})
+}
+
+// handleUnloadPlugin unloads a specific plugin
+func (s *Server) handleUnloadPlugin(c *gin.Context) {
+	name := c.Param("name")
+	if err := s.pluginManager.UnloadPlugin(name); err != nil {
+		response.Error(c, http.StatusInternalServerError, "PLUGIN_UNLOAD_ERROR", err.Error())
+		return
+	}
+	response.Success(c, map[string]interface{}{
+		"message": "Plugin unloaded successfully",
+		"name":    name,
+	})
 }
 
 func (s *Server) registerHealthEndpoints() {

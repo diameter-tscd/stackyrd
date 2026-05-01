@@ -186,7 +186,7 @@ func ClearScreen() {
 func CheckPortAvailability(serverPort string) error {
 	// Check server port
 	if err := CheckPort(serverPort); err != nil {
-		return fmt.Errorf("server port %s is already in use: %v \n", serverPort, err)
+		return fmt.Errorf("server port %s is already in use: %v", serverPort, err)
 	}
 
 	return nil

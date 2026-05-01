@@ -17,9 +17,10 @@ const (
 	DefaultEnv     = "development"
 
 	// Default configuration values
-	DefaultServerPort   = "8080"
-	DefaultStartupDelay = 15 // seconds
-	DefaultBannerPath   = "banner.txt"
+	DefaultServerPort     = "8080"
+	DefaultMonitoringPort = "8081"
+	DefaultStartupDelay   = 15 // seconds
+	DefaultBannerPath     = "banner.txt"
 
 	// File paths
 	WebFolderPath = "web"
@@ -46,6 +47,10 @@ const (
 	ErrInvalidConfigURLFormat = "invalid config URL format"
 	ErrPortError              = "port error"
 	ErrStepFailed             = "step failed"
+	ErrWebFolderNotFound      = "web folder not found, disabling web monitoring"
+
+	// Configuration keys
+	ConfigKeyWebFolder = "web"
 )
 
 // ServiceInit represents a service in the initialization queue

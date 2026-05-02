@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
@@ -153,6 +155,22 @@ func (s *Server) registerHealthEndpoints() {
 
 	s.gin.GET("/health/infrastructure", func(c *gin.Context) {
 		response.Success(c, s.infraInitManager.GetStatus())
+	})
+
+	s.gin.GET("/health/dependencies", func(c *gin.Context) {
+		response.Success(c, map[string]interface{}{
+			"total_infrastructure": len(s.dependencies.GetAll()),
+			"list_infrastructure":  slices.Collect(maps.Keys(s.dependencies.GetAll())),
+			"total_service":        len(registry.GetServiceFactories()),
+			"list_service":         slices.Collect(maps.Keys(registry.GetServiceFactories())),
+		})
+	})
+
+	s.gin.GET("/health/resources", func(c *gin.Context) {
+		response.Success(c, map[string]interface{}{
+			"memory_usage":    utils.GetMemSelf(),
+			"routine_running": utils.GetRoutine(),
+		})
 	})
 }
 

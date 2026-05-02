@@ -20,7 +20,10 @@ var serviceDiscovered = make(map[string]interface{})
 
 // RegisterService registers a service factory for automatic discovery
 func RegisterService(name string, factory ServiceFactory) {
-	serviceFactories[name] = factory
+	// avoid duplicate register if service has same name
+	if _, exist := serviceFactories[name]; !exist && factory != nil {
+		serviceFactories[name] = factory
+	}
 }
 
 // AutoDiscoverServices automatically discovers and creates all enabled services

@@ -7,6 +7,7 @@ import (
 	"stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 // ServiceFactory creates a service instance with dependencies
@@ -112,7 +113,7 @@ func (r *ServiceRegistry) GetServices() []interfaces.Service {
 
 // Boot initializes enabled services and registers their routes
 func (r *ServiceRegistry) Boot(engine *gin.Engine) {
-	api := engine.Group("/api/v1")
+	api := engine.Group(viper.GetString("server.services_endpoint"))
 
 	for _, s := range r.services {
 		if s.Enabled() {
@@ -128,7 +129,7 @@ func (r *ServiceRegistry) Boot(engine *gin.Engine) {
 // BootService boots a single service (for dynamic registration)
 func (r *ServiceRegistry) BootService(engine *gin.Engine, s interfaces.Service) {
 	if s.Enabled() {
-		api := engine.Group("/api/v1")
+		api := engine.Group(viper.GetString("server.services_endpoint"))
 		r.logger.Info("Starting Service...", "service", s.Name())
 		s.RegisterRoutes(api)
 		r.logger.Info("Service Started", "service", s.Name())

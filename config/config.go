@@ -19,6 +19,7 @@ func setupViperDefaults() {
 	viper.SetDefault("app.quiet_startup", true) // clean console by default
 	viper.SetDefault("app.enable_tui", false)   // TUI enabled by default
 	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("server.services_endpoint", "/api/v1")
 	viper.SetDefault("auth.type", "none")
 	// Services config uses a dynamic map - no hardcoded defaults needed
 	// Services default to enabled if not specified (see ServicesConfig.IsEnabled)
@@ -109,7 +110,8 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port             string `mapstructure:"port"`
+	ServicesEndpoint string `mapstructure:"services_endpoint"`
 }
 
 // ServicesConfig is a dynamic map of service names to their enabled status.

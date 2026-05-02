@@ -22,6 +22,20 @@ services:
   products_service: true
   tasks_service: true
 
+# Middleware configuration - enable/disable middlewares (defaults to true if not specified)
+middleware:
+  request_id: true
+  logger: true
+  permission_check: true
+  cors: true
+  jwt: false          # Set to true if using JWT authentication
+  ratelimit: true
+  security: true
+  audit: true
+  encryption: false    # Controlled by encryption.enabled config
+  gzip: true
+  swagger: true       # Controlled by swagger.enabled config
+
 auth:
   type: "apikey"
   secret: "super-secret-key"
@@ -79,22 +93,6 @@ grafana:
   api_key: "your-grafana-api-key"
   username: "admin"
   password: "admin"
-
-monitoring:
-  enabled: true
-  port: "x"
-  password: "admin"
-  obfuscate_api: true
-  title: "stackyrd"
-  subtitle: "Monitoring Dashboard"
-  max_photo_size_mb: 2
-  upload_dir: "web/monitoring/uploads"
-  external:
-    services:
-      - name: "Google"
-        url: "https://google.com"
-      - name: "Local API"
-        url: "http://localhost:8080/health"
   
 minio:
   enabled: true

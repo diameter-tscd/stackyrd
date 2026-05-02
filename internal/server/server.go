@@ -72,14 +72,16 @@ func (s *Server) Start() error {
 	s.setConnectionDefaults()
 
 	s.logger.Info("Initializing Middleware...")
-	middleware.InitMiddlewares(s.gin, middleware.Config{
-		AuthType: s.config.Auth.Type,
-		Logger:   s.logger,
-	})
 
-	if s.config.Encryption.Enabled {
-		s.logger.Info("Initializing Encryption Middleware...")
-		s.gin.Use(middleware.EncryptionMiddleware(s.config, s.logger))
+	// Apply middleware configuration from config
+	middleware.GetGlobalMiddlewareRegistry().ApplyConfig(s.config)
+
+	// Auto-discover and register all enabled middlewares
+	middlewares := middleware.GetGlobalMiddlewareRegistry().AutoDiscoverMiddlewares(s.config, s.logger)
+	for _, mw := range middlewares {
+		if mw != nil {
+			s.gin.Use(mw)
+		}
 	}
 
 	s.logger.Info("Booting Services...")

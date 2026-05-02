@@ -56,8 +56,8 @@ main() → NewApplication() → Run()
                     ├─ Dependencies: NewDependencies() container
                     │    └─ Register all infrastructure components
                     │
-                    ├─ Middleware: InitMiddlewares()
-                    │    └─ RequestID → Logger → PermissionCheck
+                    ├─ Middleware: Auto-discovered via init() registration
+                    │    └─ AutoDiscoverMiddlewares() → applies config
                     │
                     ├─ Services: AutoDiscoverServices()
                     │    └─ Iterates serviceFactories map
@@ -82,6 +82,7 @@ STRUCTURE:
       App        AppConfig           // name, version, debug, env, TUI settings
       Server     ServerConfig        // port
       Services   map[string]bool     // service_name → enabled (default: true)
+      Middleware  map[string]bool     // middleware_name → enabled (default: true)
       Auth       AuthConfig          // type: "none"|"jwt"|"apikey"
       Swagger    SwaggerConfig       // enabled, base_path
       Redis      RedisConfig         // enabled, address, password, db
@@ -96,31 +97,70 @@ STRUCTURE:
 
 KEY BEHAVIORS:
   - Services.IsEnabled("name") returns true if not specified (opt-out)
+  - Middleware.IsEnabled("name") returns true if not specified (opt-out)
   - Env vars override: APP_NAME, SERVER_PORT, etc. (underscore separator)
   - Multi-tenant DB: supports multiple named connections
   - Default connection alias: "postgres.default", "mongo.default"
 
 ================================================================================
-MIDDLEWARE PATTERN
+MIDDLEWARE PATTERN (Auto-Registration)
 ================================================================================
 
 Location: internal/middleware/
 
-CORE MIDDLEWARE (always applied in server.go):
-  1. gin.Recovery()      - Panic recovery
-  2. RequestID()         - Generate/propagate X-Request-ID
-  3. Logger(logger)      - Request logging (status-based levels)
-  4. PermissionCheck()   - Global DELETE blocker (example policy)
+INTERFACE:
+  type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error)
 
-CONDITIONAL MIDDLEWARE:
-  - EncryptionMiddleware (if config.Encryption.Enabled)
+REGISTRY:
+  type MiddlewareRegistry struct {
+      factories map[string]MiddlewareFactory
+      enabled   map[string]bool
+  }
 
-ADDITIONAL (available, not auto-registered):
-  - CORS(), JWT(), RateLimit(), Security(), Audit()
+AUTO-REGISTRATION (in each middleware file's init()):
+  func init() {
+      RegisterMiddleware("middleware_name", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+          if !cfg.Middleware.IsEnabled("middleware_name") {
+              return nil, nil
+          }
+          return NewMiddleware(cfg, logger)
+      })
+  }
 
-REGISTRATION:
-  middleware.InitMiddlewares(r *gin.Engine, cfg Config)
-    → Registers core middleware on Gin engine
+AUTO-DISCOVERY (in server.go):
+  middleware.GetGlobalMiddlewareRegistry().ApplyConfig(cfg)
+  middlewares := middleware.GetGlobalMiddlewareRegistry().AutoDiscoverMiddlewares(config, logger)
+    → Iterates middleware factories
+    → Checks config.Middleware.IsEnabled(name)
+    → Calls factory → creates middleware if enabled
+    → Returns []gin.HandlerFunc
+
+CORE MIDDLEWARE (auto-registered):
+  1. request_id        - Generate/propagate X-Request-ID
+  2. logger            - Request logging (status-based levels)
+  3. permission_check  - Global DELETE blocker (example policy)
+  4. cors              - CORS handling
+  5. ratelimit         - Rate limiting
+  6. security          - Security headers
+  7. audit             - Audit logging
+  8. encryption        - Response encryption (if config.Encryption.Enabled)
+  9. gzip              - GZIP compression
+  10. jwt              - JWT validation (if config.Auth.Type == "jwt")
+  11. swagger           - Swagger UI (special case, registers routes)
+
+CONFIGURATION:
+  middleware:
+    request_id: true
+    logger: true
+    permission_check: true
+    cors: true
+    jwt: false
+    ratelimit: true
+    security: true
+    audit: true
+    encryption: false
+    gzip: true
+    swagger: true
 
 ================================================================================
 INFRASTRUCTURE PATTERN (Auto-Registration)
@@ -190,7 +230,7 @@ REGISTRY (pkg/registry/registry.go):
 
 AUTO-REGISTRATION (in each service file's init()):
   func init() {
-      registry.RegisterService("service_name", func(cfg *config.Config, logger *logger.Logger, deps *Dependencies) interfaces.Service {
+      registry.RegisterService("service_name", func(cfg *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
           return NewService(cfg.Services.IsEnabled("service_name"), logger, deps)
       })
   }
@@ -327,22 +367,54 @@ Done. Service auto-discovered, routes mounted at /api/v1/myservice.
 (Optional) Use generator: go run scripts/service/service.go --name myservice --template basic_crud
 
 ================================================================================
+HOW TO ADD NEW MIDDLEWARE
+================================================================================
+
+1. Create: internal/middleware/mymiddleware.go
+
+2. Implement middleware function:
+   func MyMiddleware(cfg *config.Config, logger *logger.Logger) gin.HandlerFunc {
+       return func(c *gin.Context) {
+           // middleware logic
+           c.Next()
+       }
+   }
+
+3. Register in init():
+   func init() {
+       RegisterMiddleware("mymiddleware", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+           if !cfg.Middleware.IsEnabled("mymiddleware") {
+               return nil, nil
+           }
+           return MyMiddleware(cfg, logger), nil
+       })
+   }
+
+4. (Optional) Add to config.yaml to enable/disable:
+   middleware:
+     mymiddleware: true
+
+Done. Middleware auto-discovered and applied based on config.
+
+================================================================================
 KEY PATTERNS SUMMARY
 ================================================================================
 
 1. AUTO-REGISTRATION PATTERN:
-   - Components/services register factories in init() functions
+   - Components/services/middleware register factories in init() functions
    - Discovered at runtime via global registry maps
    - No manual wiring needed
 
 2. REGISTRY PATTERN:
    - ComponentRegistry: Infrastructure lifecycle
    - ServiceRegistry: Service lifecycle + route registration
+   - MiddlewareRegistry: Middleware lifecycle + auto-discovery
    - Dependencies: Dynamic DI container (map[string]interface{})
 
 3. FACTORY PATTERN:
    - ComponentFactory: func(cfg, logger) → (Component, error)
    - ServiceFactory: func(cfg, logger, deps) → Service
+   - MiddlewareFactory: func(cfg, logger) → (HandlerFunc, error)
 
 4. ASYNC INITIALIZATION:
    - Infrastructure initializes in background goroutines
@@ -353,6 +425,7 @@ KEY PATTERNS SUMMARY
    - Viper for YAML + env vars
    - Nested keys: APP_NESTED_KEY
    - Defaults in setupViperDefaults()
+   - Services/Middleware use map[string]bool for enable/disable
 
 ================================================================================
 PROJECT STRUCTURE (Simplified)
@@ -369,7 +442,15 @@ stackyard/
 │   └── config.go               # Config structs + Viper setup
 │
 ├── internal/
-│   ├── middleware/              # HTTP middleware (init, cors, jwt, etc.)
+│   ├── middleware/              # HTTP middleware (auto-registered)
+│   │   ├── middleware.go       # Registry + core middleware
+│   │   ├── cors.go            # CORS middleware
+│   │   ├── jwt.go             # JWT middleware
+│   │   ├── ratelimit.go       # Rate limiting
+│   │   ├── security.go        # Security headers
+│   │   ├── audit.go           # Audit logging
+│   │   ├── encryption.go      # Encryption + GZIP
+│   │   └── swagger.go         # Swagger UI
 │   ├── server/
 │   │   └── server.go           # Server orchestration
 │   └── services/

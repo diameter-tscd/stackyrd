@@ -17,13 +17,12 @@ import (
 
 // LiveConfig contains configuration for the live TUI
 type LiveConfig struct {
-	AppName     string
-	AppVersion  string
-	Banner      string
-	Port        string
-	MonitorPort string
-	Env         string
-	OnShutdown  func() // Callback function to trigger shutdown
+	AppName    string
+	AppVersion string
+	Banner     string
+	Port       string
+	Env        string
+	OnShutdown func() // Callback function to trigger shutdown
 }
 
 // LogEntry represents a log entry
@@ -384,12 +383,13 @@ func (m *LiveModel) View() string {
 
 	// Status line
 	uptime := time.Since(m.startTime).Round(time.Second)
-	statusLine := fmt.Sprintf("  %s %s  ●  Service Port: %s  ●  Env: %s  ●  Usage: %s  ●  Uptime: %s  ",
+	statusLine := fmt.Sprintf("  %s %s ● Service Port: %s ● Env: %s ● Usage: %s ● Routine: %s ● Uptime: %s",
 		m.spinner.View(),
 		liveStatusStyle.Render("RUNNING"),
 		liveInfoStyle.Render(m.config.Port),
 		liveInfoStyle.Render(m.config.Env),
 		liveInfoStyle.Render(fmt.Sprintf("%d MiB", utils.GetMemSelf())),
+		liveInfoStyle.Render(fmt.Sprintf("%d", utils.GetRoutine())),
 		liveInfoStyle.Render(uptime.String()),
 	)
 	mainContent.WriteString(statusLine)

@@ -24,7 +24,6 @@ type StartupConfig struct {
 	AppVersion  string
 	Banner      string
 	Port        string
-	MonitorPort string
 	Env         string
 	IdleSeconds int // How long to display the boot screen (0 to skip immediately)
 }
@@ -106,7 +105,6 @@ const (
 	iconSuccess = "✓"
 	iconError   = "✗"
 	iconSkipped = "⊘"
-	iconRocket  = "🚀"
 	iconSparkle = "✨"
 	iconServer  = "⚡"
 	iconCheck   = "✔"
@@ -248,7 +246,7 @@ func (m StartupModel) View() string {
 		)
 		b.WriteString(successStyle.Render(serverInfo))
 
-		readyMsg := fmt.Sprintf("%s Ready in %s\n", iconRocket, elapsed)
+		readyMsg := fmt.Sprintf("%s Ready in \n", elapsed)
 		b.WriteString(successStyle.Render(readyMsg))
 	}
 
@@ -319,56 +317,4 @@ func RunStartupTUI(cfg StartupConfig, services []ServiceStatus) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
-}
-
-// CreateDefaultServices creates a default service list from config
-func CreateDefaultServices(infraConfig map[string]bool, servicesConfig map[string]bool) []ServiceStatus {
-	var services []ServiceStatus
-
-	// Infrastructure services
-	infraNames := map[string]string{
-		"redis":    "Redis Cache",
-		"kafka":    "Kafka Messaging",
-		"postgres": "PostgreSQL Database",
-		"cron":     "Cron Scheduler",
-	}
-
-	for key, name := range infraNames {
-		status := "pending"
-		if enabled, ok := infraConfig[key]; ok && !enabled {
-			status = "skipped"
-		}
-		services = append(services, ServiceStatus{
-			Name:   name,
-			Status: status,
-		})
-	}
-
-	// Application services
-	serviceNames := map[string]string{
-		"service_a": "Service A",
-		"service_b": "Service B",
-		"service_c": "Service C",
-		"service_d": "Service D",
-	}
-
-	for key, name := range serviceNames {
-		status := "pending"
-		if enabled, ok := servicesConfig[key]; ok && !enabled {
-			status = "skipped"
-		}
-		services = append(services, ServiceStatus{
-			Name:   name,
-			Status: status,
-		})
-	}
-
-	return services
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

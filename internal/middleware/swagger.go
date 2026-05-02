@@ -1,12 +1,24 @@
 package middleware
 
 import (
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "stackyrd/docs"
 )
+
+func init() {
+	// Register Swagger middleware
+	RegisterMiddleware("swagger", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		// Swagger is special - it needs route registration, not just middleware
+		// Return nil handler - the route registration happens in server.go
+		return nil, nil
+	})
+}
 
 // SwaggerConfig holds Swagger UI configuration
 type SwaggerConfig struct {

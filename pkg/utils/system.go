@@ -17,12 +17,18 @@ import (
 
 var (
 	// GetMemSelf
-	stats            runtime.MemStats
+	runtimeMemStats  runtime.MemStats
 	statsMutex       sync.RWMutex
-	memSelfState     bool
+	runtimeStats     bool
 	memSelfLastFetch time.Time
 	memSelfInterval  time.Duration
 	memSelfValue     uint64
+
+	// GetRoutine
+	routineLastFetch      time.Time
+	routineInterval       time.Duration
+	isRoutineFirstFetched bool
+	routineValue          int
 )
 
 // GetSystemStats gathers CPU and Memory usage.
@@ -111,32 +117,50 @@ func GetDiskUsage() (map[string]interface{}, error) {
 	}, nil
 }
 
-// GetMemSelf gathers stackyrd memory usage.
-func GetMemSelf() uint64 {
-	if !memSelfState {
+// GetRuntimeStats gathers runtime.
+func GetRuntimeStats() runtime.MemStats {
+	if !runtimeStats {
 		go func() {
 			for {
 				statsMutex.Lock()
-				runtime.ReadMemStats(&stats)
+				runtime.ReadMemStats(&runtimeMemStats)
 				statsMutex.Unlock()
 				time.Sleep(5 * time.Second)
 			}
 		}()
-
 		memSelfInterval = 5 * time.Second
 		memSelfValue = 0
-		memSelfState = true
-		return 0
-	} else {
-		if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
-			statsMutex.RLock()
-			alloc := stats.Sys
-			statsMutex.RUnlock()
-			memSelfValue = alloc / 1024 / 1024
-			memSelfLastFetch = time.Now()
-		}
-		return memSelfValue
+		routineValue = 0
+		runtimeStats = true
 	}
+	return runtimeMemStats
+}
+
+// GetMemSelf gathers stackyrd memory usage.
+func GetMemSelf() uint64 {
+	stats := GetRuntimeStats()
+
+	if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
+		statsMutex.RLock()
+		alloc := stats.Sys
+		statsMutex.RUnlock()
+		memSelfValue = alloc / 1024 / 1024
+		memSelfLastFetch = time.Now()
+	}
+	return memSelfValue
+}
+
+func GetRoutine() int {
+	if !isRoutineFirstFetched {
+		routineInterval = 5 * time.Second
+		isRoutineFirstFetched = true
+	} else {
+		if routineLastFetch.IsZero() || time.Since(routineLastFetch) >= routineInterval {
+			routineLastFetch = time.Now()
+			routineValue = runtime.NumGoroutine()
+		}
+	}
+	return routineValue
 }
 
 // GetNetworkInfo gathers hostname and IP.

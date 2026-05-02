@@ -5,10 +5,20 @@ import (
 	"sync"
 	"time"
 
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	// Register RateLimit middleware
+	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		// Default: 60 requests per minute
+		return RateLimit(), nil
+	})
+}
 
 // RateLimiter implements a simple token bucket rate limiter
 type RateLimiter struct {

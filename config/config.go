@@ -35,6 +35,7 @@ type Config struct {
 	App                 AppConfig           `mapstructure:"app"`
 	Server              ServerConfig        `mapstructure:"server"`
 	Services            ServicesConfig      `mapstructure:"services"`
+	Middleware          MiddlewareConfig    `mapstructure:"middleware"`
 	Auth                AuthConfig          `mapstructure:"auth"`
 	Swagger             SwaggerConfig       `mapstructure:"swagger"`
 	Redis               RedisConfig         `mapstructure:"redis"`
@@ -47,6 +48,17 @@ type Config struct {
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
+}
+
+// MiddlewareConfig is a dynamic map of middleware names to their enabled status.
+type MiddlewareConfig map[string]bool
+
+// IsEnabled checks if a middleware is enabled. Returns true by default if not specified.
+func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
+	if enabled, exists := m[middlewareName]; exists {
+		return enabled
+	}
+	return true // Default to enabled if not specified
 }
 
 type MinIOConfig struct {

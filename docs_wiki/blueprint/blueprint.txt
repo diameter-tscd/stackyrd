@@ -431,7 +431,7 @@ KEY PATTERNS SUMMARY
 PROJECT STRUCTURE (Simplified)
 ================================================================================
 
-stackyard/
+stackyrd/
 ├── cmd/app/                    # Entry point + app lifecycle
 │   ├── main.go                 # Entry
 │   ├── application.go          # Lifecycle steps

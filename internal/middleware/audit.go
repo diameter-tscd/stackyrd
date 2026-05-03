@@ -3,10 +3,18 @@ package middleware
 import (
 	"time"
 
+	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	// Register Audit middleware
+	RegisterMiddleware("audit", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return AuditWithConfig(logger), nil
+	})
+}
 
 // AuditConfig holds audit logging configuration
 type AuditConfig struct {

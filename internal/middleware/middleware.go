@@ -3,12 +3,101 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
+	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
+
+// MiddlewareFactory creates a middleware instance
+type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error)
+
+// MiddlewareRegistry manages middleware auto-registration
+type MiddlewareRegistry struct {
+	factories map[string]MiddlewareFactory
+	enabled   map[string]bool
+}
+
+// Global registry instance
+var (
+	globalMiddlewareRegistry *MiddlewareRegistry
+	registryOnce            sync.Once
+)
+
+// GetGlobalMiddlewareRegistry returns the singleton middleware registry
+func GetGlobalMiddlewareRegistry() *MiddlewareRegistry {
+	registryOnce.Do(func() {
+		globalMiddlewareRegistry = &MiddlewareRegistry{
+			factories: make(map[string]MiddlewareFactory),
+			enabled:   make(map[string]bool),
+		}
+	})
+	return globalMiddlewareRegistry
+}
+
+// RegisterMiddleware registers a middleware factory
+func RegisterMiddleware(name string, factory MiddlewareFactory) {
+	GetGlobalMiddlewareRegistry().Register(name, factory)
+}
+
+// Register registers a middleware factory with the registry
+func (r *MiddlewareRegistry) Register(name string, factory MiddlewareFactory) {
+	r.factories[name] = factory
+	// Default to enabled
+	r.enabled[name] = true
+}
+
+// SetEnabled sets whether a middleware is enabled
+func (r *MiddlewareRegistry) SetEnabled(name string, enabled bool) {
+	r.enabled[name] = enabled
+}
+
+// IsEnabled checks if a middleware is enabled
+func (r *MiddlewareRegistry) IsEnabled(name string) bool {
+	if enabled, exists := r.enabled[name]; exists {
+		return enabled
+	}
+	return true // Default to enabled if not explicitly set
+}
+
+// ApplyConfig applies middleware configuration from config
+func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
+	if cfg.Middleware == nil {
+		return
+	}
+	
+	// Update enabled status based on config
+	for name := range r.factories {
+		r.enabled[name] = cfg.Middleware.IsEnabled(name)
+	}
+}
+
+// AutoDiscoverMiddlewares creates and returns all enabled middleware
+func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger *logger.Logger) []gin.HandlerFunc {
+	var middlewares []gin.HandlerFunc
+
+	for name, factory := range r.factories {
+		if r.IsEnabled(name) {
+			logger.Debug("Creating middleware", "name", name)
+			mw, err := factory(cfg, logger)
+			if err != nil {
+				logger.Error("Failed to create middleware", err, "name", name)
+				continue
+			}
+			if mw != nil {
+				middlewares = append(middlewares, mw)
+				logger.Info("Auto-registered middleware", "middleware", name)
+			}
+		} else {
+			logger.Debug("Middleware disabled via config", "middleware", name)
+		}
+	}
+
+	return middlewares
+}
 
 // Config holds middleware configuration
 type Config struct {
@@ -16,7 +105,7 @@ type Config struct {
 	Logger   *logger.Logger
 }
 
-// InitMiddlewares registers global middlewares and returns specific ones for use
+// InitMiddlewares registers global middlewares (legacy support)
 func InitMiddlewares(r *gin.Engine, cfg Config) {
 	// Request ID
 	r.Use(RequestID())
@@ -27,6 +116,21 @@ func InitMiddlewares(r *gin.Engine, cfg Config) {
 	// Global Permission Middleware (Allow all except DELETE for demo purposes)
 	// In a real app, this might be selective
 	r.Use(PermissionCheck(cfg.Logger))
+}
+
+func init() {
+	// Register core middlewares
+	RegisterMiddleware("request_id", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return RequestID(), nil
+	})
+
+	RegisterMiddleware("logger", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return Logger(logger), nil
+	})
+
+	RegisterMiddleware("permission_check", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return PermissionCheck(logger), nil
+	})
 }
 
 func RequestID() gin.HandlerFunc {

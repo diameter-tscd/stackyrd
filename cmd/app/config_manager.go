@@ -63,17 +63,10 @@ func (cm *ConfigManager) loadConfigFromFile() (*config.Config, error) {
 
 // ValidateConfig validates the loaded configuration
 func (cm *ConfigManager) ValidateConfig(cfg *config.Config) error {
-	// Check if web folder exists, if not, disable web monitoring
-	if _, err := os.Stat(WebFolderPath); os.IsNotExist(err) {
-		fmt.Printf("%s %s%s\n", ColorYellow, ErrWebFolderNotFound, ColorReset)
-		cfg.Monitoring.Enabled = false
-	}
-
 	// Validate port availability
 	if err := utils.CheckPortAvailability(cfg.Server.Port); err != nil {
 		return fmt.Errorf("%s: %w", ErrPortError, err)
 	}
-
 	return nil
 }
 
@@ -101,13 +94,11 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 func (cm *ConfigManager) GetServiceConfigs(cfg *config.Config) []ServiceConfig {
 	return []ServiceConfig{
 		{Name: ServiceGrafanaName, Enabled: cfg.Grafana.Enabled},
-		{Name: ServiceMinIOName, Enabled: cfg.Monitoring.MinIO.Enabled},
 		{Name: ServiceRedisCacheName, Enabled: cfg.Redis.Enabled},
 		{Name: ServiceKafkaName, Enabled: cfg.Kafka.Enabled},
 		{Name: ServicePostgreSQLName, Enabled: cfg.Postgres.Enabled},
 		{Name: ServiceMongoDBName, Enabled: cfg.Mongo.Enabled},
 		{Name: ServiceCronName, Enabled: cfg.Cron.Enabled},
-		{Name: ServiceExternalName, Enabled: len(cfg.Monitoring.External.Services) > 0},
 	}
 }
 
@@ -134,7 +125,7 @@ func (cm *ConfigManager) CreateServiceQueue(cfg *config.Config) []ServiceInit {
 	}
 
 	// Add monitoring last
-	initQueue = append(initQueue, ServiceInit{Name: ServiceMonitoringName, Enabled: cfg.Monitoring.Enabled, InitFunc: nil})
+	initQueue = append(initQueue, ServiceInit{Name: ServiceMonitoringName, InitFunc: nil})
 
 	return initQueue
 }
@@ -169,9 +160,6 @@ func (cm *ConfigManager) GetDefaultConfig() *config.Config {
 		},
 		Server: config.ServerConfig{
 			Port: DefaultServerPort,
-		},
-		Monitoring: config.MonitoringConfig{
-			Port: DefaultMonitoringPort,
 		},
 	}
 }

@@ -267,3 +267,8 @@ func NewExitConfirmationDialog() *DialogModel {
 func NewFilterDialog(defaultValue string) *DialogModel {
 	return NewInputDialog("Filter Logs", "Filter logs...", defaultValue)
 }
+
+// NewQueryDialog creates a query input dialog
+func NewQueryDialog(defaultValue string) *DialogModel {
+	return NewInputDialog("Command Query", "Enter Command...", defaultValue)
+}

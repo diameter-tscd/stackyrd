@@ -3,7 +3,10 @@ package modules
 import (
 	"strconv"
 
+	"stackyrd/config"
+	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/registry"
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
@@ -202,7 +205,9 @@ func (s *UsersService) updateUser(c *gin.Context) {
 // Auto-registration function - called when package is imported
 func init() {
 	// Service registration is handled by the registry package
-	// UsersService does not require any dependencies and is always available
+	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+		return NewUsersService(config.Services.IsEnabled("users_service"), logger)
+	})
 }
 
 // ValidateAge is a custom validator for age

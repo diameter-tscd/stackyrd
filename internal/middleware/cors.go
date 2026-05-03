@@ -5,8 +5,18 @@ import (
 	"strconv"
 	"strings"
 
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	// Register CORS middleware
+	RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return CORSAllowAll(), nil
+	})
+}
 
 // CORSConfig holds CORS configuration
 type CORSConfig struct {

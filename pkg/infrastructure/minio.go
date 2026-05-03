@@ -234,9 +234,9 @@ func (m *MinIOManager) Close() error {
 
 func init() {
 	RegisterComponent("minio", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
-		if !cfg.Monitoring.MinIO.Enabled {
+		if !cfg.MinIO.Enabled {
 			return nil, nil
 		}
-		return NewMinIOManager(cfg.Monitoring.MinIO)
+		return NewMinIOManager(cfg.MinIO)
 	})
 }

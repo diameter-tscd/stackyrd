@@ -3,8 +3,18 @@ package middleware
 import (
 	"fmt"
 
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	// Register Security middleware
+	RegisterMiddleware("security", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return Security(), nil
+	})
+}
 
 // SecurityConfig holds security headers configuration
 type SecurityConfig struct {

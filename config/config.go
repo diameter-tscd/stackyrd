@@ -2,7 +2,6 @@ package config
 
 import (
 	"strings"
-	"time"
 
 	"github.com/spf13/viper"
 )
@@ -20,6 +19,7 @@ func setupViperDefaults() {
 	viper.SetDefault("app.quiet_startup", true) // clean console by default
 	viper.SetDefault("app.enable_tui", false)   // TUI enabled by default
 	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("server.services_endpoint", "/api/v1")
 	viper.SetDefault("auth.type", "none")
 	// Services config uses a dynamic map - no hardcoded defaults needed
 	// Services default to enabled if not specified (see ServicesConfig.IsEnabled)
@@ -36,6 +36,7 @@ type Config struct {
 	App                 AppConfig           `mapstructure:"app"`
 	Server              ServerConfig        `mapstructure:"server"`
 	Services            ServicesConfig      `mapstructure:"services"`
+	Middleware          MiddlewareConfig    `mapstructure:"middleware"`
 	Auth                AuthConfig          `mapstructure:"auth"`
 	Swagger             SwaggerConfig       `mapstructure:"swagger"`
 	Redis               RedisConfig         `mapstructure:"redis"`
@@ -45,24 +46,20 @@ type Config struct {
 	Mongo               MongoConfig         `mapstructure:"mongo"`
 	MongoMultiConfig    MongoMultiConfig    `mapstructure:"mongo"`
 	Grafana             GrafanaConfig       `mapstructure:"grafana"`
-	Monitoring          MonitoringConfig    `mapstructure:"monitoring"`
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
 }
 
-type MonitoringConfig struct {
-	Port           string         `mapstructure:"port"`
-	UpdatePeriod   time.Duration  `mapstructure:"update_period"`
-	Enabled        bool           `mapstructure:"enabled"`
-	UploadDir      string         `mapstructure:"upload_dir"`
-	Password       string         `mapstructure:"password"`
-	Title          string         `mapstructure:"title"`
-	Subtitle       string         `mapstructure:"subtitle"`
-	MaxPhotoSizeMB int            `mapstructure:"max_photo_size_mb"`
-	MinIO          MinIOConfig    `mapstructure:"minio"`
-	External       ExternalConfig `mapstructure:"external"`
-	ObfuscateAPI   bool           `mapstructure:"obfuscate_api"`
+// MiddlewareConfig is a dynamic map of middleware names to their enabled status.
+type MiddlewareConfig map[string]bool
+
+// IsEnabled checks if a middleware is enabled. Returns true by default if not specified.
+func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
+	if enabled, exists := m[middlewareName]; exists {
+		return enabled
+	}
+	return true // Default to enabled if not specified
 }
 
 type MinIOConfig struct {
@@ -113,7 +110,8 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port             string `mapstructure:"port"`
+	ServicesEndpoint string `mapstructure:"services_endpoint"`
 }
 
 // ServicesConfig is a dynamic map of service names to their enabled status.

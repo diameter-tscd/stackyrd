@@ -35,7 +35,7 @@ go run scripts/build/build.go
 
 ## Preview
 
-![Console](.assets/console.gif)
+![Console](.assets/console.png)
 
 ## Key Features
 

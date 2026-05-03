@@ -16,6 +16,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func init() {
+	// Register Encryption middleware (conditionally enabled based on config)
+	RegisterMiddleware("encryption", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return EncryptionMiddleware(cfg, logger), nil
+	})
+
+	// Register Gzip middleware
+	RegisterMiddleware("gzip", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+		return GzipMiddleware(), nil
+	})
+}
+
 // EncryptionMiddleware provides API encryption/obfuscation
 func EncryptionMiddleware(cfg *config.Config, l *logger.Logger) gin.HandlerFunc {
 	if !cfg.Encryption.Enabled {

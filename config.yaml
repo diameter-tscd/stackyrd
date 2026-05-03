@@ -4,12 +4,13 @@ app:
   debug: true
   env: "development"
   banner_path: "banner.txt"
-  startup_delay: 3        # seconds to display boot screen (0 to skip)
-  quiet_startup: true     # suppress console logs (TUI only, logs still go to monitoring)
-  enable_tui: true        # enable fancy TUI mode (false = traditional console logging)
+  startup_delay: 3                # seconds to display boot screen (0 to skip)
+  quiet_startup: true             # suppress console logs (TUI only, logs still go to monitoring)
+  enable_tui: true                # enable fancy TUI mode (false = traditional console logging)
 
 server:   
   port: "8080"
+  services_endpoint: /api/v1      # endpoint service path
 
 services:
   users_service: true
@@ -21,6 +22,20 @@ services:
   multi_tenant_service: true
   products_service: true
   tasks_service: true
+
+# Middleware configuration - enable/disable middlewares (defaults to true if not specified)
+middleware:
+  request_id: true
+  logger: true
+  permission_check: true
+  cors: true
+  jwt: false          # Set to true if using JWT authentication
+  ratelimit: true
+  security: true
+  audit: true
+  encryption: false    # Controlled by encryption.enabled config
+  gzip: true
+  swagger: true       # Controlled by swagger.enabled config
 
 auth:
   type: "apikey"
@@ -79,22 +94,6 @@ grafana:
   api_key: "your-grafana-api-key"
   username: "admin"
   password: "admin"
-
-monitoring:
-  enabled: true
-  port: "x"
-  password: "admin"
-  obfuscate_api: true
-  title: "stackyrd"
-  subtitle: "Monitoring Dashboard"
-  max_photo_size_mb: 2
-  upload_dir: "web/monitoring/uploads"
-  external:
-    services:
-      - name: "Google"
-        url: "https://google.com"
-      - name: "Local API"
-        url: "http://localhost:8080/health"
   
 minio:
   enabled: true

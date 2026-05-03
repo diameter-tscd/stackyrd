@@ -52,13 +52,13 @@ func (app *Application) Run() error {
 	if err := executeSteps(ctx, steps); err != nil {
 		return fmt.Errorf("%s: %w", ErrStepFailed, err)
 	}
-
 	return nil
 }
 
 // executeSteps executes the provided steps in sequence with error handling
 func executeSteps(ctx *AppContext, steps []AppStep) error {
 	for i, step := range steps {
+
 		stepNum := fmt.Sprintf("%d/%d", i+1, len(steps))
 		fmt.Printf("[%s] %s\n", stepNum, step.Name)
 
@@ -66,6 +66,7 @@ func executeSteps(ctx *AppContext, steps []AppStep) error {
 			return fmt.Errorf("step failed: %w", err)
 		}
 	}
+	utils.ClearScreen()
 	return nil
 }
 
@@ -129,10 +130,6 @@ func (app *Application) startAppStep(ctx *AppContext) error {
 
 // runWithTUI runs the application with fancy TUI interface
 func (app *Application) runWithTUI() {
-	// Configure monitoring port for TUI
-	if !app.config.Monitoring.Enabled {
-		app.config.Monitoring.Port = "disabled"
-	}
 
 	// Setup TUI configuration
 	tuiConfig := tui.StartupConfig{
@@ -140,7 +137,6 @@ func (app *Application) runWithTUI() {
 		AppVersion:  app.config.App.Version,
 		Banner:      app.bannerText,
 		Port:        app.config.Server.Port,
-		MonitorPort: app.config.Monitoring.Port,
 		Env:         app.config.App.Env,
 		IdleSeconds: app.config.App.StartupDelay,
 	}
@@ -229,13 +225,12 @@ func (app *Application) runWithConsole() {
 // createLiveTUI creates and configures the Live TUI
 func (app *Application) createLiveTUI() *tui.LiveTUI {
 	return tui.NewLiveTUI(tui.LiveConfig{
-		AppName:     app.config.App.Name,
-		AppVersion:  app.config.App.Version,
-		Banner:      app.bannerText,
-		Port:        app.config.Server.Port,
-		MonitorPort: app.config.Monitoring.Port,
-		Env:         app.config.App.Env,
-		OnShutdown:  utils.TriggerShutdown,
+		AppName:    app.config.App.Name,
+		AppVersion: app.config.App.Version,
+		Banner:     app.bannerText,
+		Port:       app.config.Server.Port,
+		Env:        app.config.App.Env,
+		OnShutdown: utils.TriggerShutdown,
 	})
 }
 

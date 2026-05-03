@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
@@ -72,14 +74,16 @@ func (s *Server) Start() error {
 	s.setConnectionDefaults()
 
 	s.logger.Info("Initializing Middleware...")
-	middleware.InitMiddlewares(s.gin, middleware.Config{
-		AuthType: s.config.Auth.Type,
-		Logger:   s.logger,
-	})
 
-	if s.config.Encryption.Enabled {
-		s.logger.Info("Initializing Encryption Middleware...")
-		s.gin.Use(middleware.EncryptionMiddleware(s.config, s.logger))
+	// Apply middleware configuration from config
+	middleware.GetGlobalMiddlewareRegistry().ApplyConfig(s.config)
+
+	// Auto-discover and register all enabled middlewares
+	middlewares := middleware.GetGlobalMiddlewareRegistry().AutoDiscoverMiddlewares(s.config, s.logger)
+	for _, mw := range middlewares {
+		if mw != nil {
+			s.gin.Use(mw)
+		}
 	}
 
 	s.logger.Info("Booting Services...")
@@ -153,23 +157,31 @@ func (s *Server) registerHealthEndpoints() {
 		response.Success(c, s.infraInitManager.GetStatus())
 	})
 
-	s.gin.POST("/restart", func(c *gin.Context) {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			os.Exit(1)
-		}()
-		response.Success(c, map[string]string{"status": "restarting", "message": "Service is restarting..."})
+	s.gin.GET("/health/dependencies", func(c *gin.Context) {
+		response.Success(c, map[string]interface{}{
+			"total_infrastructure": len(s.dependencies.GetAll()),
+			"list_infrastructure":  slices.Collect(maps.Keys(s.dependencies.GetAll())),
+			"total_service":        len(registry.GetServiceFactories()),
+			"list_service":         slices.Collect(maps.Keys(registry.GetServiceFactories())),
+		})
+	})
+
+	s.gin.GET("/health/resources", func(c *gin.Context) {
+		response.Success(c, map[string]interface{}{
+			"memory_usage":    utils.GetMemSelf(),
+			"routine_running": utils.GetRoutine(),
+		})
 	})
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
+	utils.ClearScreen()
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
 	go func() {
 		time.Sleep(10 * time.Second)
 		logger.Warn("Maximum shutdown time is 20s, force shutdown when timeout.")
 		logger.Fatal("Graceful shutdown timed out, force shutdown.", nil)
-		utils.ClearScreen()
 		os.Exit(1)
 	}()
 

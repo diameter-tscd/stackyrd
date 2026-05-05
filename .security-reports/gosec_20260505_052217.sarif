@@ -8,6 +8,32 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "pkg/utils/system.go"
+								},
+								"region": {
+									"endColumn": 14,
+									"endLine": 61,
+									"snippet": {
+										"text": "pid := int32(os.Getpid())"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 14,
+									"startLine": 61
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e int32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "pkg/utils/strings.go"
 								},
 								"region": {
@@ -138,6 +164,33 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 10,
+									"endLine": 571,
+									"snippet": {
+										"text": "cmd := exec.Command(yrdconvPath, fmt.Sprintf(\"-dir=%s\", yrdPath))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 10,
+									"startLine": 571
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "scripts/build/build.go"
 								},
 								"region": {
@@ -196,13 +249,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 340,
+									"endLine": 393,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"ultra-prod\", \"-t\", imageName+\":ultra\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 340
+									"startLine": 393
 								}
 							}
 						}
@@ -223,13 +276,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 322,
+									"endLine": 375,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"prod-minimal\", \"-t\", imageName+\":minimal\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 322
+									"startLine": 375
 								}
 							}
 						}
@@ -250,13 +303,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 304,
+									"endLine": 357,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"prod-slim\", \"-t\", imageName+\":slim\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 304
+									"startLine": 357
 								}
 							}
 						}
@@ -277,13 +330,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 286,
+									"endLine": 339,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"prod\", \"-t\", imageName+\":latest\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 286
+									"startLine": 339
 								}
 							}
 						}
@@ -304,13 +357,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 268,
+									"endLine": 321,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"ultra-dev\", \"-t\", imageName+\":dev\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 268
+									"startLine": 321
 								}
 							}
 						}
@@ -331,13 +384,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 250,
+									"endLine": 303,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"dev\", \"-t\", imageName+\":dev\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 250
+									"startLine": 303
 								}
 							}
 						}
@@ -358,13 +411,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 232,
+									"endLine": 285,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"run\", \"--rm\", imageName+\":test\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 232
+									"startLine": 285
 								}
 							}
 						}
@@ -385,13 +438,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 214,
+									"endLine": 267,
 									"snippet": {
 										"text": "cmd := exec.Command(\"docker\", \"build\", \"--target\", \"test\", \"-t\", imageName+\":test\", \".\")"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 214
+									"startLine": 267
 								}
 							}
 						}
@@ -527,6 +580,114 @@
 									"sourceLanguage": "go",
 									"startColumn": 19,
 									"startLine": 735
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"fixes": [
+						{
+							"artifactChanges": [
+								{
+									"artifactLocation": {
+										"description": {
+											"text": "File requiring changes"
+										}
+									},
+									"replacements": [
+										{
+											"deletedRegion": {
+												"endColumn": 1,
+												"endLine": 1,
+												"startColumn": 1,
+												"startLine": 1
+											}
+										}
+									]
+								}
+							],
+							"description": {
+								"markdown": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal.",
+								"text": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+							}
+						}
+					],
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 18,
+									"endLine": 524,
+									"snippet": {
+										"text": "outFile, err := os.Create(downloadPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 18,
+									"startLine": 524
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"fixes": [
+						{
+							"artifactChanges": [
+								{
+									"artifactLocation": {
+										"description": {
+											"text": "File requiring changes"
+										}
+									},
+									"replacements": [
+										{
+											"deletedRegion": {
+												"endColumn": 1,
+												"endLine": 1,
+												"startColumn": 1,
+												"startLine": 1
+											}
+										}
+									]
+								}
+							],
+							"description": {
+								"markdown": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal.",
+								"text": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+							}
+						}
+					],
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 19,
+									"endLine": 432,
+									"snippet": {
+										"text": "outFile, err := os.Create(localPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 19,
+									"startLine": 432
 								}
 							}
 						}
@@ -1168,13 +1329,13 @@
 								},
 								"region": {
 									"endColumn": 17,
-									"endLine": 91,
+									"endLine": 84,
 									"snippet": {
 										"text": "banner, err := os.ReadFile(bannerPath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 17,
-									"startLine": 91
+									"startLine": 84
 								}
 							}
 						}
@@ -1184,6 +1345,32 @@
 					},
 					"ruleId": "G304",
 					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 16,
+									"endLine": 422,
+									"snippet": {
+										"text": "resp, err := http.Get(remotePath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 16,
+									"startLine": 422
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential HTTP request made with variable url"
+					},
+					"ruleId": "G107"
 				},
 				{
 					"level": "error",
@@ -1244,6 +1431,33 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 13,
+									"endLine": 537,
+									"snippet": {
+										"text": "if err := os.Chmod(downloadPath, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 13,
+									"startLine": 537
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect file permissions to be 0600 or less"
+					},
+					"ruleId": "G302",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "pkg/utils/io.go"
 								},
 								"region": {
@@ -1290,6 +1504,33 @@
 						"text": "Expect file permissions to be 0600 or less"
 					},
 					"ruleId": "G302",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 131,
+									"snippet": {
+										"text": "if err := os.MkdirAll(ctx.InstallRoot, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 131
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
 					"ruleIndex": 4
 				},
 				{
@@ -1984,6 +2225,84 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 604,
+									"snippet": {
+										"text": "os.Remove(yrdPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 604
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 437,
+									"snippet": {
+										"text": "outFile.Close()"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 437
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 180,
+									"snippet": {
+										"text": "cmd.Run()"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 180
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "scripts/build/build.go"
 								},
 								"region": {
@@ -2118,13 +2437,13 @@
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 143,
+									"endLine": 206,
 									"snippet": {
 										"text": "cmd.Run()"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 143
+									"startLine": 206
 								}
 							}
 						}
@@ -2144,13 +2463,13 @@
 								},
 								"region": {
 									"endColumn": 3,
-									"endLine": 570,
+									"endLine": 596,
 									"snippet": {
 										"text": "t.program.Run()"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 3,
-									"startLine": 570
+									"startLine": 596
 								}
 							}
 						}
@@ -2400,32 +2719,6 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/infrastructure/system_monitor.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 82,
-									"snippet": {
-										"text": "conn.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 82
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "pkg/infrastructure/mongo.go"
 								},
 								"region": {
@@ -2478,32 +2771,6 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/infrastructure/http_monitor.go"
-								},
-								"region": {
-									"endColumn": 4,
-									"endLine": 41,
-									"snippet": {
-										"text": "resp.Body.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 4,
-									"startLine": 41
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "internal/services/modules/broadcast_service.go"
 								},
 								"region": {
@@ -2534,13 +2801,13 @@
 								},
 								"region": {
 									"endColumn": 4,
-									"endLine": 111,
+									"endLine": 123,
 									"snippet": {
 										"text": "gz.Close()"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 4,
-									"startLine": 111
+									"startLine": 123
 								}
 							}
 						}
@@ -2560,13 +2827,13 @@
 								},
 								"region": {
 									"endColumn": 5,
-									"endLine": 54,
+									"endLine": 66,
 									"snippet": {
 										"text": "c.Writer.Write(w.body.Bytes())"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 5,
-									"startLine": 54
+									"startLine": 66
 								}
 							}
 						}
@@ -2586,13 +2853,13 @@
 								},
 								"region": {
 									"endColumn": 5,
-									"endLine": 50,
+									"endLine": 62,
 									"snippet": {
 										"text": "c.Writer.Write([]byte(encoded))"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 5,
-									"startLine": 50
+									"startLine": 62
 								}
 							}
 						}
@@ -2638,13 +2905,13 @@
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 268,
+									"endLine": 263,
 									"snippet": {
 										"text": "srv.Shutdown(context.Background(), app.logger)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 268
+									"startLine": 263
 								}
 							}
 						}
@@ -2664,13 +2931,13 @@
 								},
 								"region": {
 									"endColumn": 3,
-									"endLine": 253,
+									"endLine": 248,
 									"snippet": {
 										"text": "srv.Shutdown(context.Background(), app.logger)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 3,
-									"startLine": 253
+									"startLine": 248
 								}
 							}
 						}
@@ -2690,13 +2957,13 @@
 								},
 								"region": {
 									"endColumn": 3,
-									"endLine": 250,
+									"endLine": 245,
 									"snippet": {
 										"text": "srv.Shutdown(context.Background(), app.logger)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 3,
-									"startLine": 250
+									"startLine": 245
 								}
 							}
 						}
@@ -2722,6 +2989,17 @@
 						"text": "The MITRE Common Weakness Enumeration"
 					},
 					"taxa": [
+						{
+							"fullDescription": {
+								"text": "The software performs a calculation that can produce an integer overflow or wraparound, when the logic assumes that the resulting value will always be larger than the original value. This can introduce other weaknesses when the calculation is used for resource management or execution control."
+							},
+							"guid": "c71e4fa0-720e-3e82-8b67-b2d44d0c604b",
+							"helpUri": "https://cwe.mitre.org/data/definitions/190.html",
+							"id": "190",
+							"shortDescription": {
+								"text": "Integer Overflow or Wraparound"
+							}
+						},
 						{
 							"fullDescription": {
 								"text": "The software uses external input to construct a pathname that is intended to identify a file or directory that is located underneath a restricted parent directory, but the software does not properly neutralize special elements within the pathname that can cause the pathname to resolve to a location that is outside of the restricted directory."
@@ -3236,6 +3514,44 @@
 							],
 							"shortDescription": {
 								"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "integer overflow conversion int -\u003e int32"
+							},
+							"help": {
+								"text": "integer overflow conversion int -\u003e int32\nSeverity: HIGH\nConfidence: MEDIUM\n"
+							},
+							"id": "G115",
+							"name": "Integer Overflow or Wraparound",
+							"properties": {
+								"precision": "medium",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "c71e4fa0-720e-3e82-8b67-b2d44d0c604b",
+										"id": "190",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "integer overflow conversion int -\u003e int32"
 							}
 						}
 					],

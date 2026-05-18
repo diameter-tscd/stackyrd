@@ -9,6 +9,7 @@
   <img src="https://shieldcn.dev/github/diameter-tscd/stackyrd/ci.svg?variant=secondary&size=xs&logo=lu%3AShield&label=Security+scan&name=security.yml" alt="Security Status"/>
   <img src="https://www.shieldcn.dev/github/release/diameter-tscd/stackyrd.svg?size=xs&variant=secondary" alt="Release"/>
   <img src="https://shieldcn.dev/badge/cross-platform-brightgreen.svg?variant=ghost&logo=ri%3AGoDeviceDesktop&size=xs" alt="Cross Platform"/>
+  <img src="https://www.shieldcn.dev/badge/Agent--friendly-AGENTS.md-D97757.svg?variant=secondary&size=xs" alt="Agents Friendly"/>
 </div>
 <br>
 

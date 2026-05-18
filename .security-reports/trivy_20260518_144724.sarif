@@ -39,21 +39,21 @@
               }
             },
             {
-              "id": "GHSA-j88v-2chj-qfwx",
+              "id": "CVE-2026-41889",
               "name": "LanguageSpecificPackageVulnerability",
               "shortDescription": {
-                "text": "pgx: SQL Injection via placeholder confusion with dollar quoted string literals"
+                "text": "github.com/jackc/pgx: golang: pgx: SQL injection via specific SQL query conditions"
               },
               "fullDescription": {
-                "text": "### Impact\n\nSQL Injection can occur when:\n\n1. The non-default simple protocol is used.\n2. A dollar quoted string literal is used in the SQL query.\n3. That string literal contains text that would be would be interpreted as a placeholder outside of a string literal.\n4. The value of that placeholder is controllable by the attacker.\n\ne.g.\n\n```go\nattackValue := `$tag$; drop table canary; --`\n_, err = tx.Exec(ctx, `select $tag$ $1 $tag$, $1`, pgx.QueryExecModeSimpleProtocol, attackValue)\n```\n\nThis is unlikely to occur outside of a contrived scenario.\n\n### Patches\n\nThe problem is resolved in v5.9.2.\n\n### Workarounds\n\nDo not use the simple protocol to execute queries matching all the above conditions."
+                "text": "pgx is a PostgreSQL driver and toolkit for Go. Prior to version 5.9.2, SQL injection can occur when the non-default simple protocol is used, a dollar quoted string literal is used in the SQL query, that string literal contains text that would be would be interpreted as a placeholder outside of a string literal, and the value of that placeholder is controllable by the attacker. This issue has been patched in version 5.9.2."
               },
               "defaultConfiguration": {
                 "level": "note"
               },
-              "helpUri": "https://github.com/advisories/GHSA-j88v-2chj-qfwx",
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2026-41889",
               "help": {
-                "text": "Vulnerability GHSA-j88v-2chj-qfwx\nSeverity: LOW\nPackage: github.com/jackc/pgx/v5\nFixed Version: 5.9.2\nLink: [GHSA-j88v-2chj-qfwx](https://github.com/advisories/GHSA-j88v-2chj-qfwx)\n### Impact\n\nSQL Injection can occur when:\n\n1. The non-default simple protocol is used.\n2. A dollar quoted string literal is used in the SQL query.\n3. That string literal contains text that would be would be interpreted as a placeholder outside of a string literal.\n4. The value of that placeholder is controllable by the attacker.\n\ne.g.\n\n```go\nattackValue := `$tag$; drop table canary; --`\n_, err = tx.Exec(ctx, `select $tag$ $1 $tag$, $1`, pgx.QueryExecModeSimpleProtocol, attackValue)\n```\n\nThis is unlikely to occur outside of a contrived scenario.\n\n### Patches\n\nThe problem is resolved in v5.9.2.\n\n### Workarounds\n\nDo not use the simple protocol to execute queries matching all the above conditions.",
-                "markdown": "**Vulnerability GHSA-j88v-2chj-qfwx**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|LOW|github.com/jackc/pgx/v5|5.9.2|[GHSA-j88v-2chj-qfwx](https://github.com/advisories/GHSA-j88v-2chj-qfwx)|\n\n### Impact\n\nSQL Injection can occur when:\n\n1. The non-default simple protocol is used.\n2. A dollar quoted string literal is used in the SQL query.\n3. That string literal contains text that would be would be interpreted as a placeholder outside of a string literal.\n4. The value of that placeholder is controllable by the attacker.\n\ne.g.\n\n```go\nattackValue := `$tag$; drop table canary; --`\n_, err = tx.Exec(ctx, `select $tag$ $1 $tag$, $1`, pgx.QueryExecModeSimpleProtocol, attackValue)\n```\n\nThis is unlikely to occur outside of a contrived scenario.\n\n### Patches\n\nThe problem is resolved in v5.9.2.\n\n### Workarounds\n\nDo not use the simple protocol to execute queries matching all the above conditions."
+                "text": "Vulnerability CVE-2026-41889\nSeverity: LOW\nPackage: github.com/jackc/pgx/v5\nFixed Version: 5.9.2\nLink: [CVE-2026-41889](https://avd.aquasec.com/nvd/cve-2026-41889)\npgx is a PostgreSQL driver and toolkit for Go. Prior to version 5.9.2, SQL injection can occur when the non-default simple protocol is used, a dollar quoted string literal is used in the SQL query, that string literal contains text that would be would be interpreted as a placeholder outside of a string literal, and the value of that placeholder is controllable by the attacker. This issue has been patched in version 5.9.2.",
+                "markdown": "**Vulnerability CVE-2026-41889**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|LOW|github.com/jackc/pgx/v5|5.9.2|[CVE-2026-41889](https://avd.aquasec.com/nvd/cve-2026-41889)|\n\npgx is a PostgreSQL driver and toolkit for Go. Prior to version 5.9.2, SQL injection can occur when the non-default simple protocol is used, a dollar quoted string literal is used in the SQL query, that string literal contains text that would be would be interpreted as a placeholder outside of a string literal, and the value of that placeholder is controllable by the attacker. This issue has been patched in version 5.9.2."
               },
               "properties": {
                 "cvssv40_baseScore": 2.3,
@@ -100,11 +100,11 @@
           ]
         },
         {
-          "ruleId": "GHSA-j88v-2chj-qfwx",
+          "ruleId": "CVE-2026-41889",
           "ruleIndex": 1,
           "level": "note",
           "message": {
-            "text": "Package: github.com/jackc/pgx/v5\nInstalled Version: v5.7.6\nVulnerability GHSA-j88v-2chj-qfwx\nSeverity: LOW\nFixed Version: 5.9.2\nLink: [GHSA-j88v-2chj-qfwx](https://github.com/advisories/GHSA-j88v-2chj-qfwx)"
+            "text": "Package: github.com/jackc/pgx/v5\nInstalled Version: v5.7.6\nVulnerability CVE-2026-41889\nSeverity: LOW\nFixed Version: 5.9.2\nLink: [CVE-2026-41889](https://avd.aquasec.com/nvd/cve-2026-41889)"
           },
           "locations": [
             {

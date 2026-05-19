@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,7 +13,13 @@ import (
 
 type RedisManager struct {
 	Client *redis.Client
-	Pool   *WorkerPool // Async worker pool
+	Pool   *WorkerPool // Async worker pool — lazily initialised on first async call
+	once   sync.Once
+
+	// statusCache avoids re-running Ping + PoolStats on every /health call.
+	statusCache  map[string]interface{}
+	statusExpiry time.Time
+	statusMu     sync.Mutex
 }
 
 // Name returns the display name of the component
@@ -26,9 +33,12 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Address,
+		Addr:            cfg.Address,
 		Password: cfg.Password,
 		DB:       cfg.DB,
+		PoolSize:     25,
+		MinIdleConns: 5,
+		PoolTimeout:  4 * time.Second,
 	})
 
 	// Test connection
@@ -36,14 +46,20 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
 		return nil, fmt.Errorf("failed to connect to redis: %w", err)
 	}
 
-	// Initialize worker pool for async operations
-	pool := NewWorkerPool(10) // Default 10 workers
-	pool.Start()
-
 	return &RedisManager{
 		Client: client,
-		Pool:   pool,
+		// Pool is nil until the first async call — avoids allocating 10 goroutines
+		// for services that only use the sync API.
 	}, nil
+}
+
+// startPool lazily initialises the worker pool on first async use.
+func (r *RedisManager) startPool() {
+	r.once.Do(func() {
+		pool := NewWorkerPool(10)
+		pool.Start()
+		r.Pool = pool
+	})
 }
 
 // Set adds a key-value pair to Redis with a TTL.
@@ -73,19 +89,36 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
+	// Fast path: return cached result when still within TTL.
+	r.statusMu.Lock()
+	if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
+		cached := r.statusCache
+		r.statusMu.Unlock()
+		return cached
+	}
+	r.statusMu.Unlock()
+
+	// Slow path: actually ping the server.
+	addr := r.Client.Options().Addr
+	db := r.Client.Options().DB
+
 	pong, err := r.Client.Ping(context.Background()).Result()
 	stats["connected"] = err == nil
 	stats["ping"] = pong
-	stats["addr"] = r.Client.Options().Addr
-	stats["db"] = r.Client.Options().DB
+	stats["addr"] = addr
+	stats["db"] = db
 
-	// Add pool stats
 	pool := r.Client.PoolStats()
 	stats["pool_hits"] = pool.Hits
 	stats["pool_misses"] = pool.Misses
 	stats["pool_timeouts"] = pool.Timeouts
 	stats["pool_total_conns"] = pool.TotalConns
 	stats["pool_idle_conns"] = pool.IdleConns
+
+	r.statusMu.Lock()
+	r.statusCache = stats
+	r.statusExpiry = time.Now().Add(2 * time.Second)
+	r.statusMu.Unlock()
 
 	return stats
 }
@@ -185,7 +218,7 @@ func (r *RedisManager) SetBatchAsync(ctx context.Context, kvPairs map[string]int
 		})
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 30)
 }
 
 // GetBatchAsync asynchronously gets multiple values by keys.
@@ -199,7 +232,7 @@ func (r *RedisManager) GetBatchAsync(ctx context.Context, keys []string) *BatchA
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 30)
 }
 
 // DeleteBatchAsync asynchronously deletes multiple keys.
@@ -213,13 +246,14 @@ func (r *RedisManager) DeleteBatchAsync(ctx context.Context, keys []string) *Bat
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 30)
 }
 
 // Worker Pool Operations
 
 // SubmitAsyncJob submits an async job to the worker pool.
 func (r *RedisManager) SubmitAsyncJob(job func()) {
+	r.startPool()
 	if r.Pool != nil {
 		r.Pool.Submit(job)
 	} else {

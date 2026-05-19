@@ -2,6 +2,7 @@ package modules
 
 import (
 	"strconv"
+	"sync"
 
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
@@ -113,11 +114,18 @@ func (s *UsersService) RegisterRoutes(g *gin.RouterGroup) {
 	}
 }
 
-// Mock database
-var users = []User{
-	{ID: 1, Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Username: "alice123", Age: 30},
-	{ID: 2, Name: "Bob", Email: "bob@example.com", Phone: "+0987654321", Username: "bob456", Age: 25},
-}
+// Mock database — protected by usersMu for concurrent read/write safety
+var (
+	usersMu   sync.RWMutex
+	usersList = []User{
+		{ID: 1, Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Username: "alice123", Age: 30},
+		{ID: 2, Name: "Bob", Email: "bob@example.com", Phone: "+0987654321", Username: "bob456", Age: 25},
+	}
+	usersIdx = map[int]*User{
+		1: &usersList[0],
+		2: &usersList[1],
+	}
+)
 
 func (s *UsersService) listUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -130,30 +138,39 @@ func (s *UsersService) listUsers(c *gin.Context) {
 		perPage = 10
 	}
 
-	if page > len(users) {
+	totalUsers := func() int {
+		usersMu.RLock()
+		defer usersMu.RUnlock()
+		return len(usersList)
+	}()
+	if page > totalUsers {
 		response.BadRequest(c, "Invalid pagination parameters")
 		return
 	}
 
+	usersMu.RLock()
 	start := (page - 1) * perPage
 	end := start + perPage
-	if end > len(users) {
-		end = len(users)
+	if end > len(usersList) {
+		end = len(usersList)
 	}
+	usersPage := make([]User, end-start)
+	copy(usersPage, usersList[start:end])
+	usersMu.RUnlock()
 
-	usersPage := users[start:end]
-	meta := response.CalculateMeta(page, perPage, int64(len(users)))
+	meta := response.CalculateMeta(page, perPage, int64(len(usersList)))
 	response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
 }
 
 func (s *UsersService) getUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	for _, user := range users {
-		if user.ID == id {
-			response.Success(c, user, "User retrieved successfully")
-			return
-		}
+	usersMu.RLock()
+	u, ok := usersIdx[id]
+	usersMu.RUnlock()
+	if ok {
+		response.Success(c, *u, "User retrieved successfully")
+		return
 	}
 
 	response.NotFound(c, "User not found")
@@ -171,8 +188,11 @@ func (s *UsersService) createUser(c *gin.Context) {
 	}
 
 	// Assign new ID
-	user.ID = len(users) + 1
-	users = append(users, user)
+	usersMu.Lock()
+	user.ID = len(usersList) + 1
+	usersList = append(usersList, user)
+	usersIdx[user.ID] = &usersList[len(usersList)-1]
+	usersMu.Unlock()
 
 	response.Created(c, user, "User created successfully")
 }
@@ -190,10 +210,13 @@ func (s *UsersService) updateUser(c *gin.Context) {
 		return
 	}
 
-	for i, u := range users {
+	usersMu.Lock()
+	defer usersMu.Unlock()
+	for i, u := range usersList {
 		if u.ID == id {
 			user.ID = id
-			users[i] = user
+			usersList[i] = user
+			usersIdx[id] = &usersList[i]
 			response.Success(c, user, "User updated successfully")
 			return
 		}

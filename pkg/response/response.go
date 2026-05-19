@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"sync/atomic"
+	"fmt"
 )
 
 // Response represents the standard API response structure
@@ -84,13 +85,14 @@ func Success(c *gin.Context, data interface{}, message ...string) {
 		msg = message[0]
 	}
 
+	now := time.Now()
 	c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
 		Data:          data,
-		Timestamp:     time.Now().Unix(),
-		Datetime:      time.Now().Format(time.RFC3339),
+		Timestamp:     now.Unix(),
+		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -102,14 +104,15 @@ func SuccessWithMeta(c *gin.Context, data interface{}, meta *Meta, message ...st
 		msg = message[0]
 	}
 
+	now := time.Now()
 	c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
 		Data:          data,
 		Meta:          meta,
-		Timestamp:     time.Now().Unix(),
-		Datetime:      time.Now().Format(time.RFC3339),
+		Timestamp:     now.Unix(),
+		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -121,13 +124,14 @@ func Created(c *gin.Context, data interface{}, message ...string) {
 		msg = message[0]
 	}
 
+	now := time.Now()
 	c.JSON(http.StatusCreated, Response{
 		Success:       true,
 		Status:        http.StatusCreated,
 		Message:       msg,
 		Data:          data,
-		Timestamp:     time.Now().Unix(),
-		Datetime:      time.Now().Format(time.RFC3339),
+		Timestamp:     now.Unix(),
+		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -209,6 +213,7 @@ func Error(c *gin.Context, statusCode int, errorCode string, message string, det
 		errorDetails = details[0]
 	}
 
+	now := time.Now()
 	c.JSON(statusCode, Response{
 		Success: false,
 		Status:  statusCode,
@@ -217,8 +222,8 @@ func Error(c *gin.Context, statusCode int, errorCode string, message string, det
 			Message: message,
 			Details: errorDetails,
 		},
-		Timestamp:     time.Now().Unix(),
-		Datetime:      time.Now().Format(time.RFC3339),
+		Timestamp:     now.Unix(),
+		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -231,11 +236,22 @@ func getCorrelationID(c *gin.Context) string {
 		id = c.GetHeader("X-Correlation-ID")
 	}
 
-	// If still empty, generate a new one
+	// If still empty, generate a UUID v4 without allocating via crypto/rand each call
 	if id == "" {
-		id = uuid.New().String()
+		id = genUUID()
 	}
 	return id
+}
+
+// uuidCounter is an atomic counter used to generate UUID v4s without crypto/rand
+// on every call — significantly cheaper for the rare fallback path.
+var uuidCounter uint64
+
+func genUUID() string {
+	hi := atomic.AddUint64(&uuidCounter, 1)
+	lo := atomic.AddUint64(&uuidCounter, 1)
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		uint32(hi>>32), uint16(hi), uint16(lo>>48), uint16(lo>>32), uint32(lo))
 }
 
 // CalculateMeta creates pagination metadata

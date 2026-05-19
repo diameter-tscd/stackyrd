@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -53,6 +54,9 @@ type Logger struct {
 	z      zerolog.Logger
 	quiet  bool
 	config LoggerConfig
+	// spikePool caches a pre-built Info/Debug level event for callers that
+	// provide no keyvals.  This avoids allocating an event-tree on the hot path.
+	spikePool sync.Pool
 }
 
 // New creates a new fancy logger

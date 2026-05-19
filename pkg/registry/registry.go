@@ -5,6 +5,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -13,17 +14,20 @@ import (
 // ServiceFactory creates a service instance with dependencies
 type ServiceFactory func(config *config.Config, logger *logger.Logger, deps *Dependencies) interfaces.Service
 
-// Global registry of service factories
-var serviceFactories = make(map[string]ServiceFactory)
+// Global registry of service factories — write-once, read-many after boot
+var serviceFactories = &sync.Map{}
 
-// Global registry of discovered service
-var serviceDiscovered = make(map[string]interface{})
+// Global read-only registry of discovered services — write-once, read-many
+var (
+	serviceDiscovered = &sync.Map{}
+	// serviceDiscoveredMu removed: sync.Map is lock-free for reads
+)
 
 // RegisterService registers a service factory for automatic discovery
 func RegisterService(name string, factory ServiceFactory) {
 	// avoid duplicate register if service has same name
-	if _, exist := serviceFactories[name]; !exist && factory != nil {
-		serviceFactories[name] = factory
+	if _, exist := serviceFactories.Load(name); !exist && factory != nil {
+		serviceFactories.Store(name, factory)
 	}
 }
 
@@ -35,21 +39,23 @@ func AutoDiscoverServices(
 ) []interfaces.Service {
 	var services []interfaces.Service
 
-	for name, factory := range serviceFactories {
+	serviceFactories.Range(func(nameObj, factoryObj interface{}) bool {
+		name := nameObj.(string)
+		factory := factoryObj.(ServiceFactory)
 		logger.Debug("Creating service", "name", name)
 		if config.Services.IsEnabled(name) {
 			if service := factory(config, logger, deps); service != nil {
 				services = append(services, service)
 				logger.Info("Auto-registered service", "service", name)
-
-				serviceDiscovered[service.Name()] = service.Get()
+				serviceDiscovered.Store(service.Name(), service.Get())
 			} else {
 				logger.Warn("Service factory returned nil", "service", name)
 			}
 		} else {
 			logger.Debug("Service disabled via config", "service", name)
 		}
-	}
+		return true
+	})
 
 	return services
 }
@@ -70,11 +76,17 @@ func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 
 // GetServiceFactories returns the global service factories map for testing/debugging
 func GetServiceFactories() map[string]ServiceFactory {
-	return serviceFactories
+	result := make(map[string]ServiceFactory)
+	serviceFactories.Range(func(key, value interface{}) bool {
+		result[key.(string)] = value.(ServiceFactory)
+		return true
+	})
+	return result
 }
 
 func GetService(name string) interface{} {
-	return serviceDiscovered[name]
+	val, _ := serviceDiscovered.Load(name)
+	return val
 }
 
 // Register adds a service to the registry
@@ -89,21 +101,21 @@ func (r *ServiceRegistry) RegisterServiceWithDependencies(
 	deps *Dependencies,
 	serviceName string,
 ) error {
-	if factory, exists := serviceFactories[serviceName]; exists {
-		if config.Services.IsEnabled(serviceName) {
-			service := factory(config, logger, deps)
-			if service != nil {
-				r.Register(service)
-				r.logger.Info("Service registered with dependencies", "service", serviceName)
-				return nil
-			}
-			return fmt.Errorf("failed to create service: %s", serviceName)
-		} else {
-			r.logger.Debug("Service disabled via config", "service", serviceName)
-			return nil
-		}
+	factoryObj, exists := serviceFactories.Load(serviceName)
+	if !exists {
+		return fmt.Errorf("service factory not found: %s", serviceName)
 	}
-	return fmt.Errorf("service factory not found: %s", serviceName)
+	factory := factoryObj.(ServiceFactory)
+	if !config.Services.IsEnabled(serviceName) {
+		r.logger.Debug("Service disabled via config", "service", serviceName)
+		return nil
+	}
+	if service := factory(config, logger, deps); service != nil {
+		r.Register(service)
+		r.logger.Info("Service registered with dependencies", "service", serviceName)
+		return nil
+	}
+	return fmt.Errorf("failed to create service: %s", serviceName)
 }
 
 // GetServices returns the list of registered services

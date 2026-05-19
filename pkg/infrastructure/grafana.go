@@ -10,6 +10,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -24,6 +25,11 @@ type GrafanaManager struct {
 	Password string
 	Pool     *WorkerPool // Async worker pool
 	logger   *logger.Logger
+
+	// statusCache avoids re-running an HTTP health-check on every /health poll.
+	statusCache  map[string]interface{}
+	statusExpiry time.Time
+	statusMu     sync.Mutex
 }
 
 // grafanaLoggerAdapter adapts our custom logger to go-retryablehttp's LeveledLogger interface
@@ -574,26 +580,52 @@ func (gm *GrafanaManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// HTTP health check is blocking; snapshot immutable fields first, then do I/O
+	baseURL := gm.BaseURL
+	pool := gm.Pool
 
+	// Fast path: return cached result when still within TTL.
+	gm.statusMu.Lock()
+	if time.Now().Before(gm.statusExpiry) && gm.statusCache != nil {
+		cached := gm.statusCache
+		gm.statusMu.Unlock()
+		if baseURL != "" {
+			cached["url"] = baseURL
+		}
+		if pool != nil {
+			cached["pool_active"] = true
+		}
+		return cached
+	}
+	gm.statusMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	health, err := gm.GetHealth(ctx)
+	cancel()
 	if err != nil {
 		stats["connected"] = false
 		stats["error"] = err.Error()
+		stats["url"] = baseURL
+		gm.statusMu.Lock()
+		gm.statusCache = stats
+		gm.statusExpiry = time.Now().Add(30 * time.Second)
+		gm.statusMu.Unlock()
 		return stats
 	}
 
 	stats["connected"] = true
-	stats["url"] = gm.BaseURL
+	stats["url"] = baseURL
 	stats["version"] = health["version"]
 	stats["database"] = health["database"]
 
-	// Add pool stats
-	if gm.Pool != nil {
-		// Worker pool stats would go here if exposed
+	if pool != nil {
 		stats["pool_active"] = true
 	}
+
+	gm.statusMu.Lock()
+	gm.statusCache = stats
+	gm.statusExpiry = time.Now().Add(30 * time.Second)
+	gm.statusMu.Unlock()
 
 	return stats
 }

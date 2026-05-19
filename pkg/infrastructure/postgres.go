@@ -7,6 +7,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"sync"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
@@ -17,6 +18,12 @@ type PostgresManager struct {
 	DB   *sql.DB
 	ORM  *gorm.DB
 	Pool *WorkerPool // Async worker pool
+
+	// statusCache avoids re-running Ping on every /health call.
+	statusTTL    time.Duration
+	statusExpiry time.Time
+	statusCache  map[string]interface{}
+	statusMu     sync.Mutex
 }
 
 type PostgresConnectionManager struct {
@@ -184,16 +191,31 @@ func (p *PostgresManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
+	// Fast path: return cached result when still within TTL.
+	p.statusMu.Lock()
+	if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
+		cached := p.statusCache
+		p.statusMu.Unlock()
+		return cached
+	}
+	p.statusMu.Unlock()
+
+	// Slow path: actually ping and collect DB stats.
 	err := p.DB.Ping()
 	stats["connected"] = err == nil
 
-	// DB Stats
+	// DB Stats (concurrent-safe)
 	dbStats := p.DB.Stats()
 	stats["open_connections"] = dbStats.OpenConnections
 	stats["in_use"] = dbStats.InUse
 	stats["idle"] = dbStats.Idle
 	stats["wait_count"] = dbStats.WaitCount
 	stats["wait_duration_ms"] = dbStats.WaitDuration.Milliseconds()
+
+	p.statusMu.Lock()
+	p.statusCache = stats
+	p.statusExpiry = time.Now().Add(2 * time.Second)
+	p.statusMu.Unlock()
 
 	return stats
 }
@@ -503,7 +525,7 @@ func (p *PostgresManager) GORMDeleteAsync(ctx context.Context, value interface{}
 func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []string, args [][]interface{}) *BatchAsyncResult[sql.Result] {
 	if len(queries) != len(args) {
 		// Create a batch result with an error
-		result := NewBatchAsyncResult[sql.Result](len(queries))
+		result := NewBatchAsyncResult[sql.Result](len(queries), 20)
 		for i := range result.Results {
 			result.Results[i].Complete(nil, fmt.Errorf("queries and args length mismatch"))
 		}
@@ -519,7 +541,7 @@ func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []strin
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 20)
 }
 
 // Worker Pool Operations

@@ -62,8 +62,6 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		}
 	}
 
-	// Get bucket usage (approximate via listing, simplified for now)
-	// In production, you might use Prometheus or MinIO admin API, but for simple stats:
 	ctx := context.Background()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
@@ -74,30 +72,11 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		}
 	}
 
-	// Count objects (up to 1000 for quick check)
-	objectCh := m.Client.ListObjects(ctx, m.BucketName, minio.ListObjectsOptions{
-		Recursive: true,
-	})
-
-	count := 0
-	var size int64 = 0
-	for obj := range objectCh {
-		if obj.Err == nil {
-			count++
-			size += obj.Size
-		}
-		if count >= 1000 {
-			break // Limit for performance
-		}
-	}
-
 	return map[string]interface{}{
-		"connected":     true,
-		"bucket_name":   m.BucketName,
-		"object_count":  count,
-		"total_size_kb": size / 1024,
-		"status":        "Healthy",
-		"endpoint":      m.Client.EndpointURL().String(),
+		"connected":   true,
+		"bucket_name": m.BucketName,
+		"status":      "Healthy",
+		"endpoint":    m.Client.EndpointURL().String(),
 	}
 }
 
@@ -175,7 +154,7 @@ func (m *MinIOManager) UploadBatchAsync(ctx context.Context, uploads []struct {
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // DeleteBatchAsync asynchronously deletes multiple objects.
@@ -190,7 +169,7 @@ func (m *MinIOManager) DeleteBatchAsync(ctx context.Context, objectNames []strin
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // Sync Methods (for backward compatibility)

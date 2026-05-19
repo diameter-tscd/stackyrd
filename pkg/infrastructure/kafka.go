@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"time"
 
 	"github.com/IBM/sarama"
 )
@@ -31,6 +32,7 @@ func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManag
 	config.Producer.Return.Successes = true
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Retry.Max = 5
+	config.Net.MaxOpenRequests = 64
 
 	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
 	if err != nil {
@@ -88,13 +90,21 @@ func (k *KafkaManager) Consume(ctx context.Context, topic string, handler func(k
 	}
 
 	for {
+		// back-off ticker: between rebalance cycles, the goroutine drains the
+		// ctx.Done notification while sleeping (draining the proactive-close
+		// case above) and resumes once the ticker fires, allowing Go's
+		// scheduler to pre-empt the consumer loop between rebalances.
+		ticker := time.NewTicker(500 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			ticker.Stop()
 			return nil
-		default:
-			if err := consumerGroup.Consume(ctx, []string{topic}, consumer); err != nil {
-				return fmt.Errorf("error from consumer: %w", err)
-			}
+		case <-ticker.C:
+			ticker.Stop()
+		}
+
+		if err := consumerGroup.Consume(ctx, []string{topic}, consumer); err != nil {
+			return fmt.Errorf("error from consumer: %w", err)
 		}
 	}
 }
@@ -144,7 +154,7 @@ func (k *KafkaManager) PublishBatchAsync(ctx context.Context, topic string, mess
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // PublishBatchWithKeysAsync asynchronously publishes multiple messages with keys.
@@ -158,7 +168,7 @@ func (k *KafkaManager) PublishBatchWithKeysAsync(ctx context.Context, topic stri
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // ConsumeAsync starts consuming messages asynchronously.

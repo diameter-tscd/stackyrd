@@ -49,36 +49,68 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for range ticker.C {
-		rl.mu.Lock()
 		now := time.Now()
+
+		// Collect expired keys under RLock
+		rl.mu.RLock()
+		expired := make([]string, 0, len(rl.visitors)>>4)
 		for ip, v := range rl.visitors {
 			if now.Sub(v.lastSeen) > rl.window {
-				delete(rl.visitors, ip)
+				expired = append(expired, ip)
 			}
 		}
-		rl.mu.Unlock()
+		rl.mu.RUnlock()
+
+		// Apply deletions under short write-lock
+		if len(expired) > 0 {
+			rl.mu.Lock()
+			for _, ip := range expired {
+				delete(rl.visitors, ip)
+			}
+			rl.mu.Unlock()
+		}
 	}
 }
 
 func (rl *RateLimiter) isAllowed(ip string) bool {
+	now := time.Now()
+
+	rl.mu.RLock()
+	v, exists := rl.visitors[ip]
+	// Fast path: existing visitor, still within the window → upgrade to write
+	// lock to increment count.  We must verify `exists` before ever touching
+	// `v` (a nil dereference here causes a hard panic).
+	if exists && !(now.Sub(v.lastSeen) > rl.window) {
+		rl.mu.RUnlock()
+
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
+		if v.count >= rl.rate {
+			return false
+		}
+		v.count++
+		v.lastSeen = now
+		return true
+	}
+	// Slow path: new visitor or window expired — create/reset entry under
+	// write lock.  v may be nil here (first visit); only dereference `v`
+	// after the Lock/Exists re-check below.
+	rl.mu.RUnlock()
+
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	now := time.Now()
-	v, exists := rl.visitors[ip]
-
-	if !exists || now.Sub(v.lastSeen) > rl.window {
-		rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+	// Double-check after acquiring write lock — another goroutine may have
+	// raced in and created the entry already.
+	if v, exists = rl.visitors[ip]; exists && !(now.Sub(v.lastSeen) > rl.window) {
+		v.count++
+		v.lastSeen = now
 		return true
 	}
 
-	if v.count >= rl.rate {
-		return false
-	}
-
-	v.count++
-	v.lastSeen = now
+	rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
 	return true
 }
 

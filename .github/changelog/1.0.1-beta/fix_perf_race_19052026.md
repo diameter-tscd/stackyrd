@@ -93,3 +93,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redis worker pool lazily initialised in `pkg/infrastructure/redis.go`**
   - `NewRedisClient` no longer starts a worker pool eagerly. A `sync.Once`-guarded `startPool()` is called in `SubmitAsyncJob` on first async use.
   - Services that only use the synchronous Redis API incur zero idle-goroutine cost at startup.
+
+#### Fixes applied — session 2026-05-19
+
+- **`Datetime` zero-alloc reformat — PERF-008**
+  - `pkg/response/response.go`: replaced `now.Format(time.RFC3339)` with `time.Unix(now.Unix(), 0).Format(time.RFC3339)` in `Success`, `SuccessWithMeta`, `Created`, and `Error`. `time.Unix` constructs from integer seconds and avoids the sub-nanosecond nsec field that forces an escape-to-heap layout in `Format`.
+
+- **`UsersService` O(1) lookups + data-race protection — PERF-009**
+  - `internal/services/modules/users_service.go`: replaced the global unsynchronised `var users []User` with `sync.RWMutex`-protected `usersList` + `usersIdx` (`map[int]*User`).`getUser` is now O(1). `createUser`/`updateUser`/`listUsers` all hold the appropriate lock, eliminating the read/write data race.
+
+- **Request context propagated in MongoDB service — PERF-010**
+  - `internal/services/modules/mongodb_service.go`: all 7 handler call-site `context.Background()` replaced with `c.Request.Context()`. Unused `"context"` import removed.
+
+- **PERF-007 — no code change**
+  - `ExecuteAsync` and `ExecuteBatchAsync` are already separate functions in `pkg/infrastructure/async.go`; double goroutine-hop pattern not present in the current codebase.

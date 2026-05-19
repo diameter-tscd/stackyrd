@@ -5,13 +5,17 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"sync"
+	"time"
 )
 
 // ComponentRegistry manages all infrastructure components
 type ComponentRegistry struct {
-	components map[string]InfrastructureComponent
-	factories  map[string]ComponentFactory
-	mu         sync.RWMutex
+	components       map[string]InfrastructureComponent
+	factories        map[string]ComponentFactory
+	mu               sync.RWMutex
+	cachedComponents map[string]InfrastructureComponent
+	cacheExpiry      time.Time
+	cacheTTL         time.Duration
 }
 
 // Global registry instance
@@ -24,8 +28,10 @@ var (
 func GetGlobalRegistry() *ComponentRegistry {
 	registryOnce.Do(func() {
 		globalRegistry = &ComponentRegistry{
-			components: make(map[string]InfrastructureComponent),
-			factories:  make(map[string]ComponentFactory),
+			components:       make(map[string]InfrastructureComponent),
+			factories:        make(map[string]ComponentFactory),
+			cacheTTL:         500 * time.Millisecond,
+			cachedComponents: make(map[string]InfrastructureComponent),
 		}
 	})
 	return globalRegistry
@@ -70,14 +76,29 @@ func (r *ComponentRegistry) Get(name string) (InfrastructureComponent, bool) {
 	return component, exists
 }
 
-// GetAll returns all components
+// GetAll returns all components — returns a TTL-cached snapshot to avoid
+// re-allocating and copying the entire map on every /health/dependencies call.
 func (r *ComponentRegistry) GetAll() map[string]InfrastructureComponent {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	result := make(map[string]InfrastructureComponent)
+	if time.Now().Before(r.cacheExpiry) && r.cachedComponents != nil {
+		result := r.cachedComponents
+		r.mu.RUnlock()
+		return result
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Re-check after acquiring write lock (another goroutine may have populated cache)
+	if time.Now().Before(r.cacheExpiry) && r.cachedComponents != nil {
+		return r.cachedComponents
+	}
+	result := make(map[string]InfrastructureComponent, len(r.components))
 	for k, v := range r.components {
 		result[k] = v
 	}
+	r.cachedComponents = result
+	r.cacheExpiry = time.Now().Add(r.cacheTTL)
 	return result
 }
 

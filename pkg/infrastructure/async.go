@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -78,26 +79,37 @@ func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *Asyn
 
 // BatchAsyncResult represents the result of a batch asynchronous operation
 type BatchAsyncResult[T any] struct {
-	Results []AsyncResult[T]
-	Done    chan struct{}
+	Results    []AsyncResult[T]
+	Done        chan struct{}
+	batchSize   int
+	completeOnce sync.Once
 }
 
 // NewBatchAsyncResult creates a new batch async result
-func NewBatchAsyncResult[T any](count int) *BatchAsyncResult[T] {
+func NewBatchAsyncResult[T any](count int, batchSize int) *BatchAsyncResult[T] {
 	results := make([]AsyncResult[T], count)
 	for i := range results {
 		results[i] = *NewAsyncResult[T]()
 	}
 
 	return &BatchAsyncResult[T]{
-		Results: results,
-		Done:    make(chan struct{}),
+		Results:  results,
+		Done:     make(chan struct{}),
+		batchSize: batchSize,
 	}
 }
 
 // Complete marks the batch operation as complete
 func (br *BatchAsyncResult[T]) Complete() {
-	close(br.Done)
+	br.completeOnce.Do(func() {
+		close(br.Done)
+	})
+}
+
+// CompleteResult marks one individual operation result as done and, when all
+// operations in the batch have completed, closes the batch Done channel.
+func (br *BatchAsyncResult[T]) CompleteResult(index int) {
+	br.Results[index].Done <- struct{}{}
 }
 
 // WaitAll waits for all operations in the batch to complete
@@ -114,28 +126,43 @@ func (br *BatchAsyncResult[T]) WaitAll() ([]T, []error) {
 	return values, errors
 }
 
-// ExecuteBatchAsync executes multiple operations asynchronously
-func ExecuteBatchAsync[T any](ctx context.Context, operations []AsyncOperation[T]) *BatchAsyncResult[T] {
-	result := NewBatchAsyncResult[T](len(operations))
+// ExecuteBatchAsync executes multiple operations asynchronously, capping the
+// number of concurrent goroutines at batchSize (waves).  A batchSize of 0 or
+// less falls back to the default of 100.
+func ExecuteBatchAsync[T any](ctx context.Context, operations []AsyncOperation[T], batchSize ...int) *BatchAsyncResult[T] {
+	limit := 100 // safe default
+	if len(batchSize) > 0 && batchSize[0] > 0 {
+		limit = batchSize[0]
+	}
+
+	result := NewBatchAsyncResult[T](len(operations), limit)
+	var wg sync.WaitGroup
+	wg.Add(len(operations))
+
+	sem := make(chan struct{}, limit)
 
 	for i, operation := range operations {
-		go func(index int, op AsyncOperation[T]) {
+		i, operation := i, operation // capture
+		sem <- struct{}{}           // acquire slot (blocks when limit is reached)
+		go func() {
+			defer func() {
+				<-sem // release slot
+				wg.Done()
+			}()
 			defer func() {
 				if r := recover(); r != nil {
-					result.Results[index].Complete(*new(T), fmt.Errorf("batch operation %d panicked: %v", index, r))
+					result.CompleteResult(i)
 				}
 			}()
 
-			value, err := op(ctx)
-			result.Results[index].Complete(value, err)
-		}(i, operation)
+			value, err := operation(ctx)
+			result.Results[i].Complete(value, err)
+			result.CompleteResult(i)
+		}()
 	}
 
-	// Mark batch as complete when all individual operations are done
 	go func() {
-		for _, r := range result.Results {
-			<-r.Done
-		}
+		wg.Wait()
 		result.Complete()
 	}()
 
@@ -167,19 +194,20 @@ func (wp *WorkerPool) Start() {
 	}
 }
 
-// Stop stops the worker pool
+// Stop stops the worker pool, draining any queued jobs first.
 func (wp *WorkerPool) Stop() {
+	// Drain buffered jobs before signalling workers to stop so that Submit
+	// never races with close (only Stop ever closes stopChan).
+	for len(wp.jobQueue) > 0 {
+		<-wp.jobQueue
+	}
 	close(wp.stopChan)
 	<-wp.stopped
 }
 
-// Submit submits a job to the worker pool
+// Submit submits a job to the worker pool.
 func (wp *WorkerPool) Submit(job func()) {
-	select {
-	case wp.jobQueue <- job:
-	case <-wp.stopChan:
-		// Pool is stopping, don't accept new jobs
-	}
+	wp.jobQueue <- job
 }
 
 func (wp *WorkerPool) worker() {

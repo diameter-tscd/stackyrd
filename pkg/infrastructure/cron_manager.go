@@ -17,6 +17,7 @@ type CronJob struct {
 	LastRun  time.Time `json:"last_run"`
 	NextRun  time.Time `json:"next_run"`
 	EntryID  cron.EntryID
+	cmd      func() // original wrapped command, used by RunJobNow
 }
 
 type CronManager struct {
@@ -57,10 +58,6 @@ func (c *CronManager) AddJob(name, schedule string, cmd func()) (int, error) {
 
 	// Wrap cmd to update LastRun
 	wrappedCmd := func() {
-		// We need to look up the entry to update it
-		// This is tricky because the function closes over variables.
-		// For simplicity, we won't update LastRun inside the job execution here
-		// because we can get Prev/Next from c.cron.Entry(id).
 		cmd()
 	}
 
@@ -74,6 +71,7 @@ func (c *CronManager) AddJob(name, schedule string, cmd func()) (int, error) {
 		Name:     name,
 		Schedule: schedule,
 		EntryID:  id,
+		cmd:      wrappedCmd,
 	}
 
 	return int(id), nil
@@ -115,7 +113,6 @@ func (c *CronManager) AddAsyncJob(name, schedule string, cmd func()) (int, error
 
 	// Wrap cmd to execute in worker pool
 	wrappedCmd := func() {
-		// Submit job to worker pool for async execution
 		c.SubmitAsyncJob(cmd)
 	}
 
@@ -129,6 +126,7 @@ func (c *CronManager) AddAsyncJob(name, schedule string, cmd func()) (int, error
 		Name:     name,
 		Schedule: schedule,
 		EntryID:  id,
+		cmd:      wrappedCmd,
 	}
 
 	return int(id), nil
@@ -136,21 +134,20 @@ func (c *CronManager) AddAsyncJob(name, schedule string, cmd func()) (int, error
 
 // RunJobNow runs a job immediately (asynchronously)
 func (c *CronManager) RunJobNow(jobID int) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entryID := cron.EntryID(jobID)
-	if _, ok := c.jobs[entryID]; ok {
-		// Submit job to worker pool for immediate execution
-		c.SubmitAsyncJob(func() {
-			// We need to find the original function - this is a limitation
-			// For now, we'll just execute a placeholder
-			// In a real implementation, you'd store the original function
-		})
-		return nil
+	c.mu.Lock()
+	job, ok := c.jobs[cron.EntryID(jobID)]
+	if !ok {
+		c.mu.Unlock()
+		return fmt.Errorf("job with ID %d not found", jobID)
 	}
+	// Take a copy of the closure while we hold the lock
+	cmd := job.cmd
+	c.mu.Unlock()
 
-	return fmt.Errorf("job with ID %d not found", jobID)
+	if cmd != nil {
+		c.SubmitAsyncJob(cmd)
+	}
+	return nil
 }
 
 // GetJobStatus returns detailed status for a specific job

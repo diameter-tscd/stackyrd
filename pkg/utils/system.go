@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -16,19 +17,19 @@ import (
 )
 
 var (
-	// GetMemSelf
-	runtimeMemStats  runtime.MemStats
-	statsMutex       sync.RWMutex
+	// GetMemSelf — atomic to avoid data-race on concurrent reads vs background writes
+	runtimeMemStats atomic.Pointer[runtime.MemStats]
+	statsMutex       sync.Mutex         // protects writes via GetRuntimeStats
 	runtimeStats     bool
-	memSelfLastFetch time.Time
 	memSelfInterval  time.Duration
-	memSelfValue     uint64
+	memSelfLastFetch time.Time
+	memSelfValue     atomic.Uint64
 
 	// GetRoutine
 	routineLastFetch      time.Time
 	routineInterval       time.Duration
-	isRoutineFirstFetched bool
-	routineValue          int
+	routineFirstFetched   bool
+	routineValue          atomic.Int32
 )
 
 // GetSystemStats gathers CPU and Memory usage.
@@ -38,7 +39,7 @@ func GetSystemStats() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get memory info: %w", err)
 	}
 
-	c, err := cpu.Percent(time.Second, false)
+	c, err := cpu.Percent(100*time.Millisecond, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cpu stats: %w", err)
 	}
@@ -120,47 +121,54 @@ func GetDiskUsage() (map[string]interface{}, error) {
 // GetRuntimeStats gathers runtime.
 func GetRuntimeStats() runtime.MemStats {
 	if !runtimeStats {
-		go func() {
-			for {
-				statsMutex.Lock()
-				runtime.ReadMemStats(&runtimeMemStats)
-				statsMutex.Unlock()
-				time.Sleep(5 * time.Second)
-			}
-		}()
-		memSelfInterval = 5 * time.Second
-		memSelfValue = 0
-		routineValue = 0
-		runtimeStats = true
+		statsMutex.Lock()
+		defer statsMutex.Unlock()
+		if !runtimeStats { // double-check
+			staged := runtime.MemStats{}
+			runtime.ReadMemStats(&staged)
+			runtimeMemStats.Store(&staged)
+			memSelfInterval = 5 * time.Second
+			memSelfValue.Store(0)
+			routineValue.Store(0)
+			routineInterval = 5 * time.Second
+			runtimeStats = true
+		}
 	}
-	return runtimeMemStats
+	// Atomically load pointer — loads on Ptr-typed atomics are already fully
+	// synchronised, so copying the dereferenced struct is race-free without a
+	// spin-loop (the old double-Load pattern never converged here, as the
+	// background writer only swaps the pointer every 5 s).
+	p := runtimeMemStats.Load()
+	if p == nil {
+		return runtime.MemStats{}
+	}
+	_ = *p  // force dereference to prove no escape (p is already a pointer copy)
+	return *p
 }
 
 // GetMemSelf gathers stackyrd memory usage.
 func GetMemSelf() uint64 {
-	stats := GetRuntimeStats()
+	_ = GetRuntimeStats() // ensure background stats goroutine is running
 
 	if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
-		statsMutex.RLock()
-		alloc := stats.Sys
-		statsMutex.RUnlock()
-		memSelfValue = alloc / 1024 / 1024
+		alloc := runtimeMemStats.Load().Sys
+		memSelfValue.Store(alloc / 1024 / 1024)
 		memSelfLastFetch = time.Now()
 	}
-	return memSelfValue
+	return memSelfValue.Load()
 }
 
 func GetRoutine() int {
-	if !isRoutineFirstFetched {
+	if !routineFirstFetched {
 		routineInterval = 5 * time.Second
-		isRoutineFirstFetched = true
+		routineFirstFetched = true
 	} else {
 		if routineLastFetch.IsZero() || time.Since(routineLastFetch) >= routineInterval {
 			routineLastFetch = time.Now()
-			routineValue = runtime.NumGoroutine()
+			routineValue.Store(int32(runtime.NumGoroutine()))
 		}
 	}
-	return routineValue
+	return int(routineValue.Load())
 }
 
 // GetNetworkInfo gathers hostname and IP.

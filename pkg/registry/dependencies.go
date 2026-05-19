@@ -1,21 +1,37 @@
 package registry
 
+import (
+	"sync"
+	"time"
+)
+
 // Dependencies holds all infrastructure dependencies that services might need
 type Dependencies struct {
 	// Dynamic component store - no static declarations
 	components map[string]interface{}
+	mu         sync.RWMutex
+	// TTL cache for GetAll() to avoid copying the entire map on every health check
+	cachedAll    map[string]interface{}
+	cacheExpiry  time.Time
+	cacheTTL     time.Duration
 }
 
 // NewDependencies creates a new dependencies container
 func NewDependencies() *Dependencies {
 	return &Dependencies{
 		components: make(map[string]interface{}),
+		cacheTTL:   500 * time.Millisecond,
 	}
 }
 
 // Set stores a component by name
 func (d *Dependencies) Set(name string, component interface{}) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.components[name] = component
+	// Invalidate cache on mutation
+	d.cachedAll = nil
+	d.cacheExpiry = time.Time{}
 }
 
 // Get retrieves a component by name
@@ -24,12 +40,29 @@ func (d *Dependencies) Get(name string) (interface{}, bool) {
 	return comp, ok
 }
 
-// GetAll returns all registered components
+// GetAll returns all registered components — returns a TTL-cached snapshot
+// to avoid allocating and copying the entire map on every /health/dependencies call.
 func (d *Dependencies) GetAll() map[string]interface{} {
-	result := make(map[string]interface{})
+	d.mu.RLock()
+	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
+		result := d.cachedAll
+		d.mu.RUnlock()
+		return result
+	}
+	d.mu.RUnlock()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// Re-check after acquiring write lock
+	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
+		return d.cachedAll
+	}
+	result := make(map[string]interface{}, len(d.components))
 	for k, v := range d.components {
 		result[k] = v
 	}
+	d.cachedAll = result
+	d.cacheExpiry = time.Now().Add(d.cacheTTL)
 	return result
 }
 

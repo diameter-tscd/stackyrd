@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,9 +19,11 @@ type EventData struct {
 
 // StreamClient represents a connected client for a specific stream
 type StreamClient struct {
-	ID       string
-	StreamID string
-	Channel  chan EventData
+	ID              string
+	StreamID        string
+	Channel         chan EventData
+	droppedMessages atomic.Int64 // number of messages dropped because channel was full
+	lastSeen        atomic.Int64 // unix timestamp updated on subscribe / successful broadcast
 }
 
 // EventBroadcaster manages multiple event streams and their clients
@@ -47,6 +50,72 @@ func NewEventBroadcaster() *EventBroadcaster {
 	return eb
 }
 
+// touchLastSeen updates the client's last-seen timestamp.
+func (eb *EventBroadcaster) touchLastSeen(clientID string) {
+	eb.mu.RLock()
+	client, exists := eb.clients[clientID]
+	eb.mu.RUnlock()
+	if exists {
+		client.lastSeen.Store(time.Now().Unix())
+	}
+}
+
+// ExpireStaleClients removes clients whose TTL has expired.  Can be called
+// synchronously by tests or the background ticker.
+func (eb *EventBroadcaster) ExpireStaleClients() {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	eb.expireStaleClientsLocked()
+}
+
+// unsubscribeNoLock removes a client without acquiring the outer lock.
+// Must be called with eb.mu already held.
+func (eb *EventBroadcaster) unsubscribeNoLock(clientID string) {
+	client, exists := eb.clients[clientID]
+	if !exists {
+		return
+	}
+
+	// Remove from streams
+	if clients, ok := eb.streams[client.StreamID]; ok {
+		for i, c := range clients {
+			if c.ID == clientID {
+				eb.streams[client.StreamID] = append(clients[:i], clients[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Remove from clients map
+	delete(eb.clients, clientID)
+
+	// Close channel safely
+	select {
+	case <-client.Channel:
+	default:
+		close(client.Channel)
+	}
+}
+
+func (eb *EventBroadcaster) expireStaleClientsLocked() {
+	now := time.Now().Unix()
+	for clientID, client := range eb.clients {
+		if now-client.lastSeen.Load() > int64(eb.clientTTL.Seconds()) {
+			eb.unsubscribeNoLock(clientID)
+		}
+	}
+}
+
+// cleanupRoutine checks client TTLs every 30 minutes and garbage-collects
+// stale clients that have not been heard from.
+func (eb *EventBroadcaster) cleanupRoutine() {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		eb.ExpireStaleClients()
+	}
+}
+
 // Subscribe creates a new client and subscribes to a stream
 func (eb *EventBroadcaster) Subscribe(streamID string) *StreamClient {
 	eb.mu.Lock()
@@ -55,11 +124,13 @@ func (eb *EventBroadcaster) Subscribe(streamID string) *StreamClient {
 	clientID := fmt.Sprintf("client_%d", eb.nextID)
 	eb.nextID++
 
+	now := time.Now().Unix()
 	client := &StreamClient{
 		ID:       clientID,
 		StreamID: streamID,
 		Channel:  make(chan EventData, 100), // Buffer up to 100 messages
 	}
+	client.lastSeen.Store(now)
 
 	eb.clients[clientID] = client
 	eb.streams[streamID] = append(eb.streams[streamID], client)
@@ -113,20 +184,38 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 		StreamID:  streamID,
 	}
 
+	var toUnsubscribe []string
+
 	for _, client := range clients {
 		select {
 		case client.Channel <- event:
-			// Message sent successfully
+			// Update last-seen on successful delivery so TTL cleanup keeps
+			// active clients.
+			client.lastSeen.Store(time.Now().Unix())
 		default:
-			// Channel full, skip this client
+			// Channel full — count and queue for unsubscription to prevent
+			// unbounded goroutine/memory growth.
+			client.droppedMessages.Add(1)
+			if client.droppedMessages.Load() > 100 {
+				toUnsubscribe = append(toUnsubscribe, client.ID)
+			}
 		}
+	}
+
+	if len(toUnsubscribe) > 0 {
+		eb.mu.Lock()
+		for _, id := range toUnsubscribe {
+			eb.unsubscribeNoLock(id)
+		}
+		eb.mu.Unlock()
 	}
 }
 
 // BroadcastToAll sends an event to all clients across all streams
 func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]interface{}) {
 	eb.mu.RLock()
-	defer eb.mu.RUnlock()
+	clients := eb.streams
+	eb.mu.RUnlock()
 
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
@@ -136,15 +225,30 @@ func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, dat
 		Timestamp: time.Now().Unix(),
 	}
 
-	for _, clients := range eb.streams {
-		for _, client := range clients {
+	var toUnsubscribe []string
+
+	for streamID, streamClients := range clients {
+		for _, client := range streamClients {
 			select {
 			case client.Channel <- event:
-				// Message sent successfully
+				client.lastSeen.Store(time.Now().Unix())
 			default:
-				// Channel full, skip this client
+				// Channel full — count and queue for unsubscription
+				client.droppedMessages.Add(1)
+				if client.droppedMessages.Load() > 100 {
+					toUnsubscribe = append(toUnsubscribe, client.ID)
+				}
 			}
 		}
+		_ = streamID
+	}
+
+	if len(toUnsubscribe) > 0 {
+		eb.mu.Lock()
+		for _, id := range toUnsubscribe {
+			eb.unsubscribeNoLock(id)
+		}
+		eb.mu.Unlock()
 	}
 }
 
@@ -198,14 +302,4 @@ func (eb *EventBroadcaster) IsStreamActive(streamID string) bool {
 
 	clients, exists := eb.streams[streamID]
 	return exists && len(clients) > 0
-}
-
-// cleanupRoutine removes stale clients (not used in this implementation)
-func (eb *EventBroadcaster) cleanupRoutine() {
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		// Could implement TTL-based cleanup here if needed
-	}
 }

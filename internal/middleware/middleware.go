@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -138,7 +138,7 @@ func RequestID() gin.HandlerFunc {
 		// Generate request ID if not present
 		requestID := c.GetHeader("X-Request-ID")
 		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+			requestID = "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 		}
 		c.Set("X-Request-ID", requestID)
 		c.Writer.Header().Set("X-Request-ID", requestID)
@@ -157,7 +157,7 @@ func Logger(l *logger.Logger) gin.HandlerFunc {
 		method := c.Request.Method
 		path := c.Request.URL.Path
 
-		msg := fmt.Sprintf("%d | %s | %s | %v", status, method, path, latency)
+		msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
 
 		if status >= 500 {
 			l.Error(msg, nil)

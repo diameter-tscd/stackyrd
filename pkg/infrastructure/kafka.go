@@ -31,6 +31,7 @@ func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManag
 	config.Producer.Return.Successes = true
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Retry.Max = 5
+	config.Net.MaxOpenRequests = 64
 
 	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
 	if err != nil {
@@ -144,7 +145,7 @@ func (k *KafkaManager) PublishBatchAsync(ctx context.Context, topic string, mess
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // PublishBatchWithKeysAsync asynchronously publishes multiple messages with keys.
@@ -158,7 +159,7 @@ func (k *KafkaManager) PublishBatchWithKeysAsync(ctx context.Context, topic stri
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 10)
 }
 
 // ConsumeAsync starts consuming messages asynchronously.

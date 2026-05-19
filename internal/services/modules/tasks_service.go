@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"context"
 	"strconv"
 
 	"stackyrd/config"
@@ -73,10 +72,9 @@ func (s *TasksService) RegisterRoutes(g *gin.RouterGroup) {
 func (s *TasksService) listTasks(c *gin.Context) {
 	var tasks []Task
 
-	result := s.db.GORMFindAsync(context.Background(), &tasks)
-	_, err := result.Wait()
-	if err != nil {
-		response.InternalServerError(c, err.Error())
+	result := s.db.ORM.WithContext(c.Request.Context()).Find(&tasks)
+	if result.Error != nil {
+		response.InternalServerError(c, result.Error.Error())
 		return
 	}
 
@@ -101,10 +99,9 @@ func (s *TasksService) createTask(c *gin.Context) {
 		return
 	}
 
-	result := s.db.GORMCreateAsync(context.Background(), task)
-	_, err := result.Wait()
-	if err != nil {
-		response.InternalServerError(c, err.Error())
+	result := s.db.ORM.WithContext(c.Request.Context()).Create(task)
+	if result.Error != nil {
+		response.InternalServerError(c, result.Error.Error())
 		return
 	}
 
@@ -128,9 +125,8 @@ func (s *TasksService) updateTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task Task
 
-	findResult := s.db.GORMFirstAsync(context.Background(), &task, id)
-	_, err := findResult.Wait()
-	if err != nil {
+	result := s.db.ORM.WithContext(c.Request.Context()).First(&task, id)
+	if result.Error != nil {
 		response.NotFound(c, "Task not found")
 		return
 	}
@@ -140,10 +136,9 @@ func (s *TasksService) updateTask(c *gin.Context) {
 		return
 	}
 
-	updateResult := s.db.GORMUpdateAsync(context.Background(), &task, task, "id = ?", id)
-	_, err = updateResult.Wait()
-	if err != nil {
-		response.InternalServerError(c, err.Error())
+	result = s.db.ORM.WithContext(c.Request.Context()).Model(&task).Updates(task)
+	if result.Error != nil {
+		response.InternalServerError(c, result.Error.Error())
 		return
 	}
 
@@ -162,12 +157,10 @@ func (s *TasksService) updateTask(c *gin.Context) {
 // @Router /tasks/{id} [delete]
 func (s *TasksService) deleteTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var task Task
 
-	result := s.db.GORMDeleteAsync(context.Background(), &task, "id = ?", id)
-	_, err := result.Wait()
-	if err != nil {
-		response.InternalServerError(c, err.Error())
+	result := s.db.ORM.WithContext(c.Request.Context()).Delete(&Task{}, "id = ?", id)
+	if result.Error != nil {
+		response.InternalServerError(c, result.Error.Error())
 		return
 	}
 

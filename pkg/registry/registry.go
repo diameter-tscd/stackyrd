@@ -5,6 +5,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -16,8 +17,12 @@ type ServiceFactory func(config *config.Config, logger *logger.Logger, deps *Dep
 // Global registry of service factories
 var serviceFactories = make(map[string]ServiceFactory)
 
-// Global registry of discovered service
-var serviceDiscovered = make(map[string]interface{})
+// Global read-only registry of discovered services — writes are serialised with
+// a mutex so concurrent callers of AutoDiscoverServices / GetService never race.
+var (
+	serviceDiscovered     = make(map[string]interface{})
+	serviceDiscoveredMu   sync.RWMutex
+)
 
 // RegisterService registers a service factory for automatic discovery
 func RegisterService(name string, factory ServiceFactory) {
@@ -42,7 +47,9 @@ func AutoDiscoverServices(
 				services = append(services, service)
 				logger.Info("Auto-registered service", "service", name)
 
+				serviceDiscoveredMu.Lock()
 				serviceDiscovered[service.Name()] = service.Get()
+				serviceDiscoveredMu.Unlock()
 			} else {
 				logger.Warn("Service factory returned nil", "service", name)
 			}
@@ -74,6 +81,8 @@ func GetServiceFactories() map[string]ServiceFactory {
 }
 
 func GetService(name string) interface{} {
+	serviceDiscoveredMu.RLock()
+	defer serviceDiscoveredMu.RUnlock()
 	return serviceDiscovered[name]
 }
 

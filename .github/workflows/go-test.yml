@@ -86,17 +86,23 @@ jobs:
             ${{ runner.os }}-go-mod-${{ runner.os }}
 
       - name: Go Module Init
-        if: ${{ inputs.install_deps == 'true' }}
+        if: ${{ inputs.install_deps == 'true' }} && hashFiles('go.mod') == ''
         run: |
-          rm -rf go.mod
           go mod init
           go mod tidy
         continue-on-error: true
 
+      - name: Tidy Modules
+        if: ${{ inputs.install_deps == 'true' }} && hashFiles('go.mod') != ''
+        run: go mod tidy
+        continue-on-error: true
+
       - name: Build
+        if: hashFiles('go.mod') != ''
         run: go build -v ./cmd/app/
 
       - name: Test
+        if: hashFiles('go.mod') != ''
         env:
           TEST_PATH: ${{ inputs.test_path }}
           VERBOSE: ${{ inputs.verbose }}

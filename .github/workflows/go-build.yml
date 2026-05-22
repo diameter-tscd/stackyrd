@@ -26,22 +26,22 @@ jobs:
           ${{ runner.os }}-go-build-${{ runner.os }}
 
     - name: Go Module Init
+      if: hashFiles('go.mod') == ''
       run: |
-        rm -rf go.mod
         go mod init
         go mod tidy
       continue-on-error: true
 
-    - name: Go Module Init
-      run: |
-        rm -rf go.mod
-        go mod init
-        go mod tidy
+    - name: Tidy Modules
+      if: hashFiles('go.mod') != ''
+      run: go mod tidy
       continue-on-error: true
 
     - name: Build
+      if: hashFiles('go.mod') != ''
       run: go build -v ./cmd/app/
 
     - name: Test
+      if: hashFiles('go.mod') != ''
       run: go test -v ./...
       continue-on-error: true

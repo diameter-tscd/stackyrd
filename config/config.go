@@ -28,7 +28,8 @@ func setupViperDefaults() {
 	viper.SetDefault("kafka.enabled", false)
 	viper.SetDefault("postgres.enabled", false)
 	viper.SetDefault("mongo.enabled", false)
-	viper.SetDefault("swagger.enabled", true)
+	viper.SetDefault("swagger.enabled", false)   // enable explicitly in config
+	viper.SetDefault("app.debug", false)         // sanitise-by-default
 	viper.SetDefault("swagger.base_path", "/swagger")
 }
 

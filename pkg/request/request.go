@@ -12,6 +12,10 @@ import (
 
 var validate *validator.Validate
 
+// Pre-compiled regexps — compiled once at package init, reused on every call
+var phoneRegex = regexp.MustCompile(`^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$`)
+var userRegex  = regexp.MustCompile(`^[a-zA-Z0-9_]{3,20}$`)
+
 func init() {
 	validate = validator.New()
 
@@ -105,16 +109,13 @@ func FormatValidationErrors(errs validator.ValidationErrors) map[string]string {
 // validatePhone validates phone number format
 func validatePhone(fl validator.FieldLevel) bool {
 	phone := fl.Field().String()
-	// Simple validation - starts with + or digit, contains only digits, spaces, dashes, parentheses
-	matched, _ := regexp.MatchString(`^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$`, phone)
-	return matched
+	return phoneRegex.MatchString(phone)
 }
 
 // validateUsername validates username format (alphanumeric, 3-20 chars)
 func validateUsername(fl validator.FieldLevel) bool {
 	username := fl.Field().String()
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_]{3,20}$`, username)
-	return matched
+	return userRegex.MatchString(username)
 }
 
 // Common Request Structs

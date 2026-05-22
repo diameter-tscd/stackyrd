@@ -1,13 +1,14 @@
 
 <div align="center">
-  <img src=".assets/stackyrd-banner.png" alt="stackyrd" style="width: 100%; max-width: 700px;"/>
+  <img src=".github/assets/stackyrd-banner.png" alt="stackyrd" style="width: 100%; max-width: 700px;"/>
 </div>
 <div align="center">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"/>
-  <img src="https://img.shields.io/badge/go-1.21%2B-00ADD8.svg" alt="Go Version"/>
-  <img src="https://github.com/diameter-tscd/stackyrd/actions/workflows/go-build.yml/badge.svg" alt="Build Status"/>
-  <img src="https://github.com/diameter-tscd/stackyrd/actions/workflows/security.yml/badge.svg" alt="Security Status"/>
-  <img src="https://img.shields.io/badge/github-diameter--tscd/stackyrd-181717.svg" alt="GitHub Repo"/>
+  <img src="https://www.shieldcn.dev/github/license/diameter-tscd/stackyrd.svg?variant=secondary&size=xs" alt="License"/>
+  <img src="https://shieldcn.dev/badge/Go-00ADD8.svg?logo=go&logoColor=fff&variant=branded&size=xs" alt="Go Version"/>
+  <img src="https://www.shieldcn.dev/github/ci/diameter-tscd/stackyrd.svg?variant=secondary&size=xs" alt="Build Status"/>
+  <img src="https://shieldcn.dev/github/diameter-tscd/stackyrd/ci.svg?variant=secondary&size=xs&logo=lu%3AShield&label=Security+scan&name=security.yml" alt="Security Status"/>
+  <img src="https://www.shieldcn.dev/github/release/diameter-tscd/stackyrd.svg?size=xs&variant=secondary" alt="Release"/>
+  <img src="https://www.shieldcn.dev/badge/Agent--friendly-AGENTS.md-D97757.svg?variant=secondary&size=xs" alt="Agents Friendly"/>
 </div>
 <br>
 
@@ -35,7 +36,7 @@ go run scripts/build/build.go
 
 ## Preview
 
-![Console](.assets/console.png)
+![Console](.github/assets/console.png)
 
 ## Key Features
 

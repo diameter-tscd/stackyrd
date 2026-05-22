@@ -568,9 +568,9 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 	}
 
 	if ctx.Config.UseGarble {
-		cmd = exec.Command("garble", "build", "-ldflags=-s -w", "-o", outputPath, MAIN_PATH)
+		cmd = exec.Command("garble", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
 	} else {
-		cmd = exec.Command("go", "build", "-ldflags=-s -w", "-o", outputPath, MAIN_PATH)
+		cmd = exec.Command("go", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
 	}
 
 	// Set environment for garble

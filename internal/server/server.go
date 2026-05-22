@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"os"
 	"slices"
 	"time"
 
@@ -158,11 +157,15 @@ func (s *Server) registerHealthEndpoints() {
 	})
 
 	s.gin.GET("/health/dependencies", func(c *gin.Context) {
+		// Each GetAll() call is TTL-cached; snapshot once locally to avoid
+		// repeated map copies during the same request.
+		allComponents := s.dependencies.GetAll()
+		allFactories := registry.GetServiceFactories()
 		response.Success(c, map[string]interface{}{
-			"total_infrastructure": len(s.dependencies.GetAll()),
-			"list_infrastructure":  slices.Collect(maps.Keys(s.dependencies.GetAll())),
-			"total_service":        len(registry.GetServiceFactories()),
-			"list_service":         slices.Collect(maps.Keys(registry.GetServiceFactories())),
+			"total_infrastructure": len(allComponents),
+			"list_infrastructure":  slices.Collect(maps.Keys(allComponents)),
+			"total_service":        len(allFactories),
+			"list_service":         slices.Collect(maps.Keys(allFactories)),
 		})
 	})
 
@@ -178,13 +181,6 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 	utils.ClearScreen()
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
-	go func() {
-		time.Sleep(10 * time.Second)
-		logger.Warn("Maximum shutdown time is 20s, force shutdown when timeout.")
-		logger.Fatal("Graceful shutdown timed out, force shutdown.", nil)
-		os.Exit(1)
-	}()
-
 	if s.infraInitManager != nil {
 		logger.Info("Stopping async infrastructure initialization manager...")
 	}
@@ -198,11 +194,23 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 
 		logger.Info("Shutting down " + name + "...")
 		if c, ok := closer.(interface{ Close() error }); ok {
-			if err := c.Close(); err != nil {
-				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
-				logger.Error("Error shutting down "+name, err)
-			} else {
-				logger.Info(name + " shut down successfully")
+			done := make(chan struct{}, 1)
+			go func() {
+				err := c.Close()
+				if err != nil {
+					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
+					logger.Error("Error shutting down "+name, err)
+				} else {
+					logger.Info(name + " shut down successfully")
+				}
+				done <- struct{}{}
+			}()
+			select {
+			case <-done:
+				// completed normally
+			case <-time.After(10 * time.Second):
+				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s: forced shutdown (timeout)", name))
+				logger.Warn(name + " shutdown timed out after 10s, continuing")
 			}
 		}
 	}

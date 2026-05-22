@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"context"
 	"fmt"
 
 	"stackyrd/config"
@@ -92,7 +91,7 @@ func (s *MongoDBService) listProductsByTenant(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	cursor, err := conn.Find(ctx, "products", bson.M{})
 	if err != nil {
 		s.logger.Error("Failed to query products", err, "tenant", tenant)
@@ -142,7 +141,7 @@ func (s *MongoDBService) createProduct(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	result, err := conn.InsertOne(ctx, "products", product)
 	if err != nil {
 		s.logger.Error("Failed to create product", err, "tenant", tenant)
@@ -190,7 +189,7 @@ func (s *MongoDBService) getProductByTenant(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	var product Product
 	err = conn.FindOne(ctx, "products", bson.M{"_id": objectID}).Decode(&product)
 	if err != nil {
@@ -241,7 +240,7 @@ func (s *MongoDBService) updateProduct(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	update := bson.M{
 		"$set": bson.M{
 			"name":        product.Name,
@@ -302,7 +301,7 @@ func (s *MongoDBService) deleteProduct(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	result, err := conn.DeleteOne(ctx, "products", bson.M{"_id": objectID})
 	if err != nil {
 		s.logger.Error("Failed to delete product", err, "tenant", tenant)
@@ -344,7 +343,7 @@ func (s *MongoDBService) searchProducts(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	var filter bson.M
 	if query != "" {
 		filter = bson.M{
@@ -399,7 +398,7 @@ func (s *MongoDBService) getProductAnalytics(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	pipeline := []bson.M{
 		{
 			"$group": bson.M{

@@ -20,6 +20,11 @@ type MongoManager struct {
 	Client   *mongo.Client
 	Database *mongo.Database
 	Pool     *WorkerPool // Async worker pool
+	// statusCache avoids re-running Ping + dbStats on every /health call.
+	statusTTL    time.Duration
+	statusExpiry time.Time
+	statusCache  map[string]interface{}
+	statusMu     sync.Mutex
 }
 
 // Name returns the display name of the component
@@ -56,6 +61,9 @@ func NewMongoDB(cfg config.MongoConfig, l *logger.Logger) (*MongoManager, error)
 		SetSocketTimeout(10 * time.Second).
 		SetMaxConnIdleTime(30 * time.Second).
 		SetHeartbeatInterval(10 * time.Second).
+		SetMaxPoolSize(50).
+		SetMinPoolSize(5).
+		SetMaxConnecting(10).
 		SetReadPreference(readpref.PrimaryPreferred())
 
 	// Connect to MongoDB with timeout
@@ -205,11 +213,24 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	// Ping to check connection
+	// Fast path: return cached result when still within TTL.
+	m.statusMu.Lock()
+	if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
+		cached := m.statusCache
+		m.statusMu.Unlock()
+		return cached
+	}
+	m.statusMu.Unlock()
+
+	// Slow path: actually ping the server and collect stats.
 	err := m.Client.Ping(context.Background(), nil)
 	stats["connected"] = err == nil
 
 	if err != nil {
+		m.statusMu.Lock()
+		m.statusCache = stats
+		m.statusExpiry = time.Now().Add(2 * time.Second)
+		m.statusMu.Unlock()
 		return stats
 	}
 
@@ -227,6 +248,11 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 			stats["index_size"] = result["indexSize"]
 		}
 	}
+
+	m.statusMu.Lock()
+	m.statusCache = stats
+	m.statusExpiry = time.Now().Add(2 * time.Second)
+	m.statusMu.Unlock()
 
 	return stats
 }
@@ -525,7 +551,7 @@ func (m *MongoManager) InsertBatchAsync(ctx context.Context, inserts []struct {
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 20)
 }
 
 // UpdateBatchAsync asynchronously updates multiple documents
@@ -543,7 +569,7 @@ func (m *MongoManager) UpdateBatchAsync(ctx context.Context, updates []struct {
 		}
 	}
 
-	return ExecuteBatchAsync(ctx, operations)
+	return ExecuteBatchAsync(ctx, operations, 20)
 }
 
 // Worker Pool Operations

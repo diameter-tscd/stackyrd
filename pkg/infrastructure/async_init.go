@@ -50,12 +50,13 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 		name := name
 		component := component
 		go func(compName string, comp InfrastructureComponent) {
+			startTime := time.Now()
 			// Update status to initialized
 			im.updateStatus(compName, &InfraInitStatus{
 				Name:        compName,
 				Initialized: true,
-				StartTime:   time.Now(),
-				Duration:    time.Since(time.Now()), // Minimal duration
+				StartTime:   startTime,
+				Duration:    time.Since(startTime),
 				Progress:    1.0,
 			})
 

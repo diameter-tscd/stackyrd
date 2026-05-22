@@ -7,7 +7,7 @@ on:
 jobs:
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
     - uses: actions/checkout@v6
 
@@ -24,6 +24,13 @@ jobs:
         key: ${{ runner.os }}-go-build-${{ github.sha }}
         restore-keys: |
           ${{ runner.os }}-go-build-${{ runner.os }}
+
+    - name: Go Module Init
+      run: |
+        rm -rf go.mod
+        go mod init
+        go mod tidy
+      continue-on-error: true
 
     - name: Go Module Init
       run: |

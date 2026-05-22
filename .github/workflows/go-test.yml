@@ -1,0 +1,119 @@
+name: Go Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      go_version:
+        description: "Go version"
+        required: false
+        default: "1.25.3"
+        type: string
+      install_deps:
+        description: "Install Go dependencies"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      use_cache:
+        description: "Restore from action cache"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      test_path:
+        description: "Package / file path to test (blank = all)"
+        required: false
+        default: "./..."
+        type: string
+      verbose:
+        description: "Verbose test output"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      race:
+        description: "Enable -race detector"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      timeout:
+        description: "Test timeout (e.g. 10m)"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: Cache Go Module
+        if: ${{ inputs.use_cache == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-${{ runner.os }}
+
+      - name: Cache Go Build
+        if: ${{ inputs.use_cache == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOPATH }}/pkg/mod
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-mod-${{ runner.os }}
+
+      - name: Go Module Init
+        if: ${{ inputs.install_deps == 'true' }}
+        run: |
+          rm -rf go.mod
+          go mod init
+          go mod tidy
+        continue-on-error: true
+
+      - name: Build
+        run: go build -v ./cmd/app/
+
+      - name: Test
+        env:
+          TEST_PATH: ${{ inputs.test_path }}
+          VERBOSE: ${{ inputs.verbose }}
+          RACE: ${{ inputs.race }}
+          TIMEOUT: ${{ inputs.timeout }}
+        run: |
+
+          EXTRA=""
+          if [ "${{ inputs.race }}" = "true" ]; then
+            EXTRA="$EXTRA -race"
+          fi
+          if [ -n "${{ inputs.timeout }}" ]; then
+            EXTRA="$EXTRA -timeout ${{ inputs.timeout }}"
+          fi
+
+          if [ "${{ inputs.verbose }}" = "true" ]; then
+            go test $EXTRA -v ${{ inputs.test_path }}
+          else
+            go test $EXTRA ${{ inputs.test_path }}
+          fi

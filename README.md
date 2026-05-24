@@ -32,6 +32,9 @@ go run cmd/app/main.go
 # To build the application
 go run scripts/build/build.go
 
+# To download package
+go run scripts/pkg/pkg.go
+
 ```
 
 ## Preview

@@ -1,0 +1,120 @@
+name: Biweekly Snapshot Releases (Conditional)
+
+on:
+  schedule:
+    # Runs every Monday at 00:00 UTC, but only even weeks are processed
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: [main, development]
+
+    steps:
+      - name: Check if this is an even week (biweekly run)
+        id: week-check
+        run: |
+          week=$(date +%V)
+          if [ $((week % 2)) -ne 0 ]; then
+            echo "Skipping run on odd week $week."
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "Even week $week detected, proceeding."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout ${{ matrix.branch }}
+        if: steps.week-check.outputs.should_run == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+
+      - name: Find latest snapshot tag for ${{ matrix.branch }}
+        if: steps.week-check.outputs.should_run == 'true'
+        id: latest-tag
+        run: |
+          BRANCH_SAFE=$(echo "${{ matrix.branch }}" | sed 's/\//-/g')
+          PREFIX="snapshot-${BRANCH_SAFE}-"
+          LAST_TAG=$(git tag -l "${PREFIX}*" --sort=-creatordate | head -n 1)
+          echo "last_tag=${LAST_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Compare HEAD with last snapshot commit
+        if: steps.week-check.outputs.should_run == 'true'
+        id: check
+        run: |
+          LAST_TAG="${{ steps.latest-tag.outputs.last_tag }}"
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous snapshot found. Will create one."
+            echo "new_commits=true" >> $GITHUB_OUTPUT
+          else
+            LAST_TAG_COMMIT=$(git rev-list -n 1 "$LAST_TAG")
+            HEAD_COMMIT=$(git rev-parse HEAD)
+            if [ "$LAST_TAG_COMMIT" = "$HEAD_COMMIT" ]; then
+              echo "No new commits since last snapshot ($LAST_TAG). Skipping."
+              echo "new_commits=false" >> $GITHUB_OUTPUT
+            else
+              echo "New commits detected. Will create snapshot."
+              echo "new_commits=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Generate changelog since last snapshot
+        if: steps.week-check.outputs.should_run == 'true' && steps.check.outputs.new_commits == 'true'
+        id: changelog
+        run: |
+          LAST_TAG="${{ steps.latest-tag.outputs.last_tag }}"
+          if [ -z "$LAST_TAG" ]; then
+            # If no previous tag, list all commits up to HEAD
+            CHANGELOG=$(git log --oneline --no-merges HEAD)
+          else
+            CHANGELOG=$(git log --oneline --no-merges ${LAST_TAG}..HEAD)
+          fi
+          # Store changelog in output, escaping for safe usage in YAML
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Set snapshot tag name
+        if: steps.week-check.outputs.should_run == 'true' && steps.check.outputs.new_commits == 'true'
+        id: tag
+        run: |
+          BRANCH_SAFE=$(echo "${{ matrix.branch }}" | sed 's/\//-/g')
+          echo "TAG=snapshot-${BRANCH_SAFE}-$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Push tag
+        if: steps.week-check.outputs.should_run == 'true' && steps.check.outputs.new_commits == 'true'
+        run: |
+          git tag ${{ steps.tag.outputs.TAG }}
+          git push origin ${{ steps.tag.outputs.TAG }}
+
+      - name: Create GitHub Release
+        if: steps.week-check.outputs.should_run == 'true' && steps.check.outputs.new_commits == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: Snapshot ${{ matrix.branch }} - ${{ steps.tag.outputs.TAG }}
+          body: |
+            Automated biweekly snapshot from branch `${{ matrix.branch }}`.
+            Created on ${{ steps.tag.outputs.TAG }}.
+            Commit: ${{ github.sha }}
+
+            ## What's Changed
+            ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No changes – skip gracefully
+        if: steps.week-check.outputs.should_run == 'true' && steps.check.outputs.new_commits != 'true'
+        run: echo "No new commits since the last snapshot. Job succeeded without creating a release."

@@ -73,6 +73,18 @@ func (s *Server) Start() error {
 	// Handle database connection defaults
 	s.setConnectionDefaults()
 
+	// Initialize plugin system — happens before services so they can
+	// discover plugins via the PluginBridge.
+	s.logger.Info("Initializing Plugin system...")
+	pluginGroup := s.gin.Group("/api/v1")
+	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
+		s.logger.Error("Failed to initialize plugin system", err)
+	}
+	if bridge := plugin.GetGlobalPluginBridge(); bridge != nil {
+		s.dependencies.Set("plugins", bridge)
+		s.logger.Info("PluginBridge registered in service dependencies as 'plugins'")
+	}
+
 	s.logger.Info("Initializing Middleware...")
 
 	// Apply middleware configuration from config
@@ -101,12 +113,6 @@ func (s *Server) Start() error {
 
 	serviceRegistry.Boot(s.gin)
 	s.logger.Info("All services boot successfully")
-
-	// Initialize plugin system
-	pluginGroup := s.gin.Group("/api/v1")
-	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
-		s.logger.Error("Failed to initialize plugin system", err)
-	}
 
 	// Register Swagger UI
 	if s.config.Swagger.Enabled {

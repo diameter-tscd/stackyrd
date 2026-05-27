@@ -58,7 +58,10 @@ func (r *ScriptRuntime) Execute(ctx Context, scriptPath string, args map[string]
 	vm.Set("$infra", infraObj)
 
 	doneCh := make(chan *Result, 1)
-	vm.Set("$done", func(success bool, data interface{}, errStr string) {
+	vm.Set("$done", func(opts map[string]interface{}) {
+		success, _ := opts["success"].(bool)
+		data, _ := opts["data"]
+		errStr, _ := opts["error"].(string)
 		result := &Result{Success: success, Data: data, Error: errStr}
 		select {
 		case doneCh <- result:

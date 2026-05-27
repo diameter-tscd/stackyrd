@@ -77,6 +77,22 @@ func (r *ComponentRegistry) Initialize(cfg *config.Config, logger *logger.Logger
 	return nil
 }
 
+// SetComponent directly inserts a component into the registry after initialization.
+// This is used by subsystems (e.g. plugins) that bootstrap after Initialize completes.
+func (r *ComponentRegistry) SetComponent(name string, component InfrastructureComponent) {
+	r.componentsMu.Lock()
+	defer r.componentsMu.Unlock()
+	if r.components == nil {
+		r.components = make(map[string]InfrastructureComponent)
+	}
+	r.components[name] = component
+	// Invalidate snapshot cache
+	r.cacheMu.Lock()
+	r.cachedSnapshot = nil
+	r.cacheExpiry = time.Time{}
+	r.cacheMu.Unlock()
+}
+
 // Get retrieves a component by name — RLock read path, no interface boxing.
 func (r *ComponentRegistry) Get(name string) (InfrastructureComponent, bool) {
 	r.componentsMu.RLock()

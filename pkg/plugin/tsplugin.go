@@ -6,6 +6,22 @@ import (
 	"github.com/spf13/afero"
 )
 
+type tsRuntime struct{}
+
+func (r *tsRuntime) Prefix() string { return "ts:" }
+
+func (r *tsRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) {
+	return &TSScriptPlugin{
+		name:   meta.Name,
+		meta:   meta,
+		fs:     fs,
+		cache:  NewTSCache(".cache"),
+		script: meta.Entrypoint[3:],
+	}, nil
+}
+
+func init() { RegisterRuntime(&tsRuntime{}) }
+
 type TSScriptPlugin struct {
 	name   string
 	meta   PluginMeta

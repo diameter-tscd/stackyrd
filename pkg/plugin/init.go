@@ -64,6 +64,10 @@ func Init(cfg *config.Config, l *logger.Logger, rg *gin.RouterGroup) error {
 
 	initPluginsFromRegistry(pCfg, l)
 
+	bridge := NewPluginBridge(GetGlobalPluginRegistry(), l)
+	globalInfraRegistry.SetComponent("plugins", bridge)
+	l.Info("PluginBridge registered in infrastructure ComponentRegistry as 'plugins'")
+
 	RegisterManagementRoutes(rg.Group("/plugins"))
 
 	l.Info("Plugin system initialized")
@@ -187,14 +191,12 @@ func initPluginsFromRegistry(pCfg PluginConfig, l *logger.Logger) {
 }
 
 func instantiatePlugin(name string, meta PluginMeta, fsys afero.Fs) (Plugin, error) {
-	if len(meta.Entrypoint) > 2 && meta.Entrypoint[:3] == "ts:" {
-		return &TSScriptPlugin{
-			name:   name,
-			meta:   meta,
-			fs:     fsys,
-			cache:  NewTSCache(".cache"),
-			script: meta.Entrypoint[3:],
-		}, nil
+	if rt, ok := GetRuntimeForEntrypoint(meta.Entrypoint); ok {
+		p, err := rt.CreatePlugin(meta, fsys)
+		if err != nil {
+			return nil, fmt.Errorf("runtime %q failed to create plugin %s: %w", rt.Prefix(), name, err)
+		}
+		return p, nil
 	}
 
 	reg := GetGlobalPluginRegistry()
@@ -206,11 +208,7 @@ func instantiatePlugin(name string, meta PluginMeta, fsys afero.Fs) (Plugin, err
 		return p, nil
 	}
 
-	return &TSScriptPlugin{
-		name:   name,
-		meta:   meta,
-		script: "scripts/handler.ts",
-	}, nil
+	return nil, fmt.Errorf("no runtime or factory for plugin %s (entrypoint: %s)", name, meta.Entrypoint)
 }
 
 func SetBuiltinFS(fs embed.FS) {

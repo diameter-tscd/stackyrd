@@ -4,6 +4,8 @@ import (
 	"context"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+
+	"github.com/spf13/afero"
 )
 
 type PluginMeta struct {
@@ -40,4 +42,12 @@ type Plugin interface {
 	Execute(ctx Context, args map[string]interface{}) (*Result, error)
 	Validate() error
 	Close() error
+}
+
+// Runtime is the extension point for adding new plugin execution engines.
+// Each Runtime handles a specific entrypoint prefix ("ts:", "wasm:", etc.)
+// and knows how to create Plugin instances from metadata + filesystem.
+type Runtime interface {
+	Prefix() string
+	CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error)
 }

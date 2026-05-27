@@ -1,0 +1,8 @@
+name: wasm_greeter
+version: 1.0.0
+description: "Example WASM plugin demonstrating the wazero-based WebAssembly runtime. Returns a greeting with the input byte length encoded in the response."
+author: stackyrd
+entrypoint: "wasm:scripts/handler.wasm"
+limits:
+  max_timeout_ms: 10000
+  max_memory_bytes: 52428800

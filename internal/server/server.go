@@ -14,6 +14,7 @@ import (
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 	"stackyrd/pkg/utils"
@@ -100,6 +101,12 @@ func (s *Server) Start() error {
 
 	serviceRegistry.Boot(s.gin)
 	s.logger.Info("All services boot successfully")
+
+	// Initialize plugin system
+	pluginGroup := s.gin.Group("/api/v1")
+	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
+		s.logger.Error("Failed to initialize plugin system", err)
+	}
 
 	// Register Swagger UI
 	if s.config.Swagger.Enabled {

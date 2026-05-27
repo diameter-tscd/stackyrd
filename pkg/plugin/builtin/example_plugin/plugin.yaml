@@ -1,0 +1,8 @@
+name: example
+version: 1.0.0
+description: Example plugin demonstrating the plugin system
+author: stackyrd
+entrypoint: "ts:scripts/handler.ts"
+limits:
+  max_timeout_ms: 10000
+  max_memory_bytes: 52428800

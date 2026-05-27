@@ -115,3 +115,9 @@ encryption:
   key: ""
   rotate_keys: false
   key_rotation_interval: "24h"
+
+plugins:
+  enabled: true
+  default_limits:
+    max_timeout_ms: 30000
+    max_memory_bytes: 104857600

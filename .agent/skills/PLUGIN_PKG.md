@@ -193,15 +193,15 @@ Two guard mechanisms, both running in-goroutine:
 ```mermaid
 flowchart LR
     A[.ts source] --> B[SHA256 hash]
-    B --> C{exists in .cache/?}
+    B --> C{"exists in .cache?"}
     C -->|yes| D[read cached .js]
     C -->|no| E[esbuild.Transform]
-    E --> F[write .cache/{hash}.js]
+    E --> F["write .cache/<hash>.js"]
     F --> D
     D --> G[goja.New Runtime]
-    G --> H[inject $args, $logger, $infra, $limits, $done]
-    H --> I[RunString(compiledJS)]
-    I --> J[await $done → Result]
+    G --> H["inject $args, $logger, $infra, $limits, $done"]
+    H --> I[RunString compiledJS]
+    I --> J["await $done -> Result"]
 ```
 
 - Cache key: `SHA256(source)`

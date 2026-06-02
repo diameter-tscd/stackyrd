@@ -37,13 +37,13 @@
 									"uri": "pkg/response/response.go"
 								},
 								"region": {
-									"endColumn": 53,
+									"endColumn": 25,
 									"endLine": 254,
 									"snippet": {
 										"text": "uint32(hi\u003e\u003e32), uint16(hi), uint16(lo\u003e\u003e48), uint16(lo\u003e\u003e32), uint32(lo))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 53,
+									"startColumn": 25,
 									"startLine": 254
 								}
 							}
@@ -63,13 +63,13 @@
 									"uri": "pkg/response/response.go"
 								},
 								"region": {
-									"endColumn": 25,
+									"endColumn": 53,
 									"endLine": 254,
 									"snippet": {
 										"text": "uint32(hi\u003e\u003e32), uint16(hi), uint16(lo\u003e\u003e48), uint16(lo\u003e\u003e32), uint32(lo))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 25,
+									"startColumn": 53,
 									"startLine": 254
 								}
 							}

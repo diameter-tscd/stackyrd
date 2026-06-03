@@ -6,7 +6,6 @@ Thank you for taking the time to contribute! This document sets out the ground r
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
 - [Development Setup](#development-setup)
 - [Project Structure](#project-structure)
 - [Branching Strategy](#branching-strategy)
@@ -21,15 +20,6 @@ Thank you for taking the time to contribute! This document sets out the ground r
 - [Reporting Bugs](#reporting-bugs)
 - [Feature Requests](#feature-requests)
 - [License](#license)
-
----
-
-## Code of Conduct
-
-- Be respectful and considerate in all interactions.
-- Welcome newcomers and help them get up to speed.
-- Focus on constructive feedback.
-- Respect differing viewpoints and experiences.
 
 ---
 

@@ -131,7 +131,7 @@ func (p *ExternalPlugin) ensureRunning() error {
 		hostScript = v
 	} else {
 		wd, _ := os.Getwd()
-		hostScript = filepath.Join(wd, "scripts", "plugins", "python", "host.py")
+		hostScript = filepath.Join(wd, "pkg", "plugin", "python", "host.py")
 	}
 
 	hostPath := "python3"

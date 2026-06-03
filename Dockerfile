@@ -47,7 +47,7 @@ COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/banner.txt .
 
 # Copy Python plugin host scripts (for external/ext: plugins)
-COPY --from=builder /app/scripts/plugins/python ./scripts/plugins/python/
+COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
 
 # Create plugin store directory for writable overlay (uploaded scripts, etc.)
 RUN mkdir -p store/plugins
@@ -84,7 +84,7 @@ COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/banner.txt .
 
 # Copy Python plugin host scripts (for external/ext: plugins)
-COPY --from=builder /app/scripts/plugins/python ./scripts/plugins/python/
+COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
 
 # Create plugin store directory for writable overlay
 RUN mkdir -p store/plugins
@@ -115,7 +115,7 @@ COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/banner.txt .
 
 # Copy Python host scripts (in case Python is layered on top)
-COPY --from=builder /app/scripts/plugins/python /scripts/plugins/python/
+COPY --from=builder /app/pkg/plugin/python /pkg/plugin/python/
 
 # Configure for Docker environment
 ENV APP_QUIET_STARTUP=false

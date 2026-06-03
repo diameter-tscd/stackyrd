@@ -212,7 +212,7 @@ message ExecuteResponse {
 
 ### Python plugin host
 
-`scripts/plugins/python/host.py` acts as the gRPC server. It:
+`pkg/plugin/python/host.py` acts as the gRPC server. It:
 1. Accepts `--socket` and `--name` arguments
 2. Starts a gRPC server on the given Unix socket
 3. On `Execute()`: loads the Python script source, discovers the plugin class, runs it
@@ -228,7 +228,7 @@ message ExecuteResponse {
 
 ### Python plugin SDK
 
-`scripts/plugins/python/sdk.py` provides a base `Plugin` class with lifecycle hooks:
+`pkg/plugin/python/sdk.py` provides a base `Plugin` class with lifecycle hooks:
 
 ```python
 from sdk import Plugin
@@ -1335,8 +1335,8 @@ plugins:
                 "data": {"message": f"Hello from Python, {name}!"}
             }
     ```
-3. The Python host (`scripts/plugins/python/host.py`) loads the script via gRPC
-4. See `scripts/plugins/python/sdk.py` for the base `Plugin` class
+3. The Python host (`pkg/plugin/python/host.py`) loads the script via gRPC
+4. See `pkg/plugin/python/sdk.py` for the base `Plugin` class
 
 **Using lifecycle hooks** (automatic via `run()`):
 ```python
@@ -1389,7 +1389,7 @@ class StatefulPlugin(Plugin):
 - **No plugin hot-reload yet**: `DELETE + re-registration` is manual via the API. A file watcher for the overlay directory is future work.
 - **Embed path**: The `//go:embed builtin` directive in `embed.go` embeds the entire `builtin/` directory tree. The `builtinFS` variable must use the `embed` package type and is set via `SetBuiltinFS()` in an `init()` function in the same file.
 - **Runtime prefixes must be unique**: Two runtimes cannot share the same prefix (e.g., only one `"ts:"` runtime). The `RegisterRuntime` function panics on duplicate prefix registration.
-- **Python gRPC dependencies**: Python plugins require `grpcio` and `protobuf` installed. The host script at `scripts/plugins/python/host.py` uses the generated `plugin_pb2.py` and `plugin_pb2_grpc.py` stubs.
+- **Python gRPC dependencies**: Python plugins require `grpcio` and `protobuf` installed. The host script at `pkg/plugin/python/host.py` uses the generated `plugin_pb2.py` and `plugin_pb2_grpc.py` stubs.
 - **External plugin environment**: Set `PLUGIN_PYTHON_HOST` env var to override the path to `host.py`. The `python3` binary is used by default.
 - **Python SDK import path**: The host automatically adds its own directory to `sys.path` so plugins can `from sdk import Plugin` without path manipulation. Plugins should NOT use fragile relative `sys.path.insert()` to find the SDK.
 - **Python plugin lifecycle**: The new SDK provides `setup()` → `execute()` → `teardown()` via the `run()` method. The host detects `run()` and delegates to it; if absent, it calls `execute()` directly (backward compatible with old-style plugins).

@@ -227,7 +227,7 @@ The plugin class must:
 
 ### Python SDK
 
-The SDK is at `scripts/plugins/python/sdk.py`:
+The SDK is at `pkg/plugin/python/sdk.py`:
 
 ```python
 class Plugin:
@@ -247,7 +247,7 @@ class Plugin:
 
 ### Environment variables
 
-- `PLUGIN_PYTHON_HOST` — override path to `host.py` (default: `scripts/plugins/python/host.py`)
+- `PLUGIN_PYTHON_HOST` — override path to `host.py` (default: `pkg/plugin/python/host.py`)
 - The system uses `python3` found via `PATH`. Override with `PLUGIN_PYTHON_BIN` if needed.
 
 ### Lifecycle
@@ -263,17 +263,17 @@ class Plugin:
 pip3 install grpcio protobuf
 ```
 
-Generated gRPC stubs are at `scripts/plugins/python/plugin_pb2.py` and `scripts/plugins/python/plugin_pb2_grpc.py`. Regenerate them if the proto changes:
+Generated gRPC stubs are at `pkg/plugin/python/plugin_pb2.py` and `pkg/plugin/python/plugin_pb2_grpc.py`. Regenerate them if the proto changes:
 
 ```bash
 python3 -m grpc_tools.protoc \
   -I. \
-  --python_out=scripts/plugins/python \
-  --grpc_python_out=scripts/plugins/python \
+  --python_out=pkg/plugin/python \
+  --grpc_python_out=pkg/plugin/python \
   pkg/plugin/plugin.proto
 
 # Fix import paths after generation
-sed -i '' 's/from pkg.plugin import/import/' scripts/plugins/python/plugin_pb2_grpc.py
+sed -i '' 's/from pkg.plugin import/import/' pkg/plugin/python/plugin_pb2_grpc.py
 ```
 
 ---
@@ -869,7 +869,7 @@ Common causes:
 
 - Package internals: `.agent/skills/PLUGIN_PKG.md`
 - TypeScript type declarations: `pkg/plugin/sdk/plugin.d.ts`
-- Python SDK: `scripts/plugins/python/sdk.py`
+- Python SDK: `pkg/plugin/python/sdk.py`
 - gRPC proto: `pkg/plugin/plugin.proto`
 - Lua runtime: `pkg/plugin/luaplugin.go`
 - Plugin registry: `pkg/plugin/registry.go`

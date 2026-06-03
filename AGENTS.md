@@ -358,8 +358,8 @@ Infrastructure async init → populate Dependencies → PLUGIN INIT → bridge�
 **External language plugin (Python, etc. via gRPC):**
 1. Write a Python script implementing a class with an `execute(self, args)` method
 2. Create `pkg/plugin/builtin/{name}/plugin.yaml` with entrypoint `"ext:scripts/handler.py"`
-3. The python host (`scripts/plugins/python/host.py`) loads the script and serves it via gRPC
-4. See `scripts/plugins/python/sdk.py` for the base `Plugin` class
+3. The python host (`pkg/plugin/python/host.py`) loads the script and serves it via gRPC
+4. See `pkg/plugin/python/sdk.py` for the base `Plugin` class
 
 **Go plugin:**
 1. Create a flat `.go` file in `pkg/plugin/` implementing the `Plugin` interface with `init()` registration

@@ -189,6 +189,11 @@ func (s *UsersService) createUser(c *gin.Context) {
 
 	// Assign new ID
 	usersMu.Lock()
+	if len(usersList) >= maxUsers {
+		usersMu.Unlock()
+		response.Error(c, 503, "SERVICE_UNAVAILABLE", "User limit reached", nil)
+		return
+	}
 	user.ID = len(usersList) + 1
 	usersList = append(usersList, user)
 	usersIdx[user.ID] = &usersList[len(usersList)-1]
@@ -196,6 +201,8 @@ func (s *UsersService) createUser(c *gin.Context) {
 
 	response.Created(c, user, "User created successfully")
 }
+
+const maxUsers = 10000
 
 func (s *UsersService) updateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -212,14 +219,12 @@ func (s *UsersService) updateUser(c *gin.Context) {
 
 	usersMu.Lock()
 	defer usersMu.Unlock()
-	for i, u := range usersList {
-		if u.ID == id {
-			user.ID = id
-			usersList[i] = user
-			usersIdx[id] = &usersList[i]
-			response.Success(c, user, "User updated successfully")
-			return
-		}
+	u, ok := usersIdx[id]
+	if ok {
+		user.ID = id
+		*u = user
+		response.Success(c, user, "User updated successfully")
+		return
 	}
 
 	response.NotFound(c, "User not found")

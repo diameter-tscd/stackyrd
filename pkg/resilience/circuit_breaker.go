@@ -167,7 +167,7 @@ func (cb *CircuitBreaker) setState(newState State) {
 		oldState := cb.state
 		cb.state = newState
 		if cb.config.OnStateChange != nil {
-			go cb.config.OnStateChange(cb.config.Name, oldState, newState)
+			cb.config.OnStateChange(cb.config.Name, oldState, newState)
 		}
 	}
 }

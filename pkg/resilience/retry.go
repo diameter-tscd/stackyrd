@@ -5,7 +5,13 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"sync"
 	"time"
+)
+
+var (
+	jitterMu   sync.Mutex
+	jitterRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 // RetryConfig holds retry configuration
@@ -99,10 +105,12 @@ func RetryWithContext(ctx context.Context, fn func() error, config ...RetryConfi
 			if cfg.OnRetry != nil {
 				cfg.OnRetry(attempt, err)
 			}
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 	}
@@ -179,10 +187,12 @@ func RetryWithResultContext[T any](ctx context.Context, fn func() (T, error), co
 			if cfg.OnRetry != nil {
 				cfg.OnRetry(attempt, err)
 			}
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return zero, ctx.Err()
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 		}
 	}
@@ -199,7 +209,9 @@ func calculateDelay(attempt int, config RetryConfig) time.Duration {
 	}
 
 	if config.Jitter {
-		jitter := rand.Float64() * 0.5
+		jitterMu.Lock()
+		jitter := jitterRand.Float64() * 0.5
+		jitterMu.Unlock()
 		delay = delay * (1 + jitter)
 	}
 

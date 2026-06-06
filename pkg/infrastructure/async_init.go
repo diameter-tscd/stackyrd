@@ -60,12 +60,24 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 				Progress:    1.0,
 			})
 
-			// Perform health check
-			status := comp.GetStatus()
-			if connected, ok := status["connected"].(bool); ok && connected {
-				logger.Debug(compName + " health check passed")
-			} else {
-				logger.Warn(compName + " health check failed or not applicable")
+			// Perform health check with timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			done := make(chan map[string]interface{}, 1)
+			go func() {
+				done <- comp.GetStatus()
+			}()
+
+			select {
+			case status := <-done:
+				if connected, ok := status["connected"].(bool); ok && connected {
+					logger.Debug(compName + " health check passed")
+				} else {
+					logger.Warn(compName + " health check failed or not applicable")
+				}
+			case <-ctx.Done():
+				logger.Warn(compName + " health check timed out")
 			}
 		}(name, component)
 	}

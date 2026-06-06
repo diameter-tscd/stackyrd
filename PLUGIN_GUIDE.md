@@ -601,6 +601,7 @@ plugins:
   default_limits:
     max_timeout_ms: 30000          # 30 seconds
     max_memory_bytes: 104857600    # 100 MB
+  allowlist: []                    # empty = all plugins allowed
   overrides:
     inspector:
       max_timeout_ms: 10000
@@ -613,8 +614,22 @@ plugins:
 | `plugins.enabled` | Enable/disable the plugin system |
 | `plugins.default_limits.max_timeout_ms` | Default timeout for all plugins |
 | `plugins.default_limits.max_memory_bytes` | Default memory limit |
+| `plugins.allowlist` | Restrict to specific plugins (empty = all allowed) |
 | `plugins.overrides.{name}.max_timeout_ms` | Per-plugin timeout override |
 | `plugins.overrides.{name}.max_memory_bytes` | Per-plugin memory override |
+
+### Allowlist
+
+When `allowlist` is non-empty, only plugin names in this list are registered at boot. Plugins not in the list are silently skipped. An empty list (or omitted) allows all built-in plugins. Example:
+
+```yaml
+plugins:
+  allowlist: ["inspector", "lua_demo", "lua_transformer"]
+```
+
+### Hard cap
+
+The `default_limits` act as a **hard cap** — if a plugin's `plugin.yaml` or config `overrides` set limits higher than the defaults, they are clamped to the defaults. This prevents runaway plugins from consuming excessive resources.
 
 ---
 

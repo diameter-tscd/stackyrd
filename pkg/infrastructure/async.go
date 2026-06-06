@@ -64,11 +64,15 @@ func (r *AsyncResult[T]) IsDone() bool {
 // AsyncOperation represents an operation that can be executed asynchronously
 type AsyncOperation[T any] func(ctx context.Context) (T, error)
 
+var asyncSemaphore = make(chan struct{}, 1000) // global cap on concurrent async goroutines
+
 // ExecuteAsync executes an operation asynchronously and returns an AsyncResult
 func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *AsyncResult[T] {
 	result := NewAsyncResult[T]()
 
+	asyncSemaphore <- struct{}{}
 	go func() {
+		defer func() { <-asyncSemaphore }()
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic in async operation
@@ -151,7 +155,14 @@ func ExecuteBatchAsync[T any](ctx context.Context, operations []AsyncOperation[T
 
 	for i, operation := range operations {
 		i, operation := i, operation // capture
-		sem <- struct{}{}           // acquire slot (blocks when limit is reached)
+		select {
+		case sem <- struct{}{}: // acquire slot (blocks when limit is reached)
+		case <-ctx.Done():
+			result.Results[i].Error = ctx.Err()
+			result.CompleteResult(i)
+			wg.Done()
+			continue
+		}
 		go func() {
 			defer func() {
 				<-sem // release slot
@@ -171,12 +182,6 @@ func ExecuteBatchAsync[T any](ctx context.Context, operations []AsyncOperation[T
 		}()
 	}
 
-	go func() {
-		wg.Wait()
-		// All goroutines have called CompleteResult; pending must be 0 here.
-		// No further action needed; Done channel is drained below.
-	}()
-
 	return result
 }
 
@@ -185,7 +190,7 @@ type WorkerPool struct {
 	workers  int
 	jobQueue chan func()
 	stopChan chan struct{}
-	stopped  chan struct{}
+	wg       sync.WaitGroup
 }
 
 // NewWorkerPool creates a new worker pool
@@ -194,13 +199,13 @@ func NewWorkerPool(workers int) *WorkerPool {
 		workers:  workers,
 		jobQueue: make(chan func(), workers*2),
 		stopChan: make(chan struct{}),
-		stopped:  make(chan struct{}),
 	}
 }
 
 // Start starts the worker pool
 func (wp *WorkerPool) Start() {
 	for i := 0; i < wp.workers; i++ {
+		wp.wg.Add(1)
 		go wp.worker()
 	}
 }
@@ -213,15 +218,28 @@ func (wp *WorkerPool) Stop() {
 		<-wp.jobQueue
 	}
 	close(wp.stopChan)
-	<-wp.stopped
+	wp.wg.Wait()
 }
 
-// Submit submits a job to the worker pool.
+// Submit submits a job to the worker pool.  Blocks if the queue is full;
+// call SubmitOrDrop for a non-blocking variant.
 func (wp *WorkerPool) Submit(job func()) {
 	wp.jobQueue <- job
 }
 
+// SubmitOrDrop attempts to submit a job without blocking.  Returns false
+// if the queue is full and the job was dropped.
+func (wp *WorkerPool) SubmitOrDrop(job func()) bool {
+	select {
+	case wp.jobQueue <- job:
+		return true
+	default:
+		return false
+	}
+}
+
 func (wp *WorkerPool) worker() {
+	defer wp.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			// Log panic and continue
@@ -242,5 +260,4 @@ func (wp *WorkerPool) worker() {
 func (wp *WorkerPool) Close() {
 	wp.Stop()
 	close(wp.jobQueue)
-	close(wp.stopped)
 }

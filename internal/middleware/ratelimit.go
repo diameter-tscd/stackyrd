@@ -33,6 +33,28 @@ type visitor struct {
 	lastSeen time.Time
 }
 
+var (
+	rateLimiters   []*RateLimiter
+	rateLimitersMu sync.Mutex
+	rateCleanupOnce sync.Once
+)
+
+func startRateLimitCleanup() {
+	rateCleanupOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				rateLimitersMu.Lock()
+				for _, rl := range rateLimiters {
+					rl.cleanup()
+				}
+				rateLimitersMu.Unlock()
+			}
+		}()
+	})
+}
+
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
@@ -41,8 +63,10 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 		window:   window,
 	}
 
-	// Cleanup old visitors periodically
-	go rl.cleanup()
+	rateLimitersMu.Lock()
+	rateLimiters = append(rateLimiters, rl)
+	rateLimitersMu.Unlock()
+	startRateLimitCleanup()
 
 	return rl
 }

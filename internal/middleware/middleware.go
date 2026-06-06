@@ -17,6 +17,7 @@ type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (gin.Hand
 
 // MiddlewareRegistry manages middleware auto-registration
 type MiddlewareRegistry struct {
+	mu        sync.RWMutex
 	factories map[string]MiddlewareFactory
 	enabled   map[string]bool
 }
@@ -45,6 +46,8 @@ func RegisterMiddleware(name string, factory MiddlewareFactory) {
 
 // Register registers a middleware factory with the registry
 func (r *MiddlewareRegistry) Register(name string, factory MiddlewareFactory) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.factories[name] = factory
 	// Default to enabled
 	r.enabled[name] = true
@@ -52,11 +55,15 @@ func (r *MiddlewareRegistry) Register(name string, factory MiddlewareFactory) {
 
 // SetEnabled sets whether a middleware is enabled
 func (r *MiddlewareRegistry) SetEnabled(name string, enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.enabled[name] = enabled
 }
 
 // IsEnabled checks if a middleware is enabled
 func (r *MiddlewareRegistry) IsEnabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if enabled, exists := r.enabled[name]; exists {
 		return enabled
 	}
@@ -68,7 +75,10 @@ func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
 	if cfg.Middleware == nil {
 		return
 	}
-	
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Update enabled status based on config
 	for name := range r.factories {
 		r.enabled[name] = cfg.Middleware.IsEnabled(name)
@@ -78,6 +88,9 @@ func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
 // AutoDiscoverMiddlewares creates and returns all enabled middleware
 func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger *logger.Logger) []gin.HandlerFunc {
 	var middlewares []gin.HandlerFunc
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	for name, factory := range r.factories {
 		if r.IsEnabled(name) {

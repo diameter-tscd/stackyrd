@@ -14,37 +14,38 @@ Components register themselves via `init()` functions at import time:
 
 ### Boot Sequence
 
-```
-parseFlags → ConfigManager → Application.Run
-    │
-    ├── loadConfig (Viper YAML + env vars)
-    ├── validateConfig
-    ├── loadBanner
-    ├── checkPort
-    ├── initLogger (zerolog)
-    │
-    └── startApp
-         │
-         ├── TUI mode: RunBootSequence → LiveTUI
-         └── Console mode: direct logs
-              │
-              └── server.New()
-                   │
-                   ├── async infra init (all components in parallel)
-                   ├── plugin init (bridge → deps["plugins"])
-                   ├── middleware auto-discovery
-                   ├── service auto-discovery
-                   ├── route registration (/api/v1)
-                   └── Swagger UI (if enabled)
+```mermaid
+flowchart TD
+    A[parseFlags] --> B[ConfigManager]
+    B --> C[Application.Run]
+    C --> D[loadConfig<br/>Viper YAML + env vars]
+    C --> E[validateConfig]
+    C --> F[loadBanner]
+    C --> G[checkPort]
+    C --> H[initLogger<br/>zerolog]
+    C --> I{startApp}
+    I -->|TUI mode| J[RunBootSequence]
+    J --> K[LiveTUI]
+    I -->|Console mode| L[direct logs]
+    L --> M[server.New]
+    M --> N[async infra init<br/>all components in parallel]
+    M --> O[plugin init<br/>bridge → deps.plugins]
+    M --> P[middleware auto-discovery]
+    M --> Q[service auto-discovery]
+    M --> R[route registration<br/>/api/v1]
+    M --> S[Swagger UI<br/>if enabled]
 ```
 
 ### Request Flow
-```
-Client → Middleware Chain → Service Handler → Response
-                ↓
-         Plugin Bridge (optional)
-                ↓
-         Infrastructure (DB, Cache, Kafka, MinIO, ...)
+
+```mermaid
+flowchart LR
+    A[Client] --> B[Middleware Chain]
+    B --> C[Service Handler]
+    C --> D[Response]
+    B -.-> E[Plugin Bridge<br/>optional]
+    E --> F[Infrastructure<br/>DB, Cache, Kafka, MinIO]
+    C --> F
 ```
 
 ### TUI vs Console Mode
@@ -52,43 +53,45 @@ Client → Middleware Chain → Service Handler → Response
 - Default (`false`) uses traditional console logging with banner
 
 ## Project Structure
-```
-stackyrd/
-├── cmd/app/                        # Entry point, CLI flags, bootstrap
-├── config/                         # Viper YAML config loading
-├── config.yaml                     # Single source of truth config
-├── internal/
-│   ├── middleware/                  # Auto-registered HTTP middleware
-│   └── server/                     # Gin server setup, health endpoints
-├── internal/services/modules/       # Auto-discovered business services
-├── pkg/
-│   ├── interfaces/                 # Service interface
-│   ├── plugin/                     # Plugin system (TS→goja, external gRPC)
-│   │   ├── builtin/                # Built-in plugin manifests
-│   │   ├── sdk/                    # TS type declarations
-│   │   └── python/                 # Python host runtime
-│   ├── registry/                   # Service factory registry + DI container
-│   ├── infrastructure/             # DB/clients (async-managed)
-│   ├── response/                   # Standard API response helpers
-│   ├── request/                    # Request binding + validation
-│   ├── logger/                     # Zerolog structured logger
-│   ├── tui/                        # Bubbletea terminal UI
-│   ├── metrics/                    # Prometheus metrics
-│   ├── pagination/                 # Cursor-based pagination
-│   ├── batch/                      # Batch processing utilities
-│   ├── resilience/                 # Circuit breaker, health, retry, timeout
-│   ├── webhook/                    # Webhook handler
-│   ├── websocket/                  # WebSocket handler
-│   ├── logging/                    # Log rotation, sampling, structured
-│   ├── testing/                    # Test helpers and mocks
-│   └── utils/                      # General utilities
-├── scripts/                        # CLI tools (build, docker, service, swagger, pkg)
-├── tests/                          # Integration tests
-├── docs/                           # Auto-generated Swagger docs
-├── docs_wiki/                      # Hand-written project documentation
-├── deployments/kubernetes/          # K8s deployment manifests
-├── .github/workflows/               # CI (build+test, security scanning)
-└── docker-compose.yaml              # Full dev environment
+
+```mermaid
+flowchart TD
+    A[stackyrd/]
+    A --> B[cmd/app/<br/>Entry point, CLI, bootstrap]
+    A --> C[config/<br/>Viper YAML config loading]
+    A --> D[config.yaml]
+    A --> E[internal/]
+    E --> F[middleware/<br/>Auto-registered HTTP middleware]
+    E --> G[server/<br/>Gin setup, health endpoints]
+    A --> H[internal/services/modules/<br/>Auto-discovered business services]
+    A --> I[pkg/]
+    I --> J[interfaces/<br/>Service interface]
+    I --> K[plugin/<br/>Plugin system]
+    K --> L[builtin/<br/>Plugin manifests]
+    K --> M[sdk/<br/>TS type declarations]
+    K --> N[python/<br/>Python host runtime]
+    I --> O[registry/<br/>Service registry + DI]
+    I --> P[infrastructure/<br/>DB/clients async-managed]
+    I --> Q[response/<br/>API response helpers]
+    I --> R[request/<br/>Binding + validation]
+    I --> S[logger/<br/>Zerolog structured logger]
+    I --> T[tui/<br/>Bubbletea terminal UI]
+    I --> U[metrics/<br/>Prometheus metrics]
+    I --> V[pagination/<br/>Cursor-based pagination]
+    I --> W[batch/<br/>Batch processing]
+    I --> X[resilience/<br/>Circuit breaker, health, retry]
+    I --> Y[webhook/<br/>Webhook handler]
+    I --> Z[websocket/<br/>WebSocket handler]
+    I --> AA[logging/<br/>Log rotation, sampling]
+    I --> AB[testing/<br/>Test helpers + mocks]
+    I --> AC[utils/<br/>General utilities]
+    A --> AD[scripts/<br/>CLI tools]
+    A --> AE[tests/<br/>Integration tests]
+    A --> AF[docs/<br/>Auto-generated Swagger docs]
+    A --> AG[docs_wiki/<br/>Hand-written documentation]
+    A --> AH[deployments/kubernetes/<br/>K8s manifests]
+    A --> AI[.github/workflows/<br/>CI]
+    A --> AJ[docker-compose.yaml]
 ```
 
 ## Service Pattern
@@ -135,14 +138,16 @@ func init() {
 Components are initialized **asynchronously** by `InfraInitManager` with per-component health polling.
 
 ## Plugin System
-```
-PluginRegistry (singleton)
-    ├── RuntimeRegistry (prefix-based: "ts:" → goja, "ext:" → gRPC, "go:" → native)
-    ├── PluginBridge (InfrastructureComponent → available in deps["plugins"])
-    ├── Transpiler (esbuild TS→JS with SHA256 cache)
-    ├── Sandbox (timeout + RSS memory enforcement)
-    ├── Filesystem (embed.FS + CopyOnWriteFs overlay)
-    └── REST API (/api/v1/plugins/*)
+
+```mermaid
+flowchart TD
+    A[PluginRegistry<br/>singleton]
+    A --> B[RuntimeRegistry<br/>prefix-based: ts: → goja, ext: → gRPC, go: → native]
+    A --> C[PluginBridge<br/>InfrastructureComponent → deps.plugins]
+    A --> D[Transpiler<br/>esbuild TS→JS + SHA256 cache]
+    A --> E[Sandbox<br/>timeout + RSS memory enforcement]
+    A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
+    A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
 ```
 
 ## Middleware Pattern

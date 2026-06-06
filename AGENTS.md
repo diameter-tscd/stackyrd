@@ -399,6 +399,14 @@ Module path: `stackyrd` (internal to this repo). All Go import paths are relativ
 
 ---
 
+## Documentation
+
+The canonical project documentation lives in **`docs_wiki/`**. Each conceptual area (architecture, testing, resilience, plugins, etc.) has a dedicated file indexed by `docs_wiki/README.md`.
+
+**`docs_wiki/README.md` is the table of contents** — it links to every file inside `docs_wiki/`, organized by topic. When you add, remove, or reorganize any `docs_wiki/*.md` file, update `docs_wiki/README.md` to match.
+
+**When adding or updating packages, middleware, services, or patterns,** update the corresponding `docs_wiki/*.md` file and the `docs_wiki/README.md` index to keep them in sync.
+
 ## Targets you should never commit
 
 - `config.yaml` with real secrets (rotate secrets; use env vars in production).

@@ -1,7 +1,5 @@
 # Documentation Wiki
 
-This document indexes all developer-facing documentation. The authoritative project overview (directory structure, core abstractions, build/run, conventions) lives in **[`AGENTS.md`](../AGENTS.md)** at the project root. Keep both in sync — when AGENTS.md changes, update the relevant files here, and vice versa.
-
 ## Quick Links
 
 | Document | Description |

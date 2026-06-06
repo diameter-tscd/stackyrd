@@ -161,7 +161,10 @@ func (s *BroadcastService) streamEvents(c *gin.Context) {
 		StreamID:  streamID,
 	}
 
-	s.sendSSEEvent(c, initialEvent)
+	if err := s.sendSSEEvent(c, initialEvent); err != nil {
+		s.logger.Error("Failed to send initial SSE event", err)
+		return
+	}
 
 	// Listen for events
 	for {

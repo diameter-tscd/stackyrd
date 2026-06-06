@@ -228,14 +228,14 @@ func ClearScreen() {
 	}
 
 	cmd.Stdout = os.Stdout
-	cmd.Run()
+	_ = cmd.Run()
 }
 
 // CheckPortAvailability checks if the required ports are available before starting the application
 func CheckPortAvailability(serverPort string) error {
 	// Check server port
 	if err := CheckPort(serverPort); err != nil {
-		return fmt.Errorf("server port %s is already in use: %v \n", serverPort, err)
+		return fmt.Errorf("server port %s is already in use: %w", serverPort, err)
 	}
 
 	return nil

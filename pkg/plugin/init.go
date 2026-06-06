@@ -131,7 +131,7 @@ func isAllowed(name string, allowlist []string) bool {
 
 func computeEmbeddedFileSize(baseDir string) int64 {
 	var total int64
-	fs.WalkDir(builtinFS, baseDir, func(path string, d fs.DirEntry, err error) error {
+	_ = fs.WalkDir(builtinFS, baseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

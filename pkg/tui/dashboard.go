@@ -200,19 +200,19 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "down", "j":
 			// Scroll down
-			m.viewport.LineDown(1)
+			m.viewport.ScrollDown(1)
 			return m, nil
 		case "up", "k":
 			// Scroll up
-			m.viewport.LineUp(1)
+			m.viewport.ScrollUp(1)
 			return m, nil
 		case "pgdown", " ":
 			// Page down
-			m.viewport.HalfViewDown()
+			m.viewport.HalfPageDown()
 			return m, nil
 		case "pgup":
 			// Page up
-			m.viewport.HalfViewUp()
+			m.viewport.HalfPageUp()
 			return m, nil
 		case "home", "g":
 			// Go to top

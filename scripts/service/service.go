@@ -316,7 +316,7 @@ func (ctx *ServiceContext) promptServicePattern(logger *Logger) error {
 	logger.Prompt("Enter pattern number (default: 1): ")
 
 	var input string
-	fmt.Scanln(&input)
+	_, _ = fmt.Scanln(&input)
 
 	if input == "" {
 		ctx.Config.ServicePattern = SERVICE_PATTERNS[0]
@@ -356,7 +356,7 @@ func (ctx *ServiceContext) promptGenerateModel(logger *Logger) error {
 	logger.Prompt("Generate database model (GORM)? (y/N, default: N): ")
 
 	var input string
-	fmt.Scanln(&input)
+	_, _ = fmt.Scanln(&input)
 
 	if strings.ToLower(input) == "y" || strings.ToLower(input) == "yes" {
 		ctx.Config.GenerateModel = true
@@ -588,9 +588,10 @@ func (ctx *ServiceContext) buildSwaggerAnnotations() string {
 
 func (ctx *ServiceContext) buildSwaggerAnnotation(method, path, summary, description, tag, successCode, successType string) string {
 	produces := "application/json"
-	if successType == "stream" {
+	switch successType {
+	case "stream":
 		produces = "text/event-stream"
-	} else if successType == "websocket" {
+	case "websocket":
 		produces = "text/plain"
 	}
 
@@ -602,13 +603,13 @@ func (ctx *ServiceContext) buildSwaggerAnnotation(method, path, summary, descrip
 `, summary, description, tag, produces)
 
 	if path != "" && strings.Contains(path, ":id") {
-		annotation += fmt.Sprintf(`// @Param id path int true "Item ID"
-`)
+		annotation += `// @Param id path int true "Item ID"
+`
 	}
 
 	if method == "POST" || method == "PUT" {
-		annotation += fmt.Sprintf(`// @Param request body interface{} true "Request body"
-`)
+		annotation += `// @Param request body interface{} true "Request body"
+`
 	}
 
 	if successType != "" {

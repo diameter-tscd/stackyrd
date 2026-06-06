@@ -63,13 +63,13 @@ func (p *ExternalPlugin) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.conn != nil {
-		p.conn.Close()
+		_ = p.conn.Close()
 		p.conn = nil
 		p.client = nil
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
-		p.cmd.Process.Kill()
-		p.cmd.Wait()
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
 		p.cmd = nil
 	}
 	return nil
@@ -103,7 +103,7 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 		ScriptSource: string(scriptBytes),
 	})
 	if err != nil {
-		p.Close()
+		_ = p.Close()
 		return nil, fmt.Errorf("plugin execute error: %w", err)
 	}
 
@@ -167,8 +167,8 @@ func (p *ExternalPlugin) ensureRunning() error {
 	select {
 	case <-ready:
 	case <-time.After(10 * time.Second):
-		p.cmd.Process.Kill()
-		p.cmd.Wait()
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
 		p.cmd = nil
 		return fmt.Errorf("timeout waiting for python host to start")
 	}
@@ -179,8 +179,8 @@ func (p *ExternalPlugin) ensureRunning() error {
 		grpc.WithBlock(),
 	)
 	if err != nil {
-		p.cmd.Process.Kill()
-		p.cmd.Wait()
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
 		p.cmd = nil
 		return fmt.Errorf("gRPC dial: %w", err)
 	}

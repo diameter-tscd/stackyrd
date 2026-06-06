@@ -261,7 +261,7 @@ type rawQueryRow struct {
 }
 
 // ExecuteRawQuery executes a raw SQL query and returns the results as a slice of maps
-func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) ([]map[string]interface{}, error) {
+func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ []map[string]interface{}, err error) {
 	if p.DB == nil {
 		return nil, fmt.Errorf("database connection is nil")
 	}
@@ -270,7 +270,11 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	columns, err := rows.Columns()
 	if err != nil {
@@ -352,7 +356,7 @@ type PGQuery struct {
 	Query    string `json:"query"`
 }
 
-func (p *PostgresManager) GetRunningQueries(ctx context.Context) ([]PGQuery, error) {
+func (p *PostgresManager) GetRunningQueries(ctx context.Context) (_ []PGQuery, err error) {
 	rows, err := p.DB.QueryContext(ctx, `
 		SELECT pid, usename, datname, state, (now() - query_start) as duration, query 
 		FROM pg_stat_activity 
@@ -362,7 +366,11 @@ func (p *PostgresManager) GetRunningQueries(ctx context.Context) ([]PGQuery, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	var queries []PGQuery
 	for rows.Next() {

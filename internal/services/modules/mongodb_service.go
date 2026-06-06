@@ -98,7 +98,11 @@ func (s *MongoDBService) listProductsByTenant(c *gin.Context) {
 		response.InternalServerError(c, "Failed to query tenant database")
 		return
 	}
-	defer cursor.Close(ctx)
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			s.logger.Error("Failed to close MongoDB cursor", err)
+		}
+	}()
 
 	var products []Product
 	if err := cursor.All(ctx, &products); err != nil {
@@ -363,7 +367,11 @@ func (s *MongoDBService) searchProducts(c *gin.Context) {
 		response.InternalServerError(c, "Failed to search products")
 		return
 	}
-	defer cursor.Close(ctx)
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			s.logger.Error("Failed to close MongoDB cursor", err)
+		}
+	}()
 
 	var products []Product
 	if err := cursor.All(ctx, &products); err != nil {
@@ -416,7 +424,11 @@ func (s *MongoDBService) getProductAnalytics(c *gin.Context) {
 		response.InternalServerError(c, "Failed to get analytics")
 		return
 	}
-	defer cursor.Close(ctx)
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			s.logger.Error("Failed to close MongoDB cursor", err)
+		}
+	}()
 
 	var analytics []bson.M
 	if err := cursor.All(ctx, &analytics); err != nil {

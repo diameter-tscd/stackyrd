@@ -106,7 +106,7 @@ func TestAferoManager(t *testing.T) {
 		if stream == nil {
 			t.Error("Expected stream to be returned")
 		}
-		stream.Close()
+		_ = stream.Close()
 	})
 
 	// Test development mode (CopyOnWriteFs)

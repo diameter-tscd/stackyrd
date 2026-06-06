@@ -75,7 +75,7 @@ func (k *KafkaManager) GetStatus() map[string]interface{} {
 // NOTE: This blocks the calling goroutine. Run in a separate goroutine.
 func (k *KafkaManager) Consume(ctx context.Context, topic string, handler func(key, value []byte) error) error {
 	config := sarama.NewConfig()
-	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
+	config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRoundRobin()
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 
 	consumerGroup, err := sarama.NewConsumerGroup(k.Brokers, k.GroupID, config)

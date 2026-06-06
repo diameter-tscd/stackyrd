@@ -82,7 +82,7 @@ func (bc *BarChart) Render() string {
 		bar := strings.Repeat("█", barLen)
 
 		if bc.ShowValues {
-			sb.WriteString(fmt.Sprintf("%s %s %.1f\n", label, bar, item.Value))
+			fmt.Fprintf(&sb, "%s %s %.1f\n", label, bar, item.Value)
 		} else {
 			sb.WriteString(fmt.Sprintf("%s %s\n", label, bar))
 		}

@@ -89,7 +89,7 @@ func (rw *RotatingWriter) openFile() error {
 
 	info, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 
@@ -102,7 +102,7 @@ func (rw *RotatingWriter) openFile() error {
 // rotate rotates the log file
 func (rw *RotatingWriter) rotate() error {
 	if rw.file != nil {
-		rw.file.Close()
+		_ = rw.file.Close()
 		rw.file = nil
 	}
 
@@ -113,7 +113,7 @@ func (rw *RotatingWriter) rotate() error {
 	// Rename current file
 	if err := os.Rename(rw.filename, backupName); err != nil {
 		// If rename fails, try to remove the file
-		os.Remove(rw.filename)
+		_ = os.Remove(rw.filename)
 	}
 
 	// Compress if configured

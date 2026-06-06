@@ -151,19 +151,6 @@ func (c *Client) putJSON(path string, body, target interface{}) error {
 	return nil
 }
 
-func (c *Client) delete(path string) error {
-	resp, err := c.doRequest("DELETE", path, nil)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
 type PluginSummary struct {
 	Name         string `json:"name"`
 	Version      string `json:"version"`
@@ -502,7 +489,7 @@ func cmdUnload(logger *Logger, args []string) {
 		os.Exit(1)
 	}
 
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	logger.Success("Plugin unloaded: %s", result.Name)
 }
 

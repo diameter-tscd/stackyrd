@@ -162,7 +162,7 @@ func (wm *WebhookManager) doRequest(ctx context.Context, payload []byte) (*Webho
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -243,7 +243,7 @@ func (wh *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	wh.manager.Trigger(event)
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 // GetStats returns webhook statistics

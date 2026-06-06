@@ -118,7 +118,7 @@ func ClearScreen() {
 	}
 
 	cmd.Stdout = os.Stdout
-	cmd.Run()
+	_ = cmd.Run()
 }
 
 // ensureProjectRoot finds the project root and changes to it if needed
@@ -541,10 +541,10 @@ func createZipArchive(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
+	defer func() { _ = zipFile.Close() }()
 
 	archive := zip.NewWriter(zipFile)
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 
 	info, err := os.Stat(source)
 	if err != nil {
@@ -556,7 +556,7 @@ func createZipArchive(source, target string) error {
 		baseDir = filepath.Base(source)
 	}
 
-	filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -589,7 +589,7 @@ func createZipArchive(source, target string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		_, err = io.Copy(writer, file)
 		return err
@@ -614,15 +614,6 @@ func moveFile(src, dst string) error {
 	}
 
 	return os.Remove(src)
-}
-
-// moveDir moves a directory from src to dst
-func moveDir(src, dst string) error {
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return nil
-	}
-
-	return copyDir(src, dst)
 }
 
 // copyDir recursively copies a directory
@@ -749,13 +740,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() { _ = dstFile.Close() }()
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err

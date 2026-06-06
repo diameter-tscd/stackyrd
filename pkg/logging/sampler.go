@@ -147,7 +147,7 @@ func (sl *SamplingLogger) Log(entry LogEntry) {
 			return
 		}
 		data = append(data, '\n')
-		sl.logger.writer.Write(data)
+		_, _ = sl.logger.writer.Write(data)
 	}
 }
 

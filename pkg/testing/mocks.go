@@ -12,7 +12,6 @@ type MockService struct {
 	name      string
 	enabled   bool
 	endpoints []string
-	handler   func() error
 }
 
 // NewMockService creates a new mock service
@@ -142,7 +141,6 @@ func (m *MockRedisManager) Close() error {
 
 // MockPostgresManager implements a mock PostgreSQL manager for testing
 type MockPostgresManager struct {
-	mu      sync.RWMutex
 	storage map[string]interface{}
 }
 
@@ -159,7 +157,6 @@ func (m *MockPostgresManager) Close() error {
 
 // MockMongoManager implements a mock MongoDB manager for testing
 type MockMongoManager struct {
-	mu      sync.RWMutex
 	storage map[string]interface{}
 }
 

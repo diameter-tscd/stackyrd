@@ -242,7 +242,7 @@ func (wp *WorkerPool) worker() {
 	defer wp.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
-			// Log panic and continue
+			_ = r
 		}
 	}()
 

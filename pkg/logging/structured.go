@@ -225,7 +225,7 @@ func (sl *StructuredLogger) log(level LogLevel, msg string, fields ...map[string
 	}
 
 	data = append(data, '\n')
-	sl.writer.Write(data)
+	_, _ = sl.writer.Write(data)
 }
 
 // getStackTrace returns a stack trace

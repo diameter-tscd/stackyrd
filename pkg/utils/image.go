@@ -52,7 +52,7 @@ func CompressFile(inputPath string, outputPath string, options CompressionOption
 	if err != nil {
 		return fmt.Errorf("failed to open input file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Detect image format
 	format, err := DetectImageFormat(inputPath)
@@ -195,7 +195,7 @@ func GetImageDimensions(path string) (width, height int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	config, _, err := image.DecodeConfig(file)
 	if err != nil {
@@ -221,7 +221,7 @@ func CompressFileToBuffer(inputPath string, options CompressionOptions) (*bytes.
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	format, err := DetectImageFormat(inputPath)
 	if err != nil {

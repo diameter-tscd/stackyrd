@@ -167,7 +167,7 @@ func ClearScreen() {
 	}
 
 	cmd.Stdout = os.Stdout
-	cmd.Run()
+	_ = cmd.Run()
 }
 
 // findProjectRoot searches up the directory tree for go.mod
@@ -231,7 +231,7 @@ func (ctx *ServiceContext) promptServiceName(logger *Logger) error {
 		logger.Prompt("Enter service name (e.g., Orders, Inventory): ")
 
 		var serviceName string
-		fmt.Scanln(&serviceName)
+		_, _ = fmt.Scanln(&serviceName)
 
 		if serviceName == "" {
 			logger.Error("Service name cannot be empty")
@@ -266,7 +266,7 @@ func (ctx *ServiceContext) promptWireName(logger *Logger) error {
 	logger.Prompt("Enter wire name (default: %s): ", defaultWireName)
 
 	var wireName string
-	fmt.Scanln(&wireName)
+	_, _ = fmt.Scanln(&wireName)
 
 	if wireName == "" {
 		wireName = defaultWireName
@@ -285,7 +285,7 @@ func (ctx *ServiceContext) promptFileName(logger *Logger) error {
 	logger.Prompt("Enter file name (default: %s): ", defaultFileName)
 
 	var fileName string
-	fmt.Scanln(&fileName)
+	_, _ = fmt.Scanln(&fileName)
 
 	if fileName == "" {
 		fileName = defaultFileName

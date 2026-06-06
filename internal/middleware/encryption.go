@@ -59,11 +59,11 @@ func EncryptionMiddleware(cfg *config.Config, l *logger.Logger) gin.HandlerFunc 
 				c.Writer.Header().Set("X-Obfuscated", "true")
 				c.Writer.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
 				c.Writer.WriteHeaderNow()
-				c.Writer.Write([]byte(encoded))
+				_, _ = c.Writer.Write([]byte(encoded))
 			} else {
 				// Pass through non-JSON responses
 				c.Writer.WriteHeaderNow()
-				c.Writer.Write(w.body.Bytes())
+				_, _ = c.Writer.Write(w.body.Bytes())
 			}
 		}
 	}
@@ -120,7 +120,7 @@ func GzipMiddleware() gin.HandlerFunc {
 		gz := gzPool.Get().(*gzip.Writer)
 		gz.Reset(w)
 		defer func() {
-			gz.Close()
+			_ = gz.Close()
 			gzPool.Put(gz)
 		}()
 

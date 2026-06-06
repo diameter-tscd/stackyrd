@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -307,7 +307,7 @@ func Exists(alias string) bool {
 	}
 
 	// Handle "all:" prefix if present
-	if filepath.HasPrefix(physicalPath, "all:") {
+	if strings.HasPrefix(physicalPath, "all:") {
 		physicalPath = physicalPath[4:] // Remove "all:" prefix
 	}
 
@@ -325,7 +325,7 @@ func (m *aferoManager) resolveAlias(alias string) (string, error) {
 	}
 
 	// Handle "all:" prefix if present
-	if filepath.HasPrefix(physicalPath, "all:") {
+	if strings.HasPrefix(physicalPath, "all:") {
 		physicalPath = physicalPath[4:] // Remove "all:" prefix
 	}
 

@@ -20,8 +20,8 @@ func init() {
 	validate = validator.New()
 
 	// Register custom validators
-	validate.RegisterValidation("phone", validatePhone)
-	validate.RegisterValidation("username", validateUsername)
+	_ = validate.RegisterValidation("phone", validatePhone)
+	_ = validate.RegisterValidation("username", validateUsername)
 }
 
 // Bind binds and validates request data

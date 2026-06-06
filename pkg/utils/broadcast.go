@@ -50,16 +50,6 @@ func NewEventBroadcaster() *EventBroadcaster {
 	return eb
 }
 
-// touchLastSeen updates the client's last-seen timestamp.
-func (eb *EventBroadcaster) touchLastSeen(clientID string) {
-	eb.mu.RLock()
-	client, exists := eb.clients[clientID]
-	eb.mu.RUnlock()
-	if exists {
-		client.lastSeen.Store(time.Now().Unix())
-	}
-}
-
 // ExpireStaleClients removes clients whose TTL has expired.  Can be called
 // synchronously by tests or the background ticker.
 func (eb *EventBroadcaster) ExpireStaleClients() {

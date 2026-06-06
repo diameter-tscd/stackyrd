@@ -39,7 +39,6 @@ type DialogModel struct {
 	textinput   textinput.Model
 	result      *DialogResult
 	isActive    bool
-	initialized bool
 }
 
 // NewDialog creates a new dialog with the given configuration

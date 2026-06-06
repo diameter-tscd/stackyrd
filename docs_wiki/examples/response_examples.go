@@ -104,7 +104,7 @@ func hasPermission() bool {
 // Example 5: Search with Filters
 func exampleSearch(c *gin.Context) {
 	var search request.SearchRequest
-	c.ShouldBindQuery(&search)
+	_ = c.ShouldBindQuery(&search)
 
 	// Use helper methods
 	query := search.GetQuery()

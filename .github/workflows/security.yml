@@ -139,7 +139,7 @@ jobs:
       - name: Prepare Reports
         if: always()
         run: |
-          mkdir -p .security-reports
+          mkdir -p .github/security-reports
 
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           EPOCH=$(date +%s)
@@ -150,7 +150,7 @@ jobs:
             STATUS="alert"
           fi
 
-          REPORT_FILE=".security-reports/scan_${STATUS}_${TIMESTAMP}_${EPOCH}.md"
+          REPORT_FILE=".github/security-reports/scan_${STATUS}_${TIMESTAMP}_${EPOCH}.md"
 
           echo "# Security Scan Report" > $REPORT_FILE
           echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')" >> $REPORT_FILE
@@ -174,15 +174,15 @@ jobs:
           echo "See SARIF file: gosec-results.sarif" >> $REPORT_FILE
           echo "" >> $REPORT_FILE
 
-          cp gosec-results.sarif .security-reports/gosec_${TIMESTAMP}.sarif 2>/dev/null || true
-          cp trivy-results.sarif .security-reports/trivy_${TIMESTAMP}.sarif 2>/dev/null || true
+          cp gosec-results.sarif .github/security-reports/gosec_${TIMESTAMP}.sarif 2>/dev/null || true
+          cp trivy-results.sarif .github/security-reports/trivy_${TIMESTAMP}.sarif 2>/dev/null || true
 
           echo "Report created: $REPORT_FILE"
 
       - name: Cleanup Old Reports
         if: always()
         run: |
-          cd .security-reports || exit 0
+          cd .github/security-reports || exit 0
           CURRENT_EPOCH=$(date +%s)
           THREE_DAYS=259200
 
@@ -209,7 +209,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
 
-          git add .security-reports/
+          git add .github/security-reports/
 
           if git diff --staged --quiet; then
             echo "No changes to commit"

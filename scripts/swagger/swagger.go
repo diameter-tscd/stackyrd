@@ -106,7 +106,7 @@ func ClearScreen() {
 	}
 
 	cmd.Stdout = os.Stdout
-	cmd.Run()
+	_ = cmd.Run()
 }
 
 // findProjectRoot searches up the directory tree for go.mod

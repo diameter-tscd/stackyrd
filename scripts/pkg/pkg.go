@@ -260,7 +260,7 @@ func fetchIndex(logger *Logger) ([]*PackageInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to download index: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("index fetch returned status %d", resp.StatusCode)
 	}
@@ -443,55 +443,24 @@ func downloadFiles(pkg, version string, files []string, targetDir string, logger
 			return fmt.Errorf("failed to download %s: %w", f, err)
 		}
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return fmt.Errorf("download of %s returned status %d", f, resp.StatusCode)
 		}
 		localPath := filepath.Join(targetDir, f)
 		outFile, err := os.Create(localPath)
 		if err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return fmt.Errorf("failed to create file %s: %w", localPath, err)
 		}
 		_, err = io.Copy(outFile, resp.Body)
-		resp.Body.Close()
-		outFile.Close()
+		_ = resp.Body.Close()
+		_ = outFile.Close()
 		if err != nil {
 			return fmt.Errorf("failed to write file %s: %w", localPath, err)
 		}
 		logger.Success("Downloaded %s", f)
 	}
 	return nil
-}
-
-func downloadFile(url, targetPath string, logger *Logger) error {
-	logger.Debug("Downloading %s", url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("failed to download: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download returned status %d", resp.StatusCode)
-	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-		return err
-	}
-	outFile, err := os.Create(targetPath)
-	if err != nil {
-		return fmt.Errorf("failed to create file %s: %w", targetPath, err)
-	}
-	defer outFile.Close()
-	_, err = io.Copy(outFile, resp.Body)
-	return err
-}
-
-func headFileExists(url string) bool {
-	resp, err := http.Head(url)
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
 }
 
 var yrdconvURLs = map[string]map[string]string{
@@ -540,12 +509,12 @@ func ensureYrdconv(ctx *InstallContext, logger *Logger) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create yrdconv: %w", err)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 	if _, err := io.Copy(outFile, resp.Body); err != nil {
 		return "", fmt.Errorf("failed to write yrdconv: %w", err)
 	}
 	if goos != "windows" {
-		os.Chmod(downloadPath, 0755)
+		_ = os.Chmod(downloadPath, 0755)
 	}
 	logger.Success("yrdconv downloaded: %s", downloadPath)
 	return downloadPath, nil
@@ -590,7 +559,7 @@ func convertAndInstall(ctx *InstallContext, pkg, version string, files []string,
 				return fmt.Errorf("failed to rename: %w", err)
 			}
 		}
-		os.Remove(yrdPath)
+		_ = os.Remove(yrdPath)
 	}
 	return nil
 }
@@ -622,57 +591,6 @@ func trackedFiles(files []string) []string {
 	return result
 }
 
-type manualPathInfo struct {
-	PkgName  string
-	Version  string
-	Filename string
-}
-
-func parseManualPath(rawPath string) (*manualPathInfo, error) {
-	p := strings.TrimPrefix(rawPath, "/")
-	if !strings.HasPrefix(p, INSTALL_ROOT+"/") {
-		return nil, fmt.Errorf("path must start with %s/", INSTALL_ROOT)
-	}
-	relative := strings.TrimPrefix(p, INSTALL_ROOT+"/")
-	segments := strings.Split(relative, "/")
-	if len(segments) < 3 {
-		return nil, fmt.Errorf("path must have <pkg...>/<version>/<file> after %s/", INSTALL_ROOT)
-	}
-	versionRegex := regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	versionIdx := -1
-	for i, seg := range segments {
-		if versionRegex.MatchString(seg) {
-			versionIdx = i
-			break
-		}
-	}
-	if versionIdx < 0 {
-		return nil, fmt.Errorf("no semver version found in path")
-	}
-	if versionIdx == 0 {
-		return nil, fmt.Errorf("missing package name before version")
-	}
-	return &manualPathInfo{
-		PkgName:  strings.Join(segments[:versionIdx], "/"),
-		Version:  segments[versionIdx],
-		Filename: segments[len(segments)-1],
-	}, nil
-}
-
-func resolveManualFilename(mpi *manualPathInfo) (string, error) {
-	base := strings.TrimSuffix(mpi.Filename, ".go")
-	base = strings.TrimSuffix(base, ".yrd")
-	goURL := fmt.Sprintf("%s/%s/%s/%s/%s.go", BASE_DOWNLOAD_URL, INSTALL_ROOT, mpi.PkgName, mpi.Version, base)
-	if headFileExists(goURL) {
-		return base + ".go", nil
-	}
-	yrdURL := fmt.Sprintf("%s/%s/%s/%s/%s.yrd", BASE_DOWNLOAD_URL, INSTALL_ROOT, mpi.PkgName, mpi.Version, base)
-	if headFileExists(yrdURL) {
-		return base + ".yrd", nil
-	}
-	return "", fmt.Errorf("neither %s.go nor %s.yrd found for %s@%s", base, base, mpi.PkgName, mpi.Version)
-}
-
 type installResult struct {
 	pkgName   string
 	version   string
@@ -702,53 +620,6 @@ func installIndexed(ctx *InstallContext, pkgName, version string, files []string
 	return &installResult{pkgName: pkgName, version: version, files: installed, readmeURL: readmeURL}, nil
 }
 
-func installManual(ctx *InstallContext, rawPath string, dryRun bool, logger *Logger) error {
-	mpi, err := parseManualPath(rawPath)
-	if err != nil {
-		return fmt.Errorf("invalid manual path: %w", err)
-	}
-	resolvedFilename, err := resolveManualFilename(mpi)
-	if err != nil {
-		return err
-	}
-	versionedURL := fmt.Sprintf("%s/%s/%s/%s/%s", BASE_DOWNLOAD_URL, INSTALL_ROOT, mpi.PkgName, mpi.Version, resolvedFilename)
-	localPath := filepath.Join(ctx.InstallRoot, resolvedFilename)
-	logger.Info("Manual package: %s@%s", mpi.PkgName, mpi.Version)
-	logger.Info("File: %s", resolvedFilename)
-	if dryRun {
-		logger.Info("[DRY-RUN] Would download to: %s", localPath)
-		return nil
-	}
-	if err := downloadFile(versionedURL, localPath, logger); err != nil {
-		return fmt.Errorf("download failed: %w", err)
-	}
-	logger.Success("Downloaded %s", resolvedFilename)
-	manifest, err := loadManifest()
-	if err != nil {
-		logger.Warn("Failed to load manifest: %v", err)
-		manifest = &Manifest{Meta: ManifestMeta{IndexURL: INDEX_URL}, Packages: make(map[string]InstalledPackage)}
-	}
-	installed := trackedFiles([]string{resolvedFilename})
-	now := time.Now().Format(time.RFC3339)
-	manifestAddPackage(manifest, InstalledPackage{
-		Name: mpi.PkgName, Version: mpi.Version, InstalledAt: now, UpdatedAt: now,
-		Files: installed, InstallRoot: INSTALL_ROOT, Source: "manual", ManualPath: rawPath,
-	})
-	if err := saveManifest(manifest); err != nil {
-		logger.Warn("Failed to save manifest: %v", err)
-	}
-	if strings.HasSuffix(resolvedFilename, ".yrd") {
-		if _, err := ensureYrdconv(ctx, logger); err != nil {
-			logger.Warn("Failed to ensure yrdconv: %v (continuing)", err)
-		} else if err := convertAndInstall(ctx, mpi.PkgName, mpi.Version, []string{resolvedFilename}, ctx.InstallRoot, logger); err != nil {
-			return fmt.Errorf("conversion failed: %w", err)
-		}
-	}
-	runGoModTidy(ctx.ProjectDir, logger)
-	printSuccess(ctx.InstallRoot)
-	return nil
-}
-
 func updateManifest(name, version string, files []string, logger *Logger) {
 	manifest, err := loadManifest()
 	if err != nil {
@@ -762,131 +633,6 @@ func updateManifest(name, version string, files []string, logger *Logger) {
 	if err := saveManifest(manifest); err != nil {
 		logger.Warn("Failed to save manifest: %v", err)
 	}
-}
-
-func cmdInstall(args []string, logger *Logger) {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
-	installPkg := fs.String("pkg", "", "Package to install (format: 'name@version')")
-	manualPath := fs.String("path", "", "Manual package path (e.g. /pkg/infrastructure/.../file)")
-	timeoutSeconds := fs.Int("timeout", 30, "Timeout for user prompts")
-	verbose := fs.Bool("verbose", false, "Verbose logging")
-	yes := fs.Bool("yes", false, "Auto-confirm prompts")
-	dryRun := fs.Bool("dry-run", false, "Preview without changes")
-	fs.Parse(args)
-	logger.verbose = *verbose
-	projectDir, _ := os.Getwd()
-	ctx := &InstallContext{
-		Config:      InstallConfig{Timeout: time.Duration(*timeoutSeconds) * time.Second, Verbose: *verbose},
-		ProjectDir:  projectDir,
-		InstallRoot: filepath.Join(projectDir, INSTALL_ROOT),
-	}
-	if err := ctx.ensureProjectRoot(logger); err != nil {
-		logger.Error("Failed to ensure project root: %v", err)
-		os.Exit(1)
-	}
-	if *manualPath != "" {
-		if err := installManual(ctx, *manualPath, *dryRun, logger); err != nil {
-			logger.Error("Manual install failed: %v", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if *installPkg != "" {
-		parts := strings.SplitN(*installPkg, "@", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			logger.Error("Invalid format. Use 'name@version'")
-			os.Exit(1)
-		}
-		pkgName, version := parts[0], parts[1]
-		packages, err := fetchIndex(logger)
-		if err != nil {
-			logger.Error("Failed to fetch index: %v", err)
-			os.Exit(1)
-		}
-		var selectedPkg *PackageInfo
-		for _, pkg := range packages {
-			if pkg.Name == pkgName {
-				selectedPkg = pkg
-				break
-			}
-		}
-		if selectedPkg == nil {
-			logger.Error("Package '%s' not found in index", pkgName)
-			os.Exit(1)
-		}
-		files, ok := selectedPkg.Versions[version]
-		if !ok {
-			logger.Error("Version '%s' not found for '%s'", version, pkgName)
-			os.Exit(1)
-		}
-		if m, e := loadManifest(); e == nil && manifestIsInstalled(m, pkgName) {
-			if !*yes && !confirmPrompt(fmt.Sprintf("Package '%s' already installed. Reinstall?", pkgName), logger) {
-				logger.Info("Skipping.")
-				return
-			}
-		}
-		if *dryRun {
-			logger.Info("[DRY-RUN] Would install %s@%s files: %v", pkgName, version, files)
-			return
-		}
-		result, err := installIndexed(ctx, pkgName, version, files, selectedPkg.FilePaths, logger)
-		if err != nil {
-			logger.Error("Installation failed: %v", err)
-			os.Exit(1)
-		}
-		updateManifest(result.pkgName, result.version, result.files, logger)
-		runGoModTidy(ctx.ProjectDir, logger)
-		if result.readmeURL != "" {
-			logger.Info("Documentation: %s", result.readmeURL)
-		}
-		printSuccess(ctx.InstallRoot)
-		return
-	}
-	packages, err := fetchIndex(logger)
-	if err != nil {
-		logger.Error("Failed to fetch index: %v", err)
-		os.Exit(1)
-	}
-	if len(packages) == 0 {
-		logger.Error("No packages available")
-		os.Exit(1)
-	}
-	selectedPkg, err := promptUserByName(packages, logger)
-	if err != nil {
-		logger.Error("Selection error: %v", err)
-		os.Exit(1)
-	}
-	selectedVersion, err := promptVersion(selectedPkg, logger)
-	if err != nil {
-		logger.Error("Version selection error: %v", err)
-		os.Exit(1)
-	}
-	files := selectedPkg.Versions[selectedVersion]
-	if len(files) == 0 {
-		logger.Error("No files for %s version %s", selectedPkg.Name, selectedVersion)
-		os.Exit(1)
-	}
-	if m, e := loadManifest(); e == nil && manifestIsInstalled(m, selectedPkg.Name) {
-		if !*yes && !confirmPrompt(fmt.Sprintf("Package '%s' already installed. Reinstall?", selectedPkg.Name), logger) {
-			logger.Info("Skipping.")
-			return
-		}
-	}
-	if *dryRun {
-		logger.Info("[DRY-RUN] Would install %s@%s files: %v", selectedPkg.Name, selectedVersion, files)
-		return
-	}
-	result, err := installIndexed(ctx, selectedPkg.Name, selectedVersion, files, selectedPkg.FilePaths, logger)
-	if err != nil {
-		logger.Error("Installation failed: %v", err)
-		os.Exit(1)
-	}
-	updateManifest(result.pkgName, result.version, result.files, logger)
-	runGoModTidy(ctx.ProjectDir, logger)
-	if result.readmeURL != "" {
-		logger.Info("Documentation: %s", result.readmeURL)
-	}
-	printSuccess(ctx.InstallRoot)
 }
 
 func cmdList(logger *Logger) {
@@ -1015,7 +761,7 @@ func cmdRemove(args []string, logger *Logger) {
 	fs := flag.NewFlagSet("remove", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "Skip confirmation prompt")
 	dryRun := fs.Bool("dry-run", false, "Preview without removing")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	positional := fs.Args()
 	if len(positional) == 0 {
 		logger.Error("Usage: remove [flags] <package-name>")
@@ -1080,7 +826,7 @@ func cmdReinstall(args []string, logger *Logger) {
 	yes := fs.Bool("yes", false, "Skip confirmation prompt")
 	dryRun := fs.Bool("dry-run", false, "Preview without reinstalling")
 	verbose := fs.Bool("verbose", false, "Enable verbose logging")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	logger.verbose = *verbose
 
 	positional := fs.Args()
@@ -1165,7 +911,7 @@ func cmdUpgrade(args []string, logger *Logger) {
 	fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
 	yes := fs.Bool("yes", false, "Skip confirmation")
 	dryRun := fs.Bool("dry-run", false, "Preview without upgrading")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	positional := fs.Args()
 	upgradeOne := ""
 	if len(positional) > 0 {
@@ -1274,7 +1020,7 @@ func cmdUpgrade(args []string, logger *Logger) {
 		if err := downloadFiles(t.Name, t.Latest, t.Files, ctx.InstallRoot, logger); err != nil {
 			logger.Error("Download failed for %s: %v", t.Name, err)
 			for orig, bak := range backups {
-				os.Rename(bak, orig)
+				_ = os.Rename(bak, orig)
 			}
 			failed++
 			continue
@@ -1284,13 +1030,13 @@ func cmdUpgrade(args []string, logger *Logger) {
 		} else if err := convertAndInstall(ctx, t.Name, t.Latest, t.Files, ctx.InstallRoot, logger); err != nil {
 			logger.Error("Conversion failed for %s: %v", t.Name, err)
 			for orig, bak := range backups {
-				os.Rename(bak, orig)
+				_ = os.Rename(bak, orig)
 			}
 			failed++
 			continue
 		}
 		for _, bak := range backups {
-			os.Remove(bak)
+			_ = os.Remove(bak)
 		}
 		installed := trackedFiles(t.Files)
 		now := time.Now().Format(time.RFC3339)

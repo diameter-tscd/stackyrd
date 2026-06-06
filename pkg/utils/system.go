@@ -248,7 +248,7 @@ func CheckPort(port string) error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	return nil
 }
 

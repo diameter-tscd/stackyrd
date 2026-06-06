@@ -106,7 +106,7 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 	// Fast path: existing visitor, still within the window → upgrade to write
 	// lock to increment count.  We must verify `exists` before ever touching
 	// `v` (a nil dereference here causes a hard panic).
-	if exists && !(now.Sub(v.lastSeen) > rl.window) {
+	if exists && now.Sub(v.lastSeen) <= rl.window {
 		rl.mu.RUnlock()
 
 		rl.mu.Lock()
@@ -128,7 +128,7 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 
 	// Double-check after acquiring write lock — another goroutine may have
 	// raced in and created the entry already.
-	if v, exists = rl.visitors[ip]; exists && !(now.Sub(v.lastSeen) > rl.window) {
+	if v, exists = rl.visitors[ip]; exists && now.Sub(v.lastSeen) <= rl.window {
 		v.count++
 		v.lastSeen = now
 		return true

@@ -82,7 +82,7 @@ func (k *KafkaManager) Consume(ctx context.Context, topic string, handler func(k
 	if err != nil {
 		return fmt.Errorf("error creating consumer group: %w", err)
 	}
-	defer consumerGroup.Close()
+	defer func() { _ = consumerGroup.Close() }()
 
 	consumer := &consumerHandler{
 		handler: handler,

@@ -47,7 +47,6 @@ type LiveModel struct {
 	startTime       time.Time
 	width           int
 	height          int
-	frame           int
 	quitting        bool
 	maxLogs         int
 	program         *tea.Program
@@ -77,11 +76,6 @@ var (
 
 	liveDimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#626262ff"))
-
-	liveLogBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#8daea5")).
-			Padding(0, 1)
 
 	// Single cyan color for progress bar
 	liveProgressColor = "#8daea5"
@@ -593,7 +587,7 @@ func (t *LiveTUI) Start() {
 	t.program = tea.NewProgram(t.model, tea.WithAltScreen())
 	t.model.SetProgram(t.program)
 	go func() {
-		t.program.Run()
+		_, _ = t.program.Run()
 	}()
 }
 

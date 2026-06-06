@@ -155,7 +155,7 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 func (c *Client) readPump() {
 	defer func() {
 		c.Hub.unregister <- c
-		c.Conn.Close()
+		_ = c.Conn.Close()
 	}()
 
 	for {
@@ -179,7 +179,7 @@ func (c *Client) readPump() {
 
 // writePump writes messages to the WebSocket connection
 func (c *Client) writePump() {
-	defer c.Conn.Close()
+	defer func() { _ = c.Conn.Close() }()
 
 	for message := range c.Send {
 		if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {

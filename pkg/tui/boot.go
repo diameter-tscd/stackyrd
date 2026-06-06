@@ -52,11 +52,6 @@ var (
 			Foreground(lipgloss.Color("#6272A4")).
 			Italic(true)
 
-	bootBoxBorder = lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder()).
-			BorderForeground(lipgloss.Color("#6272A4")).
-			Padding(1, 2)
-
 	bootCompleteStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#545454ff"))

@@ -79,7 +79,7 @@ func NewMongoDB(cfg config.MongoConfig, l *logger.Logger) (*MongoManager, error)
 
 	if err := client.Ping(pingCtx, readpref.Primary()); err != nil {
 		// Close connection on ping failure
-		client.Disconnect(context.Background())
+		_ = client.Disconnect(context.Background())
 		l.Error("Failed to ping MongoDB", err, "timeout", "5s")
 		return nil, fmt.Errorf("failed to ping MongoDB (timeout: 5s): %w", err)
 	}
@@ -357,7 +357,7 @@ func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]interface{}, e
 	serverStatus := m.Client.Database("admin").RunCommand(ctx, map[string]interface{}{"serverStatus": 1})
 	var serverInfo map[string]interface{}
 	if serverStatus.Err() == nil {
-		serverStatus.Decode(&serverInfo)
+		_ = serverStatus.Decode(&serverInfo)
 	}
 
 	// Get list of collections
@@ -385,7 +385,7 @@ func (m *MongoManager) ExecuteRawQuery(ctx context.Context, collection string, q
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var results []map[string]interface{}
 	for cursor.Next(ctx) {

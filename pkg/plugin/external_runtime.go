@@ -90,9 +90,11 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 		return nil, fmt.Errorf("failed to read plugin script %s: %w", p.modulePath, err)
 	}
 
+	var cancel context.CancelFunc
 	execCtx := context.Background()
 	if ctx.Cancel != nil {
-		execCtx, _ = context.WithCancel(execCtx)
+		execCtx, cancel = context.WithCancel(execCtx)
+		defer cancel()
 	}
 
 	resp, err := p.client.Execute(execCtx, &ExecuteRequest{

@@ -84,12 +84,16 @@ func (e *embedFSWrapper) Rename(oldname, newname string) error {
 }
 
 // Stat returns file info
-func (e *embedFSWrapper) Stat(name string) (os.FileInfo, error) {
+func (e *embedFSWrapper) Stat(name string) (_ os.FileInfo, err error) {
 	file, err := e.fs.Open(name)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	// Get file info from the opened file
 	if stat, ok := file.(fs.FileInfo); ok {
@@ -307,9 +311,7 @@ func Exists(alias string) bool {
 	}
 
 	// Handle "all:" prefix if present
-	if strings.HasPrefix(physicalPath, "all:") {
-		physicalPath = physicalPath[4:] // Remove "all:" prefix
-	}
+	physicalPath = strings.TrimPrefix(physicalPath, "all:")
 
 	// Check if file exists in filesystem
 	_, err := instance.fs.Stat(physicalPath)
@@ -325,9 +327,7 @@ func (m *aferoManager) resolveAlias(alias string) (string, error) {
 	}
 
 	// Handle "all:" prefix if present
-	if strings.HasPrefix(physicalPath, "all:") {
-		physicalPath = physicalPath[4:] // Remove "all:" prefix
-	}
+	physicalPath = strings.TrimPrefix(physicalPath, "all:")
 
 	return physicalPath, nil
 }

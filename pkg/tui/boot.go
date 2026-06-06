@@ -267,7 +267,7 @@ func (m BootModel) View() string {
 		phaseText = "Boot failed!"
 		phaseIcon = "✗"
 	}
-	b.WriteString(fmt.Sprintf("%s %s\n\n", phaseIcon, bootPhaseStyle.Render(phaseText)))
+	fmt.Fprintf(&b, "%s %s\n\n", phaseIcon, bootPhaseStyle.Render(phaseText))
 
 	// Simple progress text
 	completed := 0
@@ -281,7 +281,7 @@ func (m BootModel) View() string {
 		}
 	}
 	if total > 0 {
-		b.WriteString(fmt.Sprintf("Progress: %d/%d services\n\n", completed, total))
+		fmt.Fprintf(&b, "Progress: %d/%d services\n\n", completed, total)
 	}
 
 	// Services list

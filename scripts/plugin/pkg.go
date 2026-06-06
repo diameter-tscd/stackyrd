@@ -111,7 +111,7 @@ func (c *Client) getJSON(path string, target interface{}) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -124,7 +124,7 @@ func (c *Client) postJSON(path string, body, target interface{}) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
@@ -140,7 +140,7 @@ func (c *Client) putJSON(path string, body, target interface{}) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
@@ -234,7 +234,7 @@ func cmdList(logger *Logger, args []string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	baseURL := fs.String("url", BASE_URL, "Base URL of the plugin API")
 	verbose := fs.Bool("verbose", false, "Verbose logging")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	logger.verbose = *verbose
 
 	client := NewClient(*baseURL, logger)
@@ -308,7 +308,7 @@ func cmdInfo(logger *Logger, args []string) {
 	fs := flag.NewFlagSet("info", flag.ExitOnError)
 	baseURL := fs.String("url", BASE_URL, "Base URL of the plugin API")
 	verbose := fs.Bool("verbose", false, "Verbose logging")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	logger.verbose = *verbose
 
 	positional := fs.Args()
@@ -366,7 +366,7 @@ func cmdExec(logger *Logger, args []string) {
 	verbose := fs.Bool("verbose", false, "Verbose logging")
 	mode := fs.String("mode", "", "Execution mode (plugin-specific)")
 	raw := fs.Bool("raw", false, "Print raw JSON response")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 	logger.verbose = *verbose
 
 	positional := fs.Args()

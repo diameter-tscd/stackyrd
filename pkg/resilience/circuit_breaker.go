@@ -133,14 +133,15 @@ func (cb *CircuitBreaker) RecordSuccess() {
 
 	cb.successes++
 
-	if cb.state == StateHalfOpen {
+	switch cb.state {
+	case StateHalfOpen:
 		cb.halfOpenCount++
 		if cb.halfOpenCount >= cb.config.HalfOpenMaxRequests {
 			cb.setState(StateClosed)
 			cb.failures = 0
 			cb.halfOpenCount = 0
 		}
-	} else if cb.state == StateClosed {
+	case StateClosed:
 		cb.failures = 0
 	}
 }

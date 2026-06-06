@@ -242,10 +242,14 @@ func (app *Application) handleShutdown(liveTUI *tui.LiveTUI, srv *server.Server)
 	select {
 	case <-sigChan:
 		liveTUI.AddLog(LogLevelWarn, "Shutting down...")
-		srv.Shutdown(context.Background(), app.logger)
+		if err := srv.Shutdown(context.Background(), app.logger); err != nil {
+			liveTUI.AddLog(LogLevelError, "Server shutdown error: "+err.Error())
+		}
 	case <-utils.ShutdownChan:
 		liveTUI.AddLog(LogLevelWarn, "Shutting down...")
-		srv.Shutdown(context.Background(), app.logger)
+		if err := srv.Shutdown(context.Background(), app.logger); err != nil {
+			liveTUI.AddLog(LogLevelError, "Server shutdown error: "+err.Error())
+		}
 	}
 
 	liveTUI.Stop()
@@ -260,7 +264,9 @@ func (app *Application) handleConsoleShutdown(srv *server.Server) {
 	<-sigChan
 
 	app.logger.Warn("Shutting down...")
-	srv.Shutdown(context.Background(), app.logger)
+	if err := srv.Shutdown(context.Background(), app.logger); err != nil {
+		app.logger.Error("Server shutdown error", err)
+	}
 	time.Sleep(ShutdownDelay)
 	os.Exit(0)
 }

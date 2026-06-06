@@ -58,11 +58,12 @@ func ParseFlags(flagDefinitions []FlagDefinition) (*ParsedFlags, error) {
 		switch ptr := flagPtrs[def.Name].(type) {
 		case *string:
 			value = *ptr
-			if def.Name == "c" {
+			switch def.Name {
+			case "c":
 				parsed.ConfigURL = *ptr
-			} else if def.Name == "port" {
+			case "port":
 				parsed.Port = *ptr
-			} else if def.Name == "env" {
+			case "env":
 				parsed.Env = *ptr
 			}
 			// Add new string flag assignments here

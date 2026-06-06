@@ -195,12 +195,13 @@ func (hc *HealthChecker) calculateOverallStatus(results map[string]*HealthResult
 	hasCriticalUnhealthy := false
 
 	for _, result := range results {
-		if result.Status == HealthStatusUnhealthy {
+		switch result.Status {
+		case HealthStatusUnhealthy:
 			hasUnhealthy = true
 			if result.Critical {
 				hasCriticalUnhealthy = true
 			}
-		} else if result.Status == HealthStatusDegraded {
+		case HealthStatusDegraded:
 			hasDegraded = true
 		}
 	}

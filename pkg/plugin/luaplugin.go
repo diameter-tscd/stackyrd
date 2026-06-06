@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 
 	lua "github.com/yuin/gopher-lua"
@@ -56,7 +57,7 @@ func (p *LuaScriptPlugin) Execute(ctx Context, args map[string]interface{}) (*Re
 	resultCh := make(chan *Result, 1)
 
 	sandbox := NewPluginSandbox(ctx.Limits)
-	execErr := sandbox.ExecuteWithGuard(nil, ctx.Limits, func() {
+	execErr := sandbox.ExecuteWithGuard(context.TODO(), ctx.Limits, func() {
 		L := lua.NewState()
 		defer L.Close()
 

@@ -254,7 +254,7 @@ func (gm *GrafanaManager) testConnection() error {
 
 	if resp.StatusCode != http.StatusOK {
 		gm.logger.Error("Grafana health check failed", nil, "status", resp.StatusCode)
-		return fmt.Errorf("Grafana health check failed with status: %d", resp.StatusCode)
+		return fmt.Errorf("grafana health check failed with status: %d", resp.StatusCode)
 	}
 
 	return nil

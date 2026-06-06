@@ -3,6 +3,7 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -231,7 +232,13 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.Handler()
 }
 
-// GetMetrics returns the metrics instance
+var globalMetrics *Metrics
+var metricsOnce sync.Once
+
+// GetMetrics returns the global metrics instance
 func GetMetrics() *Metrics {
-	return &Metrics{}
+	metricsOnce.Do(func() {
+		globalMetrics = NewMetrics()
+	})
+	return globalMetrics
 }

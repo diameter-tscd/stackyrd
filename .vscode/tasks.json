@@ -4,19 +4,234 @@
         {
             "label": "Build App",
             "type": "shell",
-            "command": "${workspaceFolder}\\scripts\\build.bat",
-            "args": [],
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/build/build.go"
+            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
             "presentation": {
-                "echo": true,
                 "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": true
+                "panel": "dedicated"
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build App (quick, no garble/upx)",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/build/build.go",
+                "-timeout",
+                "0"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Build App (garble + upx)",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/build/build.go",
+                "-garble",
+                "-upx"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "Docker: Build Image",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/docker/docker_build.go"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: Install",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/pkg/pkg.go"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: List",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/pkg/pkg.go",
+                "list"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: Upgrade All",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/pkg/pkg.go",
+                "upgrade"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Plugin: List",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/plugin/pkg.go",
+                "list"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Plugin: Manager Status",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/plugin/pkg.go",
+                "status"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Generate: New Service",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/service/service.go"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Generate: Swagger Docs",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "run",
+                "scripts/swagger/swagger.go"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "go: test all",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "test",
+                "./..."
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "go: vet",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "vet",
+                "./..."
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [
+                "$go"
+            ]
+        },
+        {
+            "label": "go: mod tidy",
+            "type": "shell",
+            "command": "go",
+            "args": [
+                "mod",
+                "tidy"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
             },
             "problemMatcher": []
         }

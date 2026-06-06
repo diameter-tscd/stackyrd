@@ -10,6 +10,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+var _ = &Hub{} // suppress unused lint; imported by other packages
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -26,11 +28,12 @@ type Client struct {
 
 // Hub manages WebSocket connections
 type Hub struct {
-	clients    map[*Client]bool
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	mu         sync.RWMutex
+	clients     map[*Client]bool
+	clientsByID map[string]*Client
+	broadcast   chan []byte
+	register    chan *Client
+	unregister  chan *Client
+	mu          sync.RWMutex
 }
 
 // Message represents a WebSocket message
@@ -43,10 +46,11 @@ type Message struct {
 // NewHub creates a new WebSocket hub
 func NewHub() *Hub {
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		clients:     make(map[*Client]bool),
+		clientsByID: make(map[string]*Client),
+		broadcast:   make(chan []byte),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
 	}
 }
 
@@ -57,6 +61,7 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			h.clientsByID[client.ID] = client
 			h.mu.Unlock()
 			log.Printf("Client connected: %s", client.ID)
 
@@ -64,6 +69,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
+				delete(h.clientsByID, client.ID)
 				close(client.Send)
 			}
 			h.mu.Unlock()
@@ -92,18 +98,19 @@ func (h *Hub) Broadcast(message []byte) {
 // SendToClient sends a message to a specific client
 func (h *Hub) SendToClient(clientID string, message []byte) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	for client := range h.clients {
-		if client.ID == clientID {
-			select {
-			case client.Send <- message:
-			default:
-				close(client.Send)
-				delete(h.clients, client)
-			}
-			break
-		}
+	client, ok := h.clientsByID[clientID]
+	h.mu.RUnlock()
+	if !ok {
+		return
+	}
+	select {
+	case client.Send <- message:
+	default:
+		h.mu.Lock()
+		delete(h.clients, client)
+		delete(h.clientsByID, client.ID)
+		close(client.Send)
+		h.mu.Unlock()
 	}
 }
 

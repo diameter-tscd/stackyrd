@@ -36,6 +36,8 @@ func (d *Dependencies) Set(name string, component interface{}) {
 
 // Get retrieves a component by name
 func (d *Dependencies) Get(name string) (interface{}, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	comp, ok := d.components[name]
 	return comp, ok
 }

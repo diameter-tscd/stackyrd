@@ -189,7 +189,7 @@ func (app *Application) runWithTUI() {
 func (app *Application) runWithConsole() {
 	// Print banner to console
 	if app.bannerText != "" {
-		fmt.Print(ColorPurple)
+		fmt.Print(ColorPrimary)
 		fmt.Println(app.bannerText)
 		fmt.Print(ColorReset)
 	}

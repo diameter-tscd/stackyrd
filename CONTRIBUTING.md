@@ -6,7 +6,6 @@ Thank you for taking the time to contribute! This document sets out the ground r
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
 - [Development Setup](#development-setup)
 - [Project Structure](#project-structure)
 - [Branching Strategy](#branching-strategy)
@@ -15,21 +14,13 @@ Thank you for taking the time to contribute! This document sets out the ground r
 - [Pull Request Guidelines](#pull-request-guidelines)
 - [Adding a New Service](#adding-a-new-service)
 - [Adding New Middleware](#adding-new-middleware)
+- [Adding a New Plugin](#adding-a-new-plugin)
 - [Adding Infrastructure Components](#adding-infrastructure-components)
 - [Testing](#testing)
 - [Code Quality](#code-quality)
 - [Reporting Bugs](#reporting-bugs)
 - [Feature Requests](#feature-requests)
 - [License](#license)
-
----
-
-## Code of Conduct
-
-- Be respectful and considerate in all interactions.
-- Welcome newcomers and help them get up to speed.
-- Focus on constructive feedback.
-- Respect differing viewpoints and experiences.
 
 ---
 
@@ -41,6 +32,7 @@ Thank you for taking the time to contribute! This document sets out the ground r
 - **Docker + Docker Compose** — for the dev environment stack
 - **Git** — for version control
 - Optional: `garble` (`go install mvdan.cc/garble@latest`) — for obfuscated builds
+- Optional: `pip3 install grpcio protobuf` — for Python (`ext:`) plugins
 
 ### Clone the Repository
 
@@ -101,6 +93,8 @@ stackyrd/
 ├── pkg/
 │   ├── interfaces/                    # Core interfaces (Service, etc.)
 │   ├── registry/                      # Service registry & DI container
+│   ├── plugin/                        # Plugin system (TS/Lua/Python/Go runtimes)
+│   │   └── builtin/                   # Built-in plugin manifests + scripts
 │   ├── infrastructure/                # Infrastructure components (auto-registered)
 │   ├── logger/                        # Structured logger (zerolog)
 │   ├── response/                      # API response helpers
@@ -258,6 +252,108 @@ type InfrastructureComponent interface {
     GetStatus() map[string]interface{}
 }
 ```
+
+---
+
+## Adding a New Plugin
+
+Four plugin types are supported: **TypeScript**, **Lua**, **Python** (gRPC subprocess), and **Go**. Each follows a different creation pattern but shares the same auto-discovery mechanism via `//go:embed builtin`.
+
+### TypeScript Plugin
+
+1. Create `pkg/plugin/builtin/{name}/plugin.yaml`:
+    ```yaml
+    name: my_plugin
+    version: 1.0.0
+    description: My TypeScript plugin
+    author: you
+    entrypoint: "ts:scripts/handler.ts"
+    limits:
+      max_timeout_ms: 5000
+      max_memory_bytes: 26214400
+    ```
+2. Create `pkg/plugin/builtin/{name}/scripts/handler.ts` using the injected globals `$args`, `$logger`, `$infra`, `$limits`, and `$done()`.
+3. At startup, the `.ts` is transpiled to JS via esbuild (SHA256-cached) and executed in a sandboxed goja VM.
+4. No Go code needed. See `pkg/plugin/sdk/plugin.d.ts` for type declarations.
+
+### Lua Plugin
+
+1. Create `pkg/plugin/builtin/{name}/plugin.yaml`:
+    ```yaml
+    name: my_lua_plugin
+    version: 1.0.0
+    description: My Lua plugin
+    author: you
+    entrypoint: "lua:scripts/handler.lua"
+    limits:
+      max_timeout_ms: 10000
+      max_memory_bytes: 33554432
+    ```
+2. Create `pkg/plugin/builtin/{name}/scripts/handler.lua` with a `handle(args)` function using the injected globals `args`, `logger`, `limits`, `infra`, `plugin_name`, and `done()`.
+3. No transpilation step — Lua runs directly in the embedded gopher-lua VM (pure Go, no CGo).
+4. The sandbox blocks `io`, `os` (except `os.time`), `debug`, `loadfile`, `dofile`, and `require` with file paths.
+
+### Python / External Language Plugin
+
+1. Create `pkg/plugin/builtin/{name}/plugin.yaml`:
+    ```yaml
+    name: my_python_plugin
+    version: 1.0.0
+    description: My Python plugin
+    author: you
+    entrypoint: "ext:scripts/handler.py"
+    limits:
+      max_timeout_ms: 15000
+      max_memory_bytes: 33554432
+    ```
+2. Create `pkg/plugin/builtin/{name}/scripts/handler.py` with a class extending `Plugin` from `sdk`:
+    ```python
+    from sdk import Plugin
+
+    class MyPlugin(Plugin):
+        def execute(self, args):
+            name = args.get("name", "world")
+            return {"success": True, "data": {"message": f"Hello, {name}!"}}
+    ```
+3. The Python script runs as a subprocess communicating via gRPC over a Unix socket.
+4. Requires `pip3 install grpcio protobuf` on the host.
+
+### Go Plugin
+
+1. Create a flat `.go` file in `pkg/plugin/` (e.g., `pkg/plugin/plugin_myplugin.go`):
+    ```go
+    package plugin
+
+    import "github.com/spf13/afero"
+
+    func init() {
+        RegisterPlugin("myplugin", func(meta PluginMeta, fs afero.Fs) (Plugin, error) {
+            return &MyPlugin{fs: fs, name: meta.Name}, nil
+        })
+    }
+
+    type MyPlugin struct {
+        fs   afero.Fs
+        name string
+    }
+
+    func (p *MyPlugin) Meta() PluginMeta { return PluginMeta{Name: p.name} }
+    func (p *MyPlugin) Execute(ctx Context, args map[string]interface{}) (*Result, error) {
+        return &Result{Success: true, Data: map[string]interface{}{"message": "hello"}}, nil
+    }
+    func (p *MyPlugin) Validate() error { return nil }
+    func (p *MyPlugin) Close() error    { return nil }
+    ```
+2. Create `pkg/plugin/builtin/{name}/plugin.yaml` with `entrypoint: "go:MyPlugin"`.
+3. **Important:** Go registration files must be placed directly in `pkg/plugin/` (not inside `builtin/`), because Go requires all files with the same `package` declaration to be in a single directory.
+
+### All Plugin Types
+
+- The plugin is auto-discovered at startup via `//go:embed builtin`.
+- Runtime script overrides can be uploaded via `PUT /api/v1/plugins/:name/scripts/:file`.
+- Config overrides can be set in `config.yaml` → `plugins.overrides`.
+- Plugin execution is tracked with per-plugin stats (count, duration, memory).
+- See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for complete documentation, and `.agent/skills/PLUGIN_PKG.md` for package internals.
 
 ---
 

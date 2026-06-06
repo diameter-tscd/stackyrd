@@ -46,6 +46,22 @@ stackyrd/
 ├── pkg/
 │   ├── interfaces/
 │   │   └── service.go    # Service interface
+│   ├── plugin/            # Plugin system (auto-discovered, TS/Go hybrid)
+│   │   ├── plugin.go      # Plugin interface, Runtime interface, PluginMeta, Context, Result
+│   │   ├── registry.go    # PluginRegistry singleton
+│   │   ├── bridge.go      # PluginBridge — infra component so services can call plugins
+│   │   ├── runtime.go     # goja JS runtime + injected globals
+│   │   ├── runtime_registry.go  # Runtime registry — prefix-based lookup for plugin engines
+│   │   ├── transpiler.go  # esbuild TS→JS + SHA256 cache
+│   │   ├── sandbox.go     # Timeout + OOM enforcement
+│   │   ├── store.go       # afero embed + overlay filesystem
+│   │   ├── gin.go         # REST management handlers
+│   │   ├── init.go        # Bootstrap: scan builtin/, instantiate, wire routes
+│   │   ├── tsplugin.go    # TSScriptPlugin + tsRuntime for TS entrypoints
+│   │   ├── external_runtime.go  # ExternalPlugin + externalRuntime for gRPC-based plugins (Python, etc.)
+│   │   ├── embed.go       # //go:embed builtin/
+│   │   ├── builtin/       # Built-in plugin manifests + scripts (TS and Python)
+│   │   └── sdk/           # TypeScript type declarations
 │   ├── registry/
 │   │   ├── registry.go              # Service factory registry, auto-discovery
 │   │   ├── dependencies.go          # Generic DI container (Dependencies)
@@ -232,6 +248,128 @@ go test -v ./pkg/testing/... # Run test helpers
 | `github.com/robfig/cron/v3` | Cron scheduler |
 | `spf13/afero` | Virtual filesystem abstraction |
 | `github.com/gorilla/websocket` | WebSocket support |
+| `github.com/dop251/goja` | JavaScript runtime (plugin execution) |
+| `github.com/evanw/esbuild` | In-process TypeScript → JS transpiler |
+| `google.golang.org/grpc` | gRPC framework (external plugin communication) |
+| `google.golang.org/protobuf` | Protobuf runtime (external plugins) |
+
+---
+
+## Plugin System (`pkg/plugin/`)
+
+The plugin system is a self-contained subsystem that loads TypeScript, Lua, Python, or Go plugins from embedded `builtin/` directories. TypeScript plugins are transpiled via esbuild and executed in sandboxed goja VMs. Lua plugins run in-process in sandboxed gopher-lua VMs. External plugins (prefix `ext:`) are run as subprocesses communicating via gRPC. Plugins access infrastructure components via `$infra.get(name)` (TS), `infra:get(name)` (Lua), and communicate results via `$done()` / `done()` or return values (Python/Go).
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `plugin.go` | `Plugin` interface, `Runtime` interface, `PluginMeta`, `ResourceLimits`, `Context`, `Result` |
+| `registry.go` | `PluginRegistry` singleton — factory/meta/filesystem maps |
+| `bridge.go` | `PluginBridge` — `InfrastructureComponent` so services/infra can call plugins |
+| `sandbox.go` | Timeout enforcement, RSS memory monitor (gopsutil), panic recovery |
+| `transpiler.go` | SHA256-cached esbuild TS→JS transpilation |
+| `runtime.go` | goja VM: fresh per call, injects `$args`, `$logger`, `$infra`, `$limits`, `$done` |
+| `runtime_registry.go` | `Runtime` registry — prefix-based lookup for plugin execution engines |
+| `tsplugin.go`    | `TSScriptPlugin` + `tsRuntime` for TS entrypoints |
+| `luaplugin.go`    | `LuaScriptPlugin` + `luaRuntime` for Lua entrypoints |
+| `external_runtime.go`  | `ExternalPlugin` + `externalRuntime` for gRPC-based plugins (Python, etc.) |
+| `store.go` | `embed.FS` → afero `CopyOnWriteFs` adapter (read-only base + writable overlay) |
+| `gin.go` | 8 REST handlers: list, get, execute, upload, listScripts, getScript, unload, manager/status |
+| `init.go` | Bootstrap: scan builtin/, instantiate, wire routes |
+
+### PluginBridge — cross-interaction bridge
+
+`PluginBridge` wraps `PluginRegistry` and implements `InfrastructureComponent`, making it discoverable by both infrastructure components and services:
+
+```go
+type PluginBridge struct { ... }
+
+// InfrastructureComponent implementation
+func (b *PluginBridge) Name() string    // returns "plugins"
+func (b *PluginBridge) Close() error
+func (b *PluginBridge) GetStatus() map[string]interface{}  // all plugins + status
+
+// Public API for services & infra components
+func (b *PluginBridge) HasPlugin(name string) bool
+func (b *PluginBridge) GetMeta(name string) (PluginMeta, bool)
+func (b *PluginBridge) Execute(name string, args map[string]interface{}) (*Result, error)
+func (b *PluginBridge) ListPlugins() []PluginSummary
+```
+
+### How services and infra components interact with plugins
+
+**From a service** — the `PluginBridge` is available in the `Dependencies` bag as `"plugins"`:
+
+```go
+// In the service factory (init() function):
+registry.RegisterService("my_service", func(cfg *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    var bridge *plugin.PluginBridge
+    if b, ok := deps.Get("plugins"); ok {
+        bridge, _ = b.(*plugin.PluginBridge)
+    }
+    return NewMyService(cfg.Services.IsEnabled("my_service"), logger, bridge)
+})
+
+// Then at runtime in the service:
+func (s *MyService) handleStatus(c *gin.Context) {
+    if s.bridge != nil && s.bridge.HasPlugin("inspector") {
+        result, err := s.bridge.Execute("inspector", map[string]interface{}{
+            "mode": "ping",
+        })
+        // ...
+    }
+}
+```
+
+**From an infrastructure component** — access via the global `ComponentRegistry`:
+
+```go
+reg := infrastructure.GetGlobalRegistry()
+if comp, ok := reg.Get("plugins"); ok {
+    if bridge, ok := comp.(*plugin.PluginBridge); ok {
+        plugins := bridge.ListPlugins()
+    }
+}
+```
+
+**Convenience accessor** — for any Go code that has access to the logger:
+
+```go
+bridge := plugin.GetGlobalPluginBridge()
+if bridge != nil && bridge.HasPlugin("inspector") {
+    // ...
+}
+```
+
+### Boot order
+
+Plugin init happens **before** service auto-discovery in `server.go`:
+
+```
+Infrastructure async init → populate Dependencies → PLUGIN INIT → bridge→Set("plugins") → Middleware → AutoDiscoverServices (plugins available in deps)
+```
+
+### Adding a plugin
+
+**TypeScript plugin:**
+1. Create `pkg/plugin/builtin/{name}/plugin.yaml` with manifest, entrypoint `"ts:scripts/handler.ts"`
+2. Create `pkg/plugin/builtin/{name}/scripts/handler.ts` using `$infra.get(name)`, `$logger.*`, `$done()` globals
+3. See `pkg/plugin/sdk/plugin.d.ts` for TypeScript type declarations
+
+**Lua plugin:**
+1. Create `pkg/plugin/builtin/{name}/plugin.yaml` with manifest, entrypoint `"lua:scripts/handler.lua"`
+2. Create `pkg/plugin/builtin/{name}/scripts/handler.lua` using `args`, `logger`, `infra`, `done()` globals
+3. No transpilation needed — Lua runs directly in the embedded gopher-lua VM
+
+**External language plugin (Python, etc. via gRPC):**
+1. Write a Python script implementing a class with an `execute(self, args)` method
+2. Create `pkg/plugin/builtin/{name}/plugin.yaml` with entrypoint `"ext:scripts/handler.py"`
+3. The python host (`pkg/plugin/python/host.py`) loads the script and serves it via gRPC
+4. See `pkg/plugin/python/sdk.py` for the base `Plugin` class
+
+**Go plugin:**
+1. Create a flat `.go` file in `pkg/plugin/` implementing the `Plugin` interface with `init()` registration
+2. Create `pkg/plugin/builtin/{name}/plugin.yaml` with entrypoint `"go:FuncName"`
 
 ---
 
@@ -260,6 +398,14 @@ go test -v ./pkg/testing/... # Run test helpers
 Module path: `stackyrd` (internal to this repo). All Go import paths are relative to the module root. Binary output goes to `dist/` (git-ignored).
 
 ---
+
+## Documentation
+
+The canonical project documentation lives in **`docs_wiki/`**. Each conceptual area (architecture, testing, resilience, plugins, etc.) has a dedicated file indexed by `docs_wiki/README.md`.
+
+**`docs_wiki/README.md` is the table of contents** — it links to every file inside `docs_wiki/`, organized by topic. When you add, remove, or reorganize any `docs_wiki/*.md` file, update `docs_wiki/README.md` to match.
+
+**When adding or updating packages, middleware, services, or patterns,** update the corresponding `docs_wiki/*.md` file and the `docs_wiki/README.md` index to keep them in sync.
 
 ## Targets you should never commit
 

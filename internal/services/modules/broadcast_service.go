@@ -1,9 +1,12 @@
 package modules
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"stackyrd/config"
@@ -255,13 +258,22 @@ func (s *BroadcastService) stopStream(c *gin.Context) {
 	response.Success(c, nil, fmt.Sprintf("Stream '%s' stopped and removed", streamID))
 }
 
+var sseBufPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
 func (s *BroadcastService) sendSSEEvent(c *gin.Context, event utils.EventData) error {
-	eventJSON, err := json.Marshal(event)
-	if err != nil {
+	buf := sseBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer sseBufPool.Put(buf)
+
+	if err := json.NewEncoder(buf).Encode(event); err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON)
+	_, err := fmt.Fprintf(c.Writer, "data: %s\n\n", strings.TrimRight(buf.String(), "\n"))
 	if err != nil {
 		return err
 	}

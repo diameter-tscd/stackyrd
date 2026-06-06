@@ -45,12 +45,16 @@ docs_wiki/
 *.md
 !README.md
 
-# Scripts (not needed in container)
-scripts/
+# Scripts (exclude build/dev tools, keep plugin host for Python/ext: plugins)
+scripts/build/
+scripts/docker/
+scripts/pkg/
+scripts/swagger/
+scripts/service/
 
 # Docker files
 Dockerfile*
-docker-compose*.yml
+docker-compose*.yaml
 .dockerignore
 
 # CI/CD
@@ -64,6 +68,10 @@ Jenkinsfile
 # Temporary files
 *.tmp
 *.bak
+
+# Python bytecode cache
+__pycache__/
+*.pyc
 
 # Node modules (if any)
 node_modules/

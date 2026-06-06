@@ -1,6 +1,6 @@
 app:
   name: "stackyrd"
-  version: "1.0.0"
+  version: "1.0.1"
   debug: true
   env: "development"
   banner_path: "banner.txt"
@@ -115,3 +115,10 @@ encryption:
   key: ""
   rotate_keys: false
   key_rotation_interval: "24h"
+
+plugins:
+  enabled: true
+  default_limits:
+    max_timeout_ms: 30000
+    max_memory_bytes: 104857600
+  # allowlist: []

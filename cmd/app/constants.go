@@ -38,9 +38,9 @@ const (
 	ServiceExternalName   = "External Services"
 
 	// Color codes for TUI output
-	ColorPurple = "\033[35m"
-	ColorReset  = "\033[0m"
-	ColorYellow = "\033[33m"
+	ColorPrimary = "\033[38;2;141;174;165m" // #8daea5 — TUI primary accent
+	ColorReset   = "\033[0m"
+	ColorYellow  = "\033[33m"
 
 	// Error messages
 	ErrInvalidConfigURLFormat = "invalid config URL format"

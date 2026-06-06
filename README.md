@@ -12,7 +12,24 @@
 </div>
 <br>
 
-Stackyrd provides an enterprise-grade service fabric foundation for building robust and observable distributed systems in Go. Our goal is to bridge the gap between rapid development cycles and industrial-strength stability, making complex microservices architectures manageable from day one.
+**stackyrd** is an open-source, modular service framework for Go built on [Gin](https://github.com/gin-gonic/gin). It provides a layered architecture with auto-discovered services, middleware, infrastructure components, and a multi-language plugin system - so you can focus on business logic while the framework handles wiring, observability, and lifecycle.
+
+### Core Architecture
+
+| Layer | What it does |
+|-------|-------------|
+| **Services** | Business logic modules auto-registered via `init()`, toggled via config |
+| **Middleware** | Pluggable HTTP middleware chain (JWT, CORS, rate-limit, audit, security headers) |
+| **Infrastructure** | Managed clients for Redis, PostgreSQL, Kafka, MongoDB, MinIO, Grafana — with async init and health checks |
+| **Plugins** | TypeScript (sandboxed goja), Lua (gopher-lua VM), Python (gRPC subprocess), or Go plugins callable from any service |
+| **TUI / Console** | Interactive bubbletea dashboard or console fallback |
+
+### What you can build
+
+- **Microservices** with standardized routing, config, and observability out of the box
+- **Data pipelines** with Kafka, batch processing, and cron scheduling
+- **Multi-tenant APIs** with per-tenant Postgres/MongoDB connection management
+- **Extensible platforms** where users upload TypeScript/Python scripts that run safely in sandboxed runtimes
 
 ## Quick Start
 
@@ -41,17 +58,11 @@ go run scripts/pkg/pkg.go
 
 ![Console](.github/assets/console.png)
 
-## Key Features
-
-- **Modular Services**: Enable/disable services via configuration
-- **Terminal UI**: Interactive boot sequence and live CLI dashboard
-- **Infrastructure Support**: Redis, PostgreSQL (multi-tenant), Kafka, MinIO and many more at `stackyrd-pkg`
-- **Security**: API encryption, authentication, and access controls
-- **Build Tools**: Automated build scripts with backup and archiving with `build.go`
-
 ## Documentation
 
-**[Full Documentation](docs_wiki/)** - Comprehensive guides and references
+- **[Full Documentation](docs_wiki/)** — Comprehensive guides and references
+- **[Plugin System Guide](PLUGIN_GUIDE.md)** — Creating and managing TypeScript, Lua, Python, and Go plugins
+- **[Contributing Guide](CONTRIBUTING.md)** — Development workflow and guidelines
 
 ## License
 

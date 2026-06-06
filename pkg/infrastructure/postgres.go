@@ -249,6 +249,17 @@ func (p *PostgresManager) Insert(ctx context.Context, query string, args ...inte
 	return res.RowsAffected()
 }
 
+var rawQueryPool = sync.Pool{
+	New: func() interface{} {
+		return &rawQueryRow{}
+	},
+}
+
+type rawQueryRow struct {
+	values    []interface{}
+	valuePtrs []interface{}
+}
+
 // ExecuteRawQuery executes a raw SQL query and returns the results as a slice of maps
 func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) ([]map[string]interface{}, error) {
 	if p.DB == nil {
@@ -266,25 +277,32 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) ([]
 		return nil, err
 	}
 
+	numCols := len(columns)
+
 	// Initialize with make to ensure empty slice [] instead of nil
 	results := make([]map[string]interface{}, 0)
 
 	for rows.Next() {
-		// Create a slice of interface{} to hold values
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range columns {
-			valuePtrs[i] = &values[i]
+		r := rawQueryPool.Get().(*rawQueryRow)
+		if cap(r.values) < numCols {
+			r.values = make([]interface{}, numCols)
+			r.valuePtrs = make([]interface{}, numCols)
+		} else {
+			r.values = r.values[:numCols]
+			r.valuePtrs = r.valuePtrs[:numCols]
+		}
+		for i := 0; i < numCols; i++ {
+			r.valuePtrs[i] = &r.values[i]
 		}
 
-		if err := rows.Scan(valuePtrs...); err != nil {
+		if err := rows.Scan(r.valuePtrs...); err != nil {
+			rawQueryPool.Put(r)
 			return nil, err
 		}
 
-		// Create a map for the current row
-		rowMap := make(map[string]interface{})
+		rowMap := make(map[string]interface{}, numCols)
 		for i, col := range columns {
-			val := values[i]
+			val := r.values[i]
 
 			// Handle byte arrays (common for strings in some drivers)
 			if b, ok := val.([]byte); ok {
@@ -294,6 +312,12 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) ([]
 			}
 		}
 		results = append(results, rowMap)
+
+		// Zero values before returning to pool
+		for i := range r.values {
+			r.values[i] = nil
+		}
+		rawQueryPool.Put(r)
 	}
 
 	return results, nil

@@ -55,10 +55,11 @@ type WebhookResponse struct {
 
 // WebhookManager manages webhooks
 type WebhookManager struct {
-	config   WebhookConfig
-	client   *http.Client
-	mu       sync.RWMutex
-	handlers map[string][]func(event WebhookEvent)
+	config    WebhookConfig
+	client    *http.Client
+	mu        sync.RWMutex
+	handlers  map[string][]func(event WebhookEvent)
+	semaphore chan struct{} // bounded concurrency for Trigger
 }
 
 // NewWebhookManager creates a new webhook manager
@@ -68,7 +69,8 @@ func NewWebhookManager(config WebhookConfig) *WebhookManager {
 		client: &http.Client{
 			Timeout: config.Timeout,
 		},
-		handlers: make(map[string][]func(event WebhookEvent)),
+		handlers:  make(map[string][]func(event WebhookEvent)),
+		semaphore: make(chan struct{}, 100), // max 100 concurrent handler goroutines
 	}
 }
 
@@ -87,7 +89,11 @@ func (wm *WebhookManager) Trigger(event WebhookEvent) {
 	wm.mu.RUnlock()
 
 	for _, handler := range handlers {
-		go handler(event)
+		wm.semaphore <- struct{}{}
+		go func(fn func(WebhookEvent)) {
+			defer func() { <-wm.semaphore }()
+			fn(event)
+		}(handler)
 	}
 }
 

@@ -142,23 +142,23 @@ func getLevelFormatter(output OutputConfig) func(interface{}) string {
 		}
 	}
 
-	// Pastel color formatter
+	// TUI‑matching color formatter
 	return func(i interface{}) string {
 		var l string
 		if ll, ok := i.(string); ok {
 			switch ll {
 			case "debug":
-				l = "\x1b[38;2;139;233;253m[ DEBUG ]\x1b[0m" // Pastel Cyan
+				l = "\x1b[38;2;179;235;248m[ DEBUG ]\x1b[0m" // #b3ebf8ff
 			case "info":
-				l = "\x1b[38;2;189;147;249m[ INFO  ]\x1b[0m" // Pastel Purple
+				l = "\x1b[38;2;154;248;177m[ INFO  ]\x1b[0m" // #9af8b1ff
 			case "warn":
-				l = "\x1b[38;2;241;250;140m[ WARN  ]\x1b[0m" // Pastel Yellow
+				l = "\x1b[38;2;245;250;192m[ WARN  ]\x1b[0m" // #f5fac0ff
 			case "error":
-				l = "\x1b[38;2;255;121;198m[ ERROR ]\x1b[0m" // Pastel Pink
+				l = "\x1b[38;2;246;115;115m[ ERROR ]\x1b[0m" // #f67373ff
 			case "fatal":
-				l = "\x1b[38;2;255;85;85m[ FATAL ]\x1b[0m" // Pastel Red
+				l = "\x1b[38;2;248;38;38m[ FATAL ]\x1b[0m" // #f82626ff
 			case "panic":
-				l = "\x1b[38;2;255;85;85m[ PANIC ]\x1b[0m" // Pastel Red
+				l = "\x1b[38;2;248;38;38m[ PANIC ]\x1b[0m" // #f82626ff
 			default:
 				l = strings.ToUpper(ll)
 			}

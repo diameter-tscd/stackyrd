@@ -14,6 +14,7 @@ import (
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 	"stackyrd/pkg/utils"
@@ -72,6 +73,18 @@ func (s *Server) Start() error {
 	// Handle database connection defaults
 	s.setConnectionDefaults()
 
+	// Initialize plugin system — happens before services so they can
+	// discover plugins via the PluginBridge.
+	s.logger.Info("Initializing Plugin system...")
+	pluginGroup := s.gin.Group("/api/v1")
+	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
+		s.logger.Error("Failed to initialize plugin system", err)
+	}
+	if bridge := plugin.GetGlobalPluginBridge(); bridge != nil {
+		s.dependencies.Set("plugins", bridge)
+		s.logger.Info("PluginBridge registered in service dependencies as 'plugins'")
+	}
+
 	s.logger.Info("Initializing Middleware...")
 
 	// Apply middleware configuration from config
@@ -82,6 +95,21 @@ func (s *Server) Start() error {
 	for _, mw := range middlewares {
 		if mw != nil {
 			s.gin.Use(mw)
+		}
+	}
+
+	s.logger.Info("Registering infrastructure component routes...")
+	for name, comp := range componentRegistry.GetAll() {
+		if rr, ok := comp.(infrastructure.RouteRegistrar); ok {
+			for _, rh := range rr.RouteHandlers() {
+				rg := s.gin.Group(rh.Path)
+				if rh.Mode == infrastructure.RouterCustom && len(rh.Handlers) > 0 {
+					rg.Use(rh.Handlers...)
+				}
+				rh.Handler(rg)
+				s.logger.Info("Mounted component routes",
+					"component", name, "path", rh.Path, "mode", rh.Mode)
+			}
 		}
 	}
 

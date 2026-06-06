@@ -15,11 +15,20 @@ type Cache[T any] struct {
 	mu    sync.RWMutex
 }
 
-// New creates a new in-memory cache
+// New creates a new in-memory cache with a background cleanup goroutine
+// that evicts expired items every 5 minutes.
 func New[T any]() *Cache[T] {
-	return &Cache[T]{
+	c := &Cache[T]{
 		items: make(map[string]Item[T]),
 	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			c.Cleanup()
+		}
+	}()
+	return c
 }
 
 // Set adds an item to the cache with a TTL (duration).

@@ -214,7 +214,16 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 // BroadcastToAll sends an event to all clients across all streams
 func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]interface{}) {
 	eb.mu.RLock()
-	clients := eb.streams
+	// Snapshot all clients across all streams while holding the lock
+	type streamClient struct {
+		client *StreamClient
+	}
+	var snapshot []streamClient
+	for _, streamClients := range eb.streams {
+		for _, client := range streamClients {
+			snapshot = append(snapshot, streamClient{client: client})
+		}
+	}
 	eb.mu.RUnlock()
 
 	event := EventData{
@@ -227,20 +236,17 @@ func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, dat
 
 	var toUnsubscribe []string
 
-	for streamID, streamClients := range clients {
-		for _, client := range streamClients {
-			select {
-			case client.Channel <- event:
-				client.lastSeen.Store(time.Now().Unix())
-			default:
-				// Channel full — count and queue for unsubscription
-				client.droppedMessages.Add(1)
-				if client.droppedMessages.Load() > 100 {
-					toUnsubscribe = append(toUnsubscribe, client.ID)
-				}
+	for _, sc := range snapshot {
+		select {
+		case sc.client.Channel <- event:
+			sc.client.lastSeen.Store(time.Now().Unix())
+		default:
+			// Channel full — count and queue for unsubscription
+			sc.client.droppedMessages.Add(1)
+			if sc.client.droppedMessages.Load() > 100 {
+				toUnsubscribe = append(toUnsubscribe, sc.client.ID)
 			}
 		}
-		_ = streamID
 	}
 
 	if len(toUnsubscribe) > 0 {

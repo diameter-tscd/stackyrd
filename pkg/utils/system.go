@@ -32,6 +32,12 @@ var (
 	routineValue          atomic.Int32
 )
 
+var (
+	cpuPercentCache     float64
+	cpuPercentCacheTime time.Time
+	cpuPercentMu        sync.Mutex
+)
+
 // GetSystemStats gathers CPU and Memory usage.
 func GetSystemStats() (map[string]interface{}, error) {
 	v, err := mem.VirtualMemory()
@@ -39,13 +45,24 @@ func GetSystemStats() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get memory info: %w", err)
 	}
 
-	c, err := cpu.Percent(100*time.Millisecond, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cpu stats: %w", err)
+	cpuPercentMu.Lock()
+	cpuVal := cpuPercentCache
+	if time.Since(cpuPercentCacheTime) > 2*time.Second {
+		// Refresh in background so the caller doesn't block for 100ms
+		go func() {
+			c, err := cpu.Percent(100*time.Millisecond, false)
+			if err == nil && len(c) > 0 {
+				cpuPercentMu.Lock()
+				cpuPercentCache = c[0]
+				cpuPercentCacheTime = time.Now()
+				cpuPercentMu.Unlock()
+			}
+		}()
 	}
+	cpuPercentMu.Unlock()
 
 	stats := map[string]interface{}{
-		"cpu_percent":         c[0],
+		"cpu_percent":         cpuVal,
 		"memory_total_mb":     v.Total / 1024 / 1024,
 		"memory_used_mb":      v.Used / 1024 / 1024,
 		"memory_used_percent": v.UsedPercent,

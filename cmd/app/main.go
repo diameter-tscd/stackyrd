@@ -10,14 +10,11 @@ import (
 
 // @title stackyrd API
 // @version 1.0
-// @description stackyrd API Documentation - A modular Go API framework
+// @description stackyrd API Documentation - A modular service framework for Go.
 // @termsOfService http://swagger.io/terms/
 
-// @contact.name API Support
-// @contact.email admin@stackyrd.com
-
 // @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @license.url https://github.com/diameter-tscd/stackyrd/blob/master/LICENSE
 
 // @host localhost:8080
 // @BasePath /api/v1

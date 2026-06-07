@@ -3,8 +3,8 @@ package infrastructure
 import (
 	"context"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +21,6 @@ type MongoManager struct {
 	Database *mongo.Database
 	Pool     *WorkerPool // Async worker pool
 	// statusCache avoids re-running Ping + dbStats on every /health call.
-	statusTTL    time.Duration
 	statusExpiry time.Time
 	statusCache  map[string]interface{}
 	statusMu     sync.Mutex
@@ -171,20 +170,20 @@ func (m *MongoConnectionManager) GetAllConnections() map[string]*MongoManager {
 }
 
 // GetStatus returns status for all connections
-func (m *MongoConnectionManager) GetStatus() map[string]interface{} {
+func (m *MongoConnectionManager) GetStatus(ctx context.Context) map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	status := make(map[string]interface{})
 
 	for name, conn := range m.connections {
-		status[name] = conn.GetStatus()
+		status[name] = conn.GetStatus(ctx)
 	}
 
 	return status
 }
 
 // Close closes all connections (implements InfrastructureComponent)
-func (m *MongoConnectionManager) Close() error {
+func (m *MongoConnectionManager) Close(ctx context.Context) error {
 	return m.CloseAll()
 }
 
@@ -206,7 +205,7 @@ func (m *MongoConnectionManager) CloseAll() error {
 	return nil
 }
 
-func (m *MongoManager) GetStatus() map[string]interface{} {
+func (m *MongoManager) GetStatus(ctx context.Context) map[string]interface{} {
 	stats := make(map[string]interface{})
 	if m == nil || m.Client == nil {
 		stats["connected"] = false
@@ -585,7 +584,7 @@ func (m *MongoManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the MongoDB manager and its worker pool.
-func (m *MongoManager) Close() error {
+func (m *MongoManager) Close(ctx context.Context) error {
 	if m.Pool != nil {
 		m.Pool.Close()
 	}

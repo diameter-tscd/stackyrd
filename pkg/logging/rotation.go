@@ -1,3 +1,4 @@
+// Package logging provides structured logging with rotation and sampling support.
 package logging
 
 import (

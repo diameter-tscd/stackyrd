@@ -1,4 +1,4 @@
-module stackyrd
+module github.com/diameter-tscd/stackyrd
 
 go 1.25.3
 

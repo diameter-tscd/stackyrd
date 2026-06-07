@@ -1,8 +1,9 @@
+//lint:file-ignore U1000 Example code — intentionally not called from production paths
 package examples
 
 import (
-	"stackyrd/pkg/request"
-	"stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/pkg/request"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

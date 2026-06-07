@@ -1,12 +1,35 @@
+// Package response provides standard API response helpers for consistent HTTP responses
+// across all services. It includes success/error response builders, pagination metadata,
+// and structured error codes.
 package response
 
 import (
+	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"sync/atomic"
-	"fmt"
+)
+
+// ErrorCode is a typed string for standardized error codes across all services.
+type ErrorCode string
+
+const (
+	ErrorBadRequest          ErrorCode = "BAD_REQUEST"
+	ErrorUnauthorized        ErrorCode = "UNAUTHORIZED"
+	ErrorForbidden           ErrorCode = "FORBIDDEN"
+	ErrorNotFound            ErrorCode = "NOT_FOUND"
+	ErrorConflict            ErrorCode = "CONFLICT"
+	ErrorValidation          ErrorCode = "VALIDATION_ERROR"
+	ErrorInternal            ErrorCode = "INTERNAL_ERROR"
+	ErrorServiceUnavailable  ErrorCode = "SERVICE_UNAVAILABLE"
+	ErrorRateLimited         ErrorCode = "RATE_LIMITED"
+	ErrorTimeout             ErrorCode = "TIMEOUT"
+	ErrorUpstreamFailure     ErrorCode = "UPSTREAM_FAILURE"
+	ErrorEndpointNotFound   ErrorCode = "ENDPOINT_NOT_FOUND"
+	ErrorHTTPError          ErrorCode = "HTTP_ERROR"
+	ErrorRateLimitExceeded  ErrorCode = "RATE_LIMIT_EXCEEDED"
 )
 
 // Response represents the standard API response structure
@@ -24,7 +47,7 @@ type Response struct {
 
 // ErrorDetail represents detailed error information
 type ErrorDetail struct {
-	Code    string                 `json:"code"`
+	Code    ErrorCode              `json:"code"`
 	Message string                 `json:"message"`
 	Details map[string]interface{} `json:"details,omitempty"`
 }
@@ -143,7 +166,7 @@ func NoContent(c *gin.Context) {
 
 // BadRequest sends a 400 Bad Request error response
 func BadRequest(c *gin.Context, message string, details ...map[string]interface{}) {
-	Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
+	Error(c, http.StatusBadRequest, ErrorBadRequest, message, details...)
 }
 
 // Unauthorized sends a 401 Unauthorized error response
@@ -152,7 +175,7 @@ func Unauthorized(c *gin.Context, message ...string) {
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
+	Error(c, http.StatusUnauthorized, ErrorUnauthorized, msg)
 }
 
 // Forbidden sends a 403 Forbidden error response
@@ -161,7 +184,7 @@ func Forbidden(c *gin.Context, message ...string) {
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusForbidden, "FORBIDDEN", msg)
+	Error(c, http.StatusForbidden, ErrorForbidden, msg)
 }
 
 // NotFound sends a 404 Not Found error response
@@ -170,22 +193,21 @@ func NotFound(c *gin.Context, message ...string) {
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusNotFound, "NOT_FOUND", msg)
+	Error(c, http.StatusNotFound, ErrorNotFound, msg)
 }
 
 // Conflict sends a 409 Conflict error response
 func Conflict(c *gin.Context, message string, details ...map[string]interface{}) {
-	Error(c, http.StatusConflict, "CONFLICT", message, details...)
+	Error(c, http.StatusConflict, ErrorConflict, message, details...)
 }
 
 // ValidationError sends a 422 Unprocessable Entity error response
 func ValidationError(c *gin.Context, message string, details map[string]string) {
-	// Convert map[string]string to map[string]interface{} for the error details
 	errorDetails := make(map[string]interface{})
 	for k, v := range details {
 		errorDetails[k] = v
 	}
-	Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, errorDetails)
+	Error(c, http.StatusUnprocessableEntity, ErrorValidation, message, errorDetails)
 }
 
 // InternalServerError sends a 500 Internal Server Error response
@@ -194,7 +216,7 @@ func InternalServerError(c *gin.Context, message ...string) {
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
+	Error(c, http.StatusInternalServerError, ErrorInternal, msg)
 }
 
 // ServiceUnavailable sends a 503 Service Unavailable error response
@@ -203,11 +225,11 @@ func ServiceUnavailable(c *gin.Context, message ...string) {
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
+	Error(c, http.StatusServiceUnavailable, ErrorServiceUnavailable, msg)
 }
 
 // Error sends a generic error response with custom status code
-func Error(c *gin.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) {
+func Error(c *gin.Context, statusCode int, errorCode ErrorCode, message string, details ...map[string]interface{}) {
 	var errorDetails map[string]interface{}
 	if len(details) > 0 {
 		errorDetails = details[0]

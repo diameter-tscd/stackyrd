@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"stackyrd/internal/services/modules"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/internal/services/modules"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

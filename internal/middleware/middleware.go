@@ -1,3 +1,4 @@
+// Package middleware provides HTTP middleware with auto-discovery and registration.
 package middleware
 
 import (
@@ -6,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

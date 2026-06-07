@@ -1,3 +1,4 @@
+//lint:file-ignore SA1019 grpc.Dial/WithBlock are still supported throughout 1.x
 package plugin
 
 import (

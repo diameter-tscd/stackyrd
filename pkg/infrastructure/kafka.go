@@ -3,8 +3,8 @@ package infrastructure
 import (
 	"context"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -52,7 +52,7 @@ func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManag
 	}, nil
 }
 
-func (k *KafkaManager) GetStatus() map[string]interface{} {
+func (k *KafkaManager) GetStatus(ctx context.Context) map[string]interface{} {
 	stats := make(map[string]interface{})
 	if k == nil {
 		stats["connected"] = false
@@ -217,7 +217,7 @@ func (k *KafkaManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the Kafka manager and its worker pool.
-func (k *KafkaManager) Close() error {
+func (k *KafkaManager) Close(ctx context.Context) error {
 	if k.Pool != nil {
 		k.Pool.Close()
 	}

@@ -1,9 +1,10 @@
 package infrastructure
 
 import (
+	"context"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 	"time"
 
@@ -94,7 +95,7 @@ func (c *CronManager) GetJobs() []CronJob {
 	}
 	return list
 }
-func (c *CronManager) GetStatus() map[string]interface{} {
+func (c *CronManager) GetStatus(ctx context.Context) map[string]interface{} {
 	if c == nil {
 		return map[string]interface{}{"active": false, "jobs": []interface{}{}}
 	}
@@ -243,7 +244,7 @@ func (c *CronManager) GetPoolStatus() map[string]interface{} {
 }
 
 // Close closes the cron manager and its worker pool
-func (c *CronManager) Close() error {
+func (c *CronManager) Close(ctx context.Context) error {
 	c.Stop()
 	if c.pool != nil {
 		c.pool.Close()

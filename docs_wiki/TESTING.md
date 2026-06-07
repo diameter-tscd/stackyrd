@@ -21,7 +21,7 @@ Tests mirror source structure under a flat `tests/` directory.
 `pkg/testing/helpers.go` provides utilities for writing HTTP handler tests:
 
 ```go
-import "stackyrd/pkg/testing"
+import "github.com/diameter-tscd/stackyrd/pkg/testing"
 
 // Create a test Gin context + response recorder
 c, w := testing.NewTestContext("GET", "/api/v1/users", nil)

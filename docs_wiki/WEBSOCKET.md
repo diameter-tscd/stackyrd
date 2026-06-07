@@ -24,7 +24,7 @@ flowchart TD
 ### Starting the Hub
 
 ```go
-import "stackyrd/pkg/websocket"
+import "github.com/diameter-tscd/stackyrd/pkg/websocket"
 
 hub := websocket.NewHub()
 go hub.Run() // event loop (blocking)

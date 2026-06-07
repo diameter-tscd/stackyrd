@@ -1,9 +1,10 @@
 package infrastructure
 
 import (
+	"context"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 	"time"
 )
@@ -152,7 +153,7 @@ func (r *ComponentRegistry) CloseAll() []error {
 		if !ok {
 			continue
 		}
-		if err := comp.Close(); err != nil {
+		if err := comp.Close(context.Background()); err != nil {
 			errors = append(errors, fmt.Errorf("%s: %w", name, err))
 		}
 	}

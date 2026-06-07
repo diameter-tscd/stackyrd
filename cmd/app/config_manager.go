@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"stackyrd/config"
-	"stackyrd/pkg/utils"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/utils"
 )
 
 // ConfigManager handles all configuration loading and validation

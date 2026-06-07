@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 	"time"
 
@@ -20,7 +20,6 @@ type PostgresManager struct {
 	Pool *WorkerPool // Async worker pool
 
 	// statusCache avoids re-running Ping on every /health call.
-	statusTTL    time.Duration
 	statusExpiry time.Time
 	statusCache  map[string]interface{}
 	statusMu     sync.Mutex
@@ -149,20 +148,20 @@ func (m *PostgresConnectionManager) GetAllConnections() map[string]*PostgresMana
 }
 
 // GetStatus returns status for all connections
-func (m *PostgresConnectionManager) GetStatus() map[string]interface{} {
+func (m *PostgresConnectionManager) GetStatus(ctx context.Context) map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	status := make(map[string]interface{})
 
 	for name, conn := range m.connections {
-		status[name] = conn.GetStatus()
+		status[name] = conn.GetStatus(ctx)
 	}
 
 	return status
 }
 
 // Close closes all connections (implements InfrastructureComponent)
-func (m *PostgresConnectionManager) Close() error {
+func (m *PostgresConnectionManager) Close(ctx context.Context) error {
 	return m.CloseAll()
 }
 
@@ -184,7 +183,7 @@ func (m *PostgresConnectionManager) CloseAll() error {
 	return nil
 }
 
-func (p *PostgresManager) GetStatus() map[string]interface{} {
+func (p *PostgresManager) GetStatus(ctx context.Context) map[string]interface{} {
 	stats := make(map[string]interface{})
 	if p == nil || p.DB == nil {
 		stats["connected"] = false
@@ -589,7 +588,7 @@ func (p *PostgresManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the Postgres manager and its worker pool.
-func (p *PostgresManager) Close() error {
+func (p *PostgresManager) Close(ctx context.Context) error {
 	if p.Pool != nil {
 		p.Pool.Close()
 	}

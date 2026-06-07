@@ -21,7 +21,7 @@ stateDiagram-v2
 ### Basic Usage
 
 ```go
-import "stackyrd/pkg/resilience"
+import "github.com/diameter-tscd/stackyrd/pkg/resilience"
 
 // Simple circuit breaker
 cb := resilience.NewCircuitBreaker(

@@ -1,3 +1,4 @@
+// Package utils provides general-purpose utility functions for system, HTTP, I/O, date, numeric, string, and image operations.
 package utils
 
 import (

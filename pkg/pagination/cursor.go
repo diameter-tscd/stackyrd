@@ -1,3 +1,4 @@
+// Package pagination provides cursor-based pagination utilities.
 package pagination
 
 import (

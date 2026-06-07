@@ -1,14 +1,14 @@
 package middleware
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	_ "stackyrd/docs"
+	_ "github.com/diameter-tscd/stackyrd/docs"
 )
 
 func init() {

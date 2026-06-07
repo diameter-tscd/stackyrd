@@ -2,16 +2,16 @@ package main_test
 
 import (
 	"context"
-	_ "stackyrd/internal/services/modules" // nolint:blank-imports triggers init() registrations
+	_ "github.com/diameter-tscd/stackyrd/internal/services/modules" // nolint:blank-imports triggers init() registrations
 	"io"
 	"sync"
 	"testing"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
-	"stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/registry"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

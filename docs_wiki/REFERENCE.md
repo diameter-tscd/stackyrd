@@ -1,6 +1,6 @@
 # Technical Reference
 
-Comprehensive reference for **stackyrd** — Go 1.25.3, module path `stackyrd`.
+Comprehensive reference for **stackyrd** — Go 1.25.3, module path `github.com/diameter-tscd/stackyrd`.
 
 ## Configuration Reference
 

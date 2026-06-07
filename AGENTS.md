@@ -395,7 +395,7 @@ Infrastructure async init → populate Dependencies → PLUGIN INIT → bridge�
 
 ## Module Path
 
-Module path: `stackyrd` (internal to this repo). All Go import paths are relative to the module root. Binary output goes to `dist/` (git-ignored).
+Module path: `github.com/diameter-tscd/stackyrd` (internal to this repo). All Go import paths are relative to the module root. Binary output goes to `dist/` (git-ignored).
 
 ---
 

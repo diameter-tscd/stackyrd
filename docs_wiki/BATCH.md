@@ -17,7 +17,7 @@ The `pkg/batch/` package provides three patterns for processing data in batches:
 Processes a slice of items in parallel batches.
 
 ```go
-import "stackyrd/pkg/batch"
+import "github.com/diameter-tscd/stackyrd/pkg/batch"
 
 handler := func(ctx context.Context, items []Item) error {
     // Process batch (e.g., bulk insert to DB)

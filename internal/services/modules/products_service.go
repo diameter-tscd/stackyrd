@@ -1,11 +1,11 @@
 package modules
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/interfaces"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
-	"stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/interfaces"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/registry"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

@@ -31,6 +31,14 @@
 | [**Testing Guide**](TESTING.md) | Unit tests, integration tests, mocks, test helpers, CI pipeline |
 | [**Troubleshooting**](TROUBLESHOOTING.md) | Common issues, debugging, health checks, error codes |
 
+## Architecture Decision Records
+
+| Document | Description |
+|----------|-------------|
+| [**ADR-001: goja vs V8**](ADR-001-goja-vs-v8.md) | Decision to use goja JavaScript runtime over V8/Node.js |
+| [**ADR-002: gRPC Subprocess vs stdin/stdout**](ADR-002-grpc-subprocess-vs-stdinout.md) | Decision to use gRPC over Unix sockets for external plugins |
+| [**ADR-003: Gopher-Lua vs Lua 5.x**](ADR-003-gopher-lua-vs-lua5.md) | Decision to use pure-Go gopher-lua over C-bound Lua 5.x |
+
 ## Examples
 
 | File | Description |

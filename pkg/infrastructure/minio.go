@@ -3,8 +3,8 @@ package infrastructure
 import (
 	"context"
 	"io"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -54,7 +54,7 @@ func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
 	}, nil
 }
 
-func (m *MinIOManager) GetStatus() map[string]interface{} {
+func (m *MinIOManager) GetStatus(ctx context.Context) map[string]interface{} {
 	if m == nil || !m.Connected {
 		return map[string]interface{}{
 			"connected": false,
@@ -62,7 +62,6 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		}
 	}
 
-	ctx := context.Background()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
 		return map[string]interface{}{
@@ -204,7 +203,7 @@ func (m *MinIOManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the MinIO manager and its worker pool.
-func (m *MinIOManager) Close() error {
+func (m *MinIOManager) Close(ctx context.Context) error {
 	if m.Pool != nil {
 		m.Pool.Close()
 	}

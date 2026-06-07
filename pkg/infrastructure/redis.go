@@ -3,8 +3,8 @@ package infrastructure
 import (
 	"context"
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 	"time"
 
@@ -82,7 +82,7 @@ func (r *RedisManager) Replace(ctx context.Context, key string, value interface{
 	return r.Client.SetXX(ctx, key, value, ttl).Err()
 }
 
-func (r *RedisManager) GetStatus() map[string]interface{} {
+func (r *RedisManager) GetStatus(ctx context.Context) map[string]interface{} {
 	stats := make(map[string]interface{})
 	if r == nil || r.Client == nil {
 		stats["connected"] = false
@@ -263,7 +263,7 @@ func (r *RedisManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the Redis manager and its worker pool.
-func (r *RedisManager) Close() error {
+func (r *RedisManager) Close(ctx context.Context) error {
 	if r.Pool != nil {
 		r.Pool.Close()
 	}

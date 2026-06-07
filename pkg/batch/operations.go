@@ -1,3 +1,4 @@
+// Package batch provides batch processing utilities for concurrent operation batching and aggregation.
 package batch
 
 import (

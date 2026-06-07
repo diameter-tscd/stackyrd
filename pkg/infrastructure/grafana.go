@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"strings"
 	"sync"
 	"time"
@@ -573,7 +573,7 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}
 }
 
 // GetStatus returns the current status of the Grafana manager
-func (gm *GrafanaManager) GetStatus() map[string]interface{} {
+func (gm *GrafanaManager) GetStatus(ctx context.Context) map[string]interface{} {
 	stats := make(map[string]interface{})
 	if gm == nil {
 		stats["connected"] = false
@@ -599,8 +599,8 @@ func (gm *GrafanaManager) GetStatus() map[string]interface{} {
 	}
 	gm.statusMu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	health, err := gm.GetHealth(ctx)
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	health, err := gm.GetHealth(pctx)
 	cancel()
 	if err != nil {
 		stats["connected"] = false
@@ -693,7 +693,7 @@ func (gm *GrafanaManager) SubmitAsyncJob(job func()) {
 }
 
 // Close closes the Grafana manager and its worker pool
-func (gm *GrafanaManager) Close() error {
+func (gm *GrafanaManager) Close(ctx context.Context) error {
 	if gm.Pool != nil {
 		gm.Pool.Close()
 	}

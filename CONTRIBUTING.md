@@ -248,8 +248,8 @@ Components are initialized asynchronously and health-check-polled; results appea
 ```go
 type InfrastructureComponent interface {
     Name() string
-    Close() error
-    GetStatus() map[string]interface{}
+    Close(ctx context.Context) error
+    GetStatus(ctx context.Context) map[string]interface{}
 }
 ```
 
@@ -369,7 +369,10 @@ Four plugin types are supported: **TypeScript**, **Lua**, **Python** (gRPC subpr
 ## Code Quality
 
 - Follow Go idioms and the style of existing code.
+- Run `golangci-lint run ./...` or `staticcheck ./...` before submitting.
 - Use `go vet ./...` and fix any warnings before submitting.
+- Use `go build ./...` to verify compilation across all packages.
+- Use typed constants (`response.ErrorBadRequest`, etc.) instead of raw strings for error codes.
 - Keep packages cohesive; avoid circular dependencies.
 - Do **not** commit secrets or credentials (never hardcode secrets in `config.yaml`).
 - Never commit `config.yaml` with real secrets, the `dist/` directory, or `.env` files.

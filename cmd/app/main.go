@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"os"
 
-	"stackyrd/pkg/utils"
+	"github.com/diameter-tscd/stackyrd/pkg/utils"
 )
 
 // @title stackyrd API

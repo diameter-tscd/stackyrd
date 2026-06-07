@@ -251,6 +251,7 @@ func (ctx *SwaggerContext) analyzeAPIEndpoints(logger *Logger) ([]ServiceInfo, e
 func (ctx *SwaggerContext) analyzeServiceFile(fileName, content string, logger *Logger) ServiceInfo {
 	serviceName := strings.TrimSuffix(fileName, ".go")
 	serviceName = strings.ReplaceAll(serviceName, "_", " ")
+	//lint:ignore SA1019 strings.Title is still fine for script tooling
 	serviceName = strings.Title(serviceName)
 
 	info := ServiceInfo{

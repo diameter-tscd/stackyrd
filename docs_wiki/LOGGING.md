@@ -16,7 +16,7 @@ stackyrd provides two logging subsystems:
 The primary logger used throughout services and middleware:
 
 ```go
-import "stackyrd/pkg/logger"
+import "github.com/diameter-tscd/stackyrd/pkg/logger"
 
 log := logger.NewLogger(cfg)
 log.Info().Msg("service started")
@@ -52,7 +52,7 @@ For applications needing log rotation, sampling, and richer structured output:
 ### Basic Setup
 
 ```go
-import "stackyrd/pkg/logging"
+import "github.com/diameter-tscd/stackyrd/pkg/logging"
 
 // With rotation
 writer, err := logging.NewRotatingWriter(
@@ -176,8 +176,8 @@ adaptive := logging.NewAdaptiveSampler(
 
 ```go
 import (
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/logging"
+    "github.com/diameter-tscd/stackyrd/pkg/logger"
+    "github.com/diameter-tscd/stackyrd/pkg/logging"
 )
 
 // In your middleware:

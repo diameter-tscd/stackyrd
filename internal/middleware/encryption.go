@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,7 +74,6 @@ type encryptionResponseWriter struct {
 	body   *bytes.Buffer
 	config *config.Config
 	logger *logger.Logger
-	once   sync.Once
 }
 
 func (w *encryptionResponseWriter) Write(b []byte) (int, error) {

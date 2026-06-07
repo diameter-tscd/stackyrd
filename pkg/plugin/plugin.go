@@ -1,3 +1,4 @@
+// Package plugin provides a plugin system with TypeScript, Lua, and external gRPC-based plugin support.
 package plugin
 
 import (
@@ -5,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
-	"stackyrd/pkg/infrastructure"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/infrastructure"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/spf13/afero"
 )

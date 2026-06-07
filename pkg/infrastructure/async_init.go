@@ -2,8 +2,8 @@ package infrastructure
 
 import (
 	"context"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 	"time"
 )
@@ -66,7 +66,7 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 
 			done := make(chan map[string]interface{}, 1)
 			go func() {
-				done <- comp.GetStatus()
+				done <- comp.GetStatus(ctx)
 			}()
 
 			select {
@@ -93,15 +93,6 @@ func (im *InfraInitManager) updateStatus(name string, status *InfraInitStatus) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 	im.status[name] = status
-}
-
-// updateStatusProgress updates only the progress of a component
-func (im *InfraInitManager) updateStatusProgress(name string, progress float64) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	if status, exists := im.status[name]; exists {
-		status.Progress = progress
-	}
 }
 
 // GetStatus returns the current initialization status of all components

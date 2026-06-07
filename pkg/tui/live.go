@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"os"
-	"stackyrd/pkg/tui/template"
-	"stackyrd/pkg/utils"
+	"github.com/diameter-tscd/stackyrd/pkg/tui/template"
+	"github.com/diameter-tscd/stackyrd/pkg/utils"
 	"strings"
 	"sync"
 	"time"

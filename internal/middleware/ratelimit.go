@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

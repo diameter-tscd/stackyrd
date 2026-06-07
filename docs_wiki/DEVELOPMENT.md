@@ -20,11 +20,11 @@ Create `internal/services/modules/your_service.go`:
 package modules
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/interfaces"
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/registry"
-    "stackyrd/pkg/response"
+    "github.com/diameter-tscd/stackyrd/config"
+    "github.com/diameter-tscd/stackyrd/pkg/interfaces"
+    "github.com/diameter-tscd/stackyrd/pkg/logger"
+    "github.com/diameter-tscd/stackyrd/pkg/registry"
+    "github.com/diameter-tscd/stackyrd/pkg/response"
     "github.com/gin-gonic/gin"
 )
 
@@ -89,8 +89,8 @@ Create `internal/middleware/your_middleware.go`:
 package middleware
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "github.com/diameter-tscd/stackyrd/config"
+    "github.com/diameter-tscd/stackyrd/pkg/logger"
     "github.com/gin-gonic/gin"
 )
 
@@ -119,8 +119,9 @@ Create `pkg/infrastructure/your_component.go`:
 package infrastructure
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "context"
+    "github.com/diameter-tscd/stackyrd/config"
+    "github.com/diameter-tscd/stackyrd/pkg/logger"
 )
 
 type YourComponent struct {
@@ -128,9 +129,9 @@ type YourComponent struct {
     logger  *logger.Logger
 }
 
-func (c *YourComponent) Name() string                     { return "your_component" }
-func (c *YourComponent) Close() error                     { return nil }
-func (c *YourComponent) GetStatus() map[string]interface{} { return nil }
+func (c *YourComponent) Name() string                               { return "your_component" }
+func (c *YourComponent) Close(ctx context.Context) error             { return nil }
+func (c *YourComponent) GetStatus(ctx context.Context) map[string]interface{} { return nil }
 
 func init() {
     RegisterComponent("your_component", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
@@ -139,7 +140,7 @@ func init() {
 }
 ```
 
-Components are auto-initialized asynchronously with health polling.
+Components are auto-initialized asynchronously with health polling. All public methods (`Close`, `GetStatus`) accept `context.Context` for timeout and cancellation propagation.
 
 ## Request Validation
 
@@ -247,7 +248,7 @@ result, err := page.First(10)
 ## Resilience Patterns
 
 ```go
-import "stackyrd/pkg/resilience"
+import "github.com/diameter-tscd/stackyrd/pkg/resilience"
 
 // Circuit breaker
 cb := resilience.NewCircuitBreaker("my-service", 5, time.Minute)
@@ -264,7 +265,7 @@ ctx, cancel := resilience.WithTimeout(context.Background(), 5*time.Second)
 ## Testing
 
 ```go
-import "stackyrd/pkg/testing"
+import "github.com/diameter-tscd/stackyrd/pkg/testing"
 
 func TestHandler(t *testing.T) {
     c, w := testing.NewTestContext("GET", "/api/v1/users", nil)
@@ -284,6 +285,30 @@ go run cmd/app/main.go -port 9090 -env production
 ```
 
 FLags: `-c` (config URL), `-port`, `-verbose`, `-env`.
+
+## Code Quality & Linting
+
+The project uses `golangci-lint` with project-wide config in `.golangci.yml`:
+
+```bash
+# Run all linters
+golangci-lint run ./...
+
+# Run specific linter
+golangci-lint run --disable-all --enable=govet ./...
+```
+
+CI enforces: `go vet`, `go build`, `go test`, and the golangci-lint pipeline. Static analysis on `staticcheck` runs in the security workflow.
+
+## Error Handling Conventions
+
+Use typed `response.ErrorCode` constants instead of raw strings:
+
+```go
+response.Error(c, http.StatusBadRequest, response.ErrorBadRequest, "Invalid input")
+```
+
+All services should use `response.*` helpers (Success, BadRequest, NotFound, etc.) for consistent API response shapes.
 
 ## Scripts Reference
 

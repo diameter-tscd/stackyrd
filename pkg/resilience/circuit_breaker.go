@@ -1,3 +1,4 @@
+// Package resilience provides circuit breaker, retry, and health check patterns.
 package resilience
 
 import (

@@ -1,10 +1,11 @@
+// Package registry provides service factory registration, auto-discovery, and dependency injection.
 package registry
 
 import (
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/interfaces"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/interfaces"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 	"sync"
 
 	"github.com/gin-gonic/gin"

@@ -64,8 +64,11 @@ Thumbs.db
 # Workspace
 .workspace/
 .kilo
+*_DRAFT.md
+*_PERF.md
+*_TEST.md
+*_TASK.md
 
 # Files
 stackyrd
-ISSUE_TASK.md
 PLUGIN.md

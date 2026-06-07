@@ -7,7 +7,7 @@ Prometheus metrics for HTTP requests, cache, circuit breakers, webhooks, WebSock
 Metrics are auto-collected via the singleton `metrics.GetMetrics()`. Register the `/metrics` endpoint to expose them:
 
 ```go
-import "stackyrd/pkg/metrics"
+import "github.com/diameter-tscd/stackyrd/pkg/metrics"
 
 engine := gin.Default()
 m := metrics.GetMetrics()

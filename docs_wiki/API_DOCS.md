@@ -132,6 +132,33 @@ Error response:
 | `response.ServiceUnavailable(c)` | 503 | Service unavailable |
 | `response.Error(c, code, errCode, msg)` | custom | Custom error |
 
+## Error Codes
+
+All services use typed `response.ErrorCode` constants for consistent error handling:
+
+| Constant | Value | HTTP Status | Used By |
+|----------|-------|-------------|---------|
+| `ErrorBadRequest` | `BAD_REQUEST` | 400 | `BadRequest()` |
+| `ErrorUnauthorized` | `UNAUTHORIZED` | 401 | `Unauthorized()` |
+| `ErrorForbidden` | `FORBIDDEN` | 403 | `Forbidden()` |
+| `ErrorNotFound` | `NOT_FOUND` | 404 | `NotFound()` |
+| `ErrorConflict` | `CONFLICT` | 409 | `Conflict()` |
+| `ErrorValidation` | `VALIDATION_ERROR` | 422 | `ValidationError()` |
+| `ErrorInternal` | `INTERNAL_ERROR` | 500 | `InternalServerError()` |
+| `ErrorServiceUnavailable` | `SERVICE_UNAVAILABLE` | 503 | `ServiceUnavailable()` |
+| `ErrorRateLimited` | `RATE_LIMITED` | 429 | Rate limiting middleware |
+| `ErrorTimeout` | `TIMEOUT` | 504 | Timeout middleware |
+| `ErrorUpstreamFailure` | `UPSTREAM_FAILURE` | 502 | Gateway/upstream errors |
+| `ErrorEndpointNotFound` | `ENDPOINT_NOT_FOUND` | 404 | Server routing |
+| `ErrorHTTPError` | `HTTP_ERROR` | 405 | Server routing |
+| `ErrorRateLimitExceeded` | `RATE_LIMIT_EXCEEDED` | 429 | Rate limiting middleware |
+
+Use constants instead of raw strings when calling `response.Error()`:
+
+```go
+response.Error(c, http.StatusBadRequest, response.ErrorBadRequest, "Invalid input")
+```
+
 ## Struct Documentation
 
 ```go

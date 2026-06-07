@@ -1,9 +1,10 @@
 package plugin
 
 import (
+	"context"
 	"time"
 
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 )
 
 type PluginSummary struct {
@@ -27,11 +28,11 @@ func (b *PluginBridge) Name() string {
 	return "plugins"
 }
 
-func (b *PluginBridge) Close() error {
+func (b *PluginBridge) Close(ctx context.Context) error {
 	return nil
 }
 
-func (b *PluginBridge) GetStatus() map[string]interface{} {
+func (b *PluginBridge) GetStatus(ctx context.Context) map[string]interface{} {
 	metrics := CollectMetrics(b.registry)
 	metas := b.registry.GetAllMetas()
 	plugins := b.registry.GetAll()

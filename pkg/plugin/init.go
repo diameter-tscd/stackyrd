@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/infrastructure"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/infrastructure"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/afero"

@@ -8,16 +8,16 @@ import (
 	"slices"
 	"time"
 
-	_ "stackyrd/internal/services/modules"
+	_ "github.com/diameter-tscd/stackyrd/internal/services/modules"
 
-	"stackyrd/config"
-	"stackyrd/internal/middleware"
-	"stackyrd/pkg/infrastructure"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/plugin"
-	"stackyrd/pkg/registry"
-	"stackyrd/pkg/response"
-	"stackyrd/pkg/utils"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/internal/middleware"
+	"github.com/diameter-tscd/stackyrd/pkg/infrastructure"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/plugin"
+	"github.com/diameter-tscd/stackyrd/pkg/registry"
+	"github.com/diameter-tscd/stackyrd/pkg/response"
+	"github.com/diameter-tscd/stackyrd/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -221,10 +221,10 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 		}
 
 		logger.Info("Shutting down " + name + "...")
-		if c, ok := closer.(interface{ Close() error }); ok {
+		if c, ok := closer.(interface{ Close(context.Context) error }); ok {
 			done := make(chan struct{}, 1)
 			go func() {
-				err := c.Close()
+				err := c.Close(context.Background())
 				if err != nil {
 					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
 					logger.Error("Error shutting down "+name, err)

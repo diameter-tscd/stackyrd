@@ -239,7 +239,7 @@ const file_pkg_plugin_plugin_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\tR\aversion2p\n" +
 	"\rPluginRuntime\x12:\n" +
 	"\aExecute\x12\x16.plugin.ExecuteRequest\x1a\x17.plugin.ExecuteResponse\x12#\n" +
-	"\x04Ping\x12\r.plugin.Empty\x1a\f.plugin.PongB\x15Z\x13stackyrd/pkg/pluginb\x06proto3"
+	"\x04Ping\x12\r.plugin.Empty\x1a\f.plugin.PongB\x15Z\x13github.com/diameter-tscd/stackyrd/pkg/pluginb\x06proto3"
 
 var (
 	file_pkg_plugin_plugin_proto_rawDescOnce sync.Once

@@ -1,3 +1,4 @@
+// Package metrics provides Prometheus metric collection and exposition.
 package metrics
 
 import (

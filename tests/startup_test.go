@@ -1,6 +1,7 @@
 package main_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,15 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	_ "stackyrd/internal/middleware" // nolint:blank-imports triggers init() auto-registrations
-	_ "stackyrd/internal/services/modules"
-	_ "stackyrd/pkg/infrastructure" // nolint:blank-imports triggers init() auto-registrations
+	_ "github.com/diameter-tscd/stackyrd/internal/services/modules"
 
-	"stackyrd/internal/middleware"
-	"stackyrd/pkg/infrastructure"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/internal/middleware"
+	"github.com/diameter-tscd/stackyrd/pkg/infrastructure"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/pkg/registry"
 )
 
 // ---------------------------------------------------------------------------
@@ -282,7 +281,7 @@ func BenchmarkStartupSnapshot(b *testing.B) {
 		components := infraReg.GetAll()
 		for name, comp := range components {
 			_ = name
-			_ = comp.GetStatus()
+			_ = comp.GetStatus(context.Background())
 		}
 
 		// ── Middleware wiring ─────────────────────────────────────────

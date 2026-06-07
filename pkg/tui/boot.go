@@ -1,3 +1,4 @@
+// Package tui provides a terminal UI dashboard using Bubble Tea and Lip Gloss.
 package tui
 
 import (

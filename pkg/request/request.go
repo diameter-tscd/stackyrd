@@ -1,3 +1,4 @@
+// Package request provides HTTP request binding and validation helpers.
 package request
 
 import (

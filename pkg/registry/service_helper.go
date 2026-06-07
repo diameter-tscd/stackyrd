@@ -1,8 +1,8 @@
 package registry
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 )
 
 // ServiceHelper helps services with dependency validation

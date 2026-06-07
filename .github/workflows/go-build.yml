@@ -47,9 +47,13 @@ jobs:
       run: go mod tidy
       continue-on-error: true
 
+    - name: Go Vet
+      if: hashFiles('go.mod') != ''
+      run: go vet ./...
+
     - name: Build
       if: hashFiles('go.mod') != ''
-      run: go build -v ./cmd/app/
+      run: go build -v ./...
 
     - name: Test
       if: hashFiles('go.mod') != ''

@@ -3,8 +3,8 @@ package middleware
 import (
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"github.com/diameter-tscd/stackyrd/config"
+	"github.com/diameter-tscd/stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

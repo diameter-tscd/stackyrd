@@ -4,8 +4,57 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Daily at 2 AM
   workflow_dispatch:
+    inputs:
+      run_gosec:
+        description: 'Run Gosec SAST scanner'
+        type: boolean
+        default: true
+      run_nancy:
+        description: 'Run Nancy dependency audit'
+        type: boolean
+        default: true
+      run_govulncheck:
+        description: 'Run Govulncheck vulnerability scanner'
+        type: boolean
+        default: true
+      run_trivy:
+        description: 'Run Trivy filesystem scanner'
+        type: boolean
+        default: true
+      run_staticcheck:
+        description: 'Run staticcheck analyzer'
+        type: boolean
+        default: true
+      run_gocritic:
+        description: 'Run go-critic linter'
+        type: boolean
+        default: true
+      trivy_severity:
+        description: 'Trivy severity threshold'
+        type: choice
+        options:
+          - CRITICAL,HIGH
+          - CRITICAL,HIGH,MEDIUM
+          - CRITICAL,HIGH,MEDIUM,LOW
+        default: CRITICAL,HIGH
+      upload_sarif:
+        description: 'Upload SARIF results to GitHub Security tab'
+        type: boolean
+        default: true
+      commit_reports:
+        description: 'Commit generated reports to repository'
+        type: boolean
+        default: false
+      cleanup_reports:
+        description: 'Remove reports older than retention period'
+        type: boolean
+        default: true
+      retention_days:
+        description: 'Days to retain reports'
+        type: number
+        default: 3
   push:
-    branches: [ main, master ]
+    branches: [main, master]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -15,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # Changed from read to write for commit access
+      contents: write
       security-events: write
 
     steps:
@@ -25,6 +74,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           persist-credentials: true
+          ref: ${{ github.ref }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -48,6 +98,7 @@ jobs:
         continue-on-error: true
 
       - name: Run Gosec
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_gosec }}
         uses: securego/gosec@master
         with:
           args: '-fmt sarif -out gosec-results.sarif ./...'
@@ -64,28 +115,27 @@ jobs:
 
       - name: Upload Gosec SARIF
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.check_gosec.outputs.sarif_exists == 'true'
+        if: ${{ always() && steps.check_gosec.outputs.sarif_exists == 'true' && (github.event_name != 'workflow_dispatch' || inputs.upload_sarif) }}
         with:
           sarif_file: gosec-results.sarif
           category: gosec
 
       - name: Install Nancy
-        if: hashFiles('go.mod') != ''
-        run: |
-          go install github.com/sonatype-nexus-community/nancy@latest
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_nancy) }}
+        run: go install github.com/sonatype-nexus-community/nancy@latest
 
       - name: Run Nancy
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_nancy) }}
         run: |
           go list -json -deps ./... | nancy sleuth --output=json > nancy-report.json || true
         continue-on-error: true
 
       - name: Install Govulncheck
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_govulncheck) }}
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run Govulncheck
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_govulncheck) }}
         run: |
           govulncheck ./... > govulncheck-report.txt || true
           cat govulncheck-report.txt
@@ -93,13 +143,14 @@ jobs:
 
       - name: Run Trivy
         id: trivy_scan
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_trivy }}
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          severity: ${{ github.event.inputs.trivy_severity || 'CRITICAL,HIGH' }}
         continue-on-error: true
 
       - name: Check Trivy SARIF
@@ -113,31 +164,31 @@ jobs:
 
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && steps.check_trivy.outputs.sarif_exists == 'true'
+        if: ${{ always() && steps.check_trivy.outputs.sarif_exists == 'true' && (github.event_name != 'workflow_dispatch' || inputs.upload_sarif) }}
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
           category: trivy
 
       - name: Install StaticCheck
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_staticcheck) }}
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Run StaticCheck
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_staticcheck) }}
         run: staticcheck ./... || true
         continue-on-error: true
 
       - name: Install Go-Critic
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_gocritic) }}
         run: go install github.com/go-critic/go-critic/cmd/gocritic@latest
 
       - name: Run Go-Critic
-        if: hashFiles('go.mod') != ''
+        if: ${{ hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_gocritic) }}
         run: gocritic check ./... || true
         continue-on-error: true
 
       - name: Prepare Reports
-        if: always()
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.commit_reports) }}
         run: |
           mkdir -p .github/security-reports
 
@@ -152,49 +203,49 @@ jobs:
 
           REPORT_FILE=".github/security-reports/scan_${STATUS}_${TIMESTAMP}_${EPOCH}.md"
 
-          echo "# Security Scan Report" > $REPORT_FILE
-          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')" >> $REPORT_FILE
-          echo "**Status:** ${STATUS}" >> $REPORT_FILE
-          echo "**Epoch:** ${EPOCH}" >> $REPORT_FILE
-          echo "" >> $REPORT_FILE
+          echo "# Security Scan Report" > "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')" >> "$REPORT_FILE"
+          echo "**Status:** ${STATUS}" >> "$REPORT_FILE"
+          echo "**Epoch:** ${EPOCH}" >> "$REPORT_FILE"
+          echo "**Branch:** ${{ github.ref_name }}" >> "$REPORT_FILE"
+          echo "**Trigger:** ${{ github.event_name }}" >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "## Govulncheck Results" >> "$REPORT_FILE"
+          echo '```' >> "$REPORT_FILE"
+          cat govulncheck-report.txt >> "$REPORT_FILE" 2>/dev/null || echo "No results" >> "$REPORT_FILE"
+          echo '```' >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "## Nancy Results" >> "$REPORT_FILE"
+          echo '```json' >> "$REPORT_FILE"
+          cat nancy-report.json >> "$REPORT_FILE" 2>/dev/null || echo "{}" >> "$REPORT_FILE"
+          echo '```' >> "$REPORT_FILE"
+          echo "" >> "$REPORT_FILE"
+          echo "## Gosec Results" >> "$REPORT_FILE"
+          echo "See SARIF file: gosec-results.sarif" >> "$REPORT_FILE"
 
-          echo "## Govulncheck Results" >> $REPORT_FILE
-          echo "\`\`\`" >> $REPORT_FILE
-          cat govulncheck-report.txt 2>/dev/null || echo "No results" >> $REPORT_FILE
-          echo "\`\`\`" >> $REPORT_FILE
-          echo "" >> $REPORT_FILE
-
-          echo "## Nancy Results" >> $REPORT_FILE
-          echo "\`\`\`json" >> $REPORT_FILE
-          cat nancy-report.json 2>/dev/null || echo "{}" >> $REPORT_FILE
-          echo "\`\`\`" >> $REPORT_FILE
-          echo "" >> $REPORT_FILE
-
-          echo "## Gosec Results" >> $REPORT_FILE
-          echo "See SARIF file: gosec-results.sarif" >> $REPORT_FILE
-          echo "" >> $REPORT_FILE
-
-          cp gosec-results.sarif .github/security-reports/gosec_${TIMESTAMP}.sarif 2>/dev/null || true
-          cp trivy-results.sarif .github/security-reports/trivy_${TIMESTAMP}.sarif 2>/dev/null || true
+          cp gosec-results.sarif ".github/security-reports/gosec_${TIMESTAMP}.sarif" 2>/dev/null || true
+          cp trivy-results.sarif ".github/security-reports/trivy_${TIMESTAMP}.sarif" 2>/dev/null || true
 
           echo "Report created: $REPORT_FILE"
 
       - name: Cleanup Old Reports
-        if: always()
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.cleanup_reports) }}
         run: |
+          RETENTION=${{ github.event.inputs.retention_days || 3 }}
           cd .github/security-reports || exit 0
           CURRENT_EPOCH=$(date +%s)
-          THREE_DAYS=259200
+          RETENTION_SECS=$((RETENTION * 86400))
 
           for file in scan_*_*.md; do
             if [ -f "$file" ]; then
-              FILE_EPOCH=$(echo $file | grep -oP '\d{10}(?=\.md)')
-              if [ ! -z "$FILE_EPOCH" ]; then
+              FILE_EPOCH=$(echo "$file" | grep -oP '\d{10}(?=\.md)')
+              if [ -n "$FILE_EPOCH" ]; then
                 AGE=$((CURRENT_EPOCH - FILE_EPOCH))
-                if [ $AGE -gt $THREE_DAYS ]; then
+                if [ $AGE -gt $RETENTION_SECS ]; then
                   echo "Deleting old report: $file (age: $((AGE/86400)) days)"
                   rm -f "$file"
-                  DATETIME=$(echo $file | grep -oP '\d{8}_\d{6}')
+                  DATETIME=$(echo "$file" | grep -oP '\d{8}_\d{6}')
                   rm -f "gosec_${DATETIME}.sarif" 2>/dev/null || true
                   rm -f "trivy_${DATETIME}.sarif" 2>/dev/null || true
                 fi
@@ -204,7 +255,7 @@ jobs:
           cd ..
 
       - name: Commit Reports
-        if: always()
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.commit_reports) }}
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -215,6 +266,6 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "chore: security scan report $(date '+%Y-%m-%d %H:%M:%S')"
-            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-            git push origin HEAD:${{ github.ref_name }}
+            git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+            git push origin "HEAD:${{ github.ref_name }}"
           fi

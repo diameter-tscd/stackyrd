@@ -1,3 +1,5 @@
+// Package utils provides general-purpose utility functions including image
+// compression, resizing, format detection, and dimension retrieval.
 package utils
 
 import (
@@ -19,9 +21,9 @@ import (
 type ImageFormat string
 
 const (
-	FormatJPEG ImageFormat = "jpeg"
-	FormatPNG  ImageFormat = "png"
-	FormatWebP ImageFormat = "webp"
+	FormatJPEG ImageFormat = "jpeg" // JPEG image format
+	FormatPNG  ImageFormat = "png"  // PNG image format
+	FormatWebP ImageFormat = "webp" // WebP image format
 )
 
 // CompressionOptions defines options for image compression
@@ -47,27 +49,26 @@ func DefaultCompressionOptions() CompressionOptions {
 
 // CompressFile compresses an image file from disk and writes the result to output path
 func CompressFile(inputPath string, outputPath string, options CompressionOptions) error {
-	// Open input file
+	inputPath = filepath.Clean(inputPath)
+	outputPath = filepath.Clean(outputPath)
+
 	file, err := os.Open(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to open input file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	// Detect image format
 	format, err := DetectImageFormat(inputPath)
 	if err != nil {
 		return err
 	}
 
-	// Compress image
 	var buf bytes.Buffer
 	if err := Compress(file, &buf, format, options); err != nil {
 		return err
 	}
 
-	// Write output file
-	return os.WriteFile(outputPath, buf.Bytes(), 0644)
+	return os.WriteFile(outputPath, buf.Bytes(), 0600)
 }
 
 // Compress compresses an image from reader and writes to writer
@@ -191,9 +192,11 @@ func DetectImageFormat(path string) (ImageFormat, error) {
 
 // GetImageDimensions returns the width and height of an image file without full decoding
 func GetImageDimensions(path string) (width, height int, err error) {
+	path = filepath.Clean(path)
+
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("failed to open image file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -217,9 +220,11 @@ func CompressToBuffer(reader io.Reader, inputFormat ImageFormat, options Compres
 
 // CompressFileToBuffer compresses an image file and returns the result as a byte buffer
 func CompressFileToBuffer(inputPath string, options CompressionOptions) (*bytes.Buffer, error) {
+	inputPath = filepath.Clean(inputPath)
+
 	file, err := os.Open(inputPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open input file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 

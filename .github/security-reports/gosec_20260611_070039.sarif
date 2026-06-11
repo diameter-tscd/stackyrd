@@ -37,13 +37,13 @@
 									"uri": "pkg/response/response.go"
 								},
 								"region": {
-									"endColumn": 25,
+									"endColumn": 53,
 									"endLine": 254,
 									"snippet": {
 										"text": "uint32(hi\u003e\u003e32), uint16(hi), uint16(lo\u003e\u003e48), uint16(lo\u003e\u003e32), uint32(lo))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 25,
+									"startColumn": 53,
 									"startLine": 254
 								}
 							}
@@ -63,13 +63,13 @@
 									"uri": "pkg/response/response.go"
 								},
 								"region": {
-									"endColumn": 53,
+									"endColumn": 25,
 									"endLine": 254,
 									"snippet": {
 										"text": "uint32(hi\u003e\u003e32), uint16(hi), uint16(lo\u003e\u003e48), uint16(lo\u003e\u003e32), uint32(lo))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 53,
+									"startColumn": 25,
 									"startLine": 254
 								}
 							}
@@ -2262,13 +2262,13 @@
 									"uri": "pkg/plugin/plugin.pb.go"
 								},
 								"region": {
-									"endColumn": 84,
+									"endColumn": 71,
 									"endLine": 251,
 									"snippet": {
 										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 84,
+									"startColumn": 71,
 									"startLine": 251
 								}
 							}
@@ -2288,13 +2288,13 @@
 									"uri": "pkg/plugin/plugin.pb.go"
 								},
 								"region": {
-									"endColumn": 71,
+									"endColumn": 84,
 									"endLine": 251,
 									"snippet": {
 										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 71,
+									"startColumn": 84,
 									"startLine": 251
 								}
 							}

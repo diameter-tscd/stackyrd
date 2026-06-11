@@ -79,6 +79,9 @@ type PluginManagerMetrics struct {
 }
 
 func entrypointType(entrypoint string) string {
+	if len(entrypoint) > 4 && entrypoint[:5] == "wasm:" {
+		return "wasm"
+	}
 	if len(entrypoint) > 3 && entrypoint[:4] == "lua:" {
 		return "lua"
 	}

@@ -53,10 +53,11 @@ The script executes these steps in order:
 4. stopRunningProcess → Kill any running stackyrd instance (via pgrep)
 5. createBackup       → Timestamped copy of dist/ files to dist/backups/
 6. archiveBackup      → ZIP the backup directory, remove uncompressed copy
-7. buildApplication   → go build or garble build with ldflags
-8. askUserAboutUPX    → Prompt (or skip via -upx) for UPX LZMA compression
-9. compressWithUPX    → Run upx --lzma on the binary
-10. copyAssets        → Copy config.yaml and banner.txt to dist/
+7. compilePlugins     → Compile Python plugin scripts (.py → .pyc) via py_compile
+8. buildApplication   → go build or garble build with ldflags (embeds compiled plugins via //go:embed)
+9. askUserAboutUPX    → Prompt (or skip via -upx) for UPX LZMA compression
+10. compressWithUPX   → Run upx --lzma on the binary
+11. copyAssets        → Copy config.yaml and banner.txt to dist/
 ```
 
 ---
@@ -88,7 +89,18 @@ Copies existing `dist/` files (`stackyrd`, `stackyrd.exe`, `config.yaml`, `banne
 
 ZIP-compresses the timestamped backup directory and removes the uncompressed directory. Produces `dist/backups/{timestamp}.zip`.
 
-### 7. Build (`buildApplication`)
+### 7. Plugin Compilation (`compilePlugins`)
+
+Scans `pkg/plugin/builtin/*/scripts/` for Python (`.py`) scripts and compiles each to `.pyc` bytecode using `py_compile.compile()` (Python standard library). The `.pyc` files are written alongside the source `.py` files and are picked up by `//go:embed builtin` at build time.
+
+- **Detection**: Skips plugins that already have a matching `.pyc` (skipped via log).
+- **Execution**: Runs `python3 -c "import py_compile; py_compile.compile(...)"`.
+- **Failure**: Non-fatal per script; errors are logged and the script continues.
+- **Embedded result**: Compiled `.pyc` files end up inside the Go binary via `//go:embed`, so no source code leaks in plaintext in the production binary.
+
+Currently only Python scripts are compiled to bytecode. TypeScript is minified at runtime via esbuild. Lua uses init-time source caching (gopher-lua lacks `CompileString` export). WASM modules are pre-compiled externally.
+
+### 8. Build (`buildApplication`)
 
 Build command and flags:
 
@@ -99,11 +111,11 @@ Build command and flags:
 
 If `goversioninfo` is available, runs `goversioninfo -platform-specific` before the build. Output goes to `dist/stackyrd` (or `dist/stackyrd.exe` on Windows).
 
-### 8. UPX Prompt (`askUserAboutUPX`)
+### 9. UPX Prompt (`askUserAboutUPX`)
 
 Prompts the user: "Apply UPX LZMA compression to the binary? (y/N)". Same timeout behavior as garble prompt.
 
-### 9. UPX Compression (`compressWithUPX`)
+### 10. UPX Compression (`compressWithUPX`)
 
 Runs `upx --lzma --best` on the output binary. On macOS, adds `--force-macos` flag. If UPX is not installed, auto-installs via:
 - **macOS**: `brew install upx`
@@ -111,7 +123,7 @@ Runs `upx --lzma --best` on the output binary. On macOS, adds `--force-macos` fl
 
 Compression failure is non-fatal (build continues without compression).
 
-### 10. Asset Copying (`copyAssets`)
+### 11. Asset Copying (`copyAssets`)
 
 Copies `config.yaml` and `banner.txt` from project root to `dist/`. Missing files are skipped.
 
@@ -147,6 +159,7 @@ Pressing `Ctrl+C` during the build prints a clean message and exits immediately.
 | `stopRunningProcess` | Finds and kills running application instances |
 | `createBackup` | Copies existing dist files to timestamped backup |
 | `archiveBackup` | ZIP-compresses backup directory |
+| `compilePlugins` | Compiles Python plugin scripts (.py → .pyc) via py_compile |
 | `buildApplication` | Runs `go build` or `garble build` with ldflags |
 | `compressWithUPX` | Applies UPX LZMA compression to binary |
 | `copyAssets` | Copies config and assets to output directory |

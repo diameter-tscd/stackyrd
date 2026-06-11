@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+var pycMagic = []byte("\x6d\x61\x72\x73\x68\x61\x6c") // "marshal" header for .pyc files
 
 type externalRuntime struct{}
 
@@ -90,6 +93,12 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 		return nil, fmt.Errorf("failed to read plugin script %s: %w", p.modulePath, err)
 	}
 
+	scriptSource := string(scriptBytes)
+	if len(scriptBytes) >= 4 && string(scriptBytes[:4]) == "\x00\x00\x00\x00" {
+		encoded := base64.StdEncoding.EncodeToString(scriptBytes)
+		scriptSource = "PYC:" + encoded
+	}
+
 	var cancel context.CancelFunc
 	execCtx := context.Background()
 	if ctx.Cancel != nil {
@@ -100,7 +109,7 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 	resp, err := p.client.Execute(execCtx, &ExecuteRequest{
 		Name:         p.name,
 		ArgsJson:     argsJSON,
-		ScriptSource: string(scriptBytes),
+		ScriptSource: scriptSource,
 	})
 	if err != nil {
 		_ = p.Close()

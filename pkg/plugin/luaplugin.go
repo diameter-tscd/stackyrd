@@ -13,21 +13,28 @@ type luaRuntime struct{}
 func (r *luaRuntime) Prefix() string { return "lua:" }
 
 func (r *luaRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) {
-	return &LuaScriptPlugin{
+	scriptPath := meta.Entrypoint[4:]
+	p := &LuaScriptPlugin{
 		name:   meta.Name,
 		meta:   meta,
 		fs:     fs,
-		script: meta.Entrypoint[4:],
-	}, nil
+		script: scriptPath,
+	}
+	source, err := afero.ReadFile(fs, scriptPath)
+	if err == nil {
+		p.cachedSource = source
+	}
+	return p, nil
 }
 
 func init() { RegisterRuntime(&luaRuntime{}) }
 
 type LuaScriptPlugin struct {
-	name   string
-	meta   PluginMeta
-	fs     afero.Fs
-	script string
+	name         string
+	meta         PluginMeta
+	fs           afero.Fs
+	script       string
+	cachedSource []byte
 }
 
 func (p *LuaScriptPlugin) Meta() PluginMeta { return p.meta }
@@ -49,9 +56,15 @@ func (p *LuaScriptPlugin) Execute(ctx Context, args map[string]interface{}) (*Re
 		return nil, fmt.Errorf("filesystem not available for plugin: %s", p.name)
 	}
 
-	source, err := afero.ReadFile(p.fs, p.script)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read script %s: %w", p.script, err)
+	var source []byte
+	if len(p.cachedSource) > 0 {
+		source = p.cachedSource
+	} else {
+		var err error
+		source, err = afero.ReadFile(p.fs, p.script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read script %s: %w", p.script, err)
+		}
 	}
 
 	resultCh := make(chan *Result, 1)

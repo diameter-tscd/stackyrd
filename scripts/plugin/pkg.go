@@ -256,6 +256,8 @@ func cmdList(logger *Logger, args []string) {
 			return P_GREEN
 		case "external":
 			return P_YELLOW
+		case "wasm":
+			return P_CYAN
 		case "go":
 			return P_PURPLE
 		default:
@@ -333,6 +335,8 @@ func cmdInfo(logger *Logger, args []string) {
 			return P_GREEN
 		case "external":
 			return P_YELLOW
+		case "wasm":
+			return P_CYAN
 		case "go":
 			return P_PURPLE
 		default:

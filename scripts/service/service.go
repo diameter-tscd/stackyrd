@@ -55,7 +55,7 @@ type ServicePattern struct {
 	Template    string
 }
 
-var SERVICE_PATTERNS = []ServicePattern{
+var ServicePatterns = []ServicePattern{
 	{
 		Name:        "Basic CRUD",
 		Description: "Standard Create, Read, Update, Delete operations",
@@ -307,7 +307,7 @@ func (ctx *ServiceContext) promptServicePattern(logger *Logger) error {
 	logger.Info("Select service pattern:")
 	fmt.Println("")
 
-	for i, pattern := range SERVICE_PATTERNS {
+	for i, pattern := range ServicePatterns {
 		fmt.Printf("  %s[%d]%s %s%s%s - %s\n", B_CYAN, i+1, RESET, B_WHITE, pattern.Name, RESET, pattern.Description)
 	}
 
@@ -319,14 +319,14 @@ func (ctx *ServiceContext) promptServicePattern(logger *Logger) error {
 	_, _ = fmt.Scanln(&input)
 
 	if input == "" {
-		ctx.Config.ServicePattern = SERVICE_PATTERNS[0]
+		ctx.Config.ServicePattern = ServicePatterns[0]
 	} else {
 		var idx int
-		if _, err := fmt.Sscanf(input, "%d", &idx); err != nil || idx < 1 || idx > len(SERVICE_PATTERNS) {
+		if _, err := fmt.Sscanf(input, "%d", &idx); err != nil || idx < 1 || idx > len(ServicePatterns) {
 			logger.Warn("Invalid pattern, using Basic CRUD")
 			idx = 1
 		}
-		ctx.Config.ServicePattern = SERVICE_PATTERNS[idx-1]
+		ctx.Config.ServicePattern = ServicePatterns[idx-1]
 	}
 
 	logger.Success("Selected pattern: %s", ctx.Config.ServicePattern.Name)

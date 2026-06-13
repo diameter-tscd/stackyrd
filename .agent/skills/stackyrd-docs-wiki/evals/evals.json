@@ -1,0 +1,44 @@
+{
+  "skill_name": "stackyrd-docs-wiki",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just added a new package at pkg/caching/ that provides Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch invalidation. It also has a CachingManager that wraps go-redis. Can you create the documentation for it in docs_wiki/ as a new file called CACHING.md? Make sure it matches the style and conventions of the existing docs (like RESILIENCE.md). Also update docs_wiki/README.md to add it to the Package Deep Dives table. The config key is 'caching', and it depends on the redis infrastructure component.",
+      "expected_output": "New docs_wiki/CACHING.md file created + docs_wiki/README.md updated with new table entry",
+      "expectations": [
+        "Creates docs_wiki/CACHING.md with proper H1 title and summary",
+        "Uses code blocks with language tags for Go examples",
+        "Follows the package deep-dive pattern (sub-features, usage examples, best practices)",
+        "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
+        "Includes a Best Practices section",
+        "Uses the project's module path (stackyrd) in imports",
+        "Does not contain emojis"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I added the request_id middleware to internal/middleware/request_id.go. It generates a unique X-Request-ID for each incoming request and propagates it to downstream services. The config key is 'request_id' under middleware in config.yaml. Can you update the middleware table in docs_wiki/REFERENCE.md to include the new middleware? The table lists middleware with columns: Name, Config Key, Purpose. Also check if docs_wiki/README.md needs any updates — the Middleware doc table might list the middleware entries.",
+      "expected_output": "Updated REFERENCE.md middleware table and README.md if needed",
+      "expectations": [
+        "Adds request_id row to the middleware table in REFERENCE.md",
+        "Uses correct column format matching existing table (Name, Config Key, Purpose)",
+        "Keeps the table alphabetically sorted or consistently ordered with existing entries",
+        "Does not modify any other part of REFERENCE.md unnecessarily",
+        "Updates README.md if the middleware table there is also affected"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Can you update docs_wiki/DEVELOPMENT.md to add a new section about using the cache? It should go after the 'Using Plugins from Services' section. The caching package is at pkg/caching/ and provides a CachingManager that wraps go-redis with cache-aside pattern, TTL support, and batch invalidation. The config key is 'caching' under services in config.yaml. Write a section called 'Using the Cache' with a code example showing how to inject it via Dependencies and use the cache-aside pattern.",
+      "expected_output": "Updated docs_wiki/DEVELOPMENT.md with new 'Using the Cache' section",
+      "expectations": [
+        "Adds a new '## Using the Cache' section after the 'Using Plugins from Services' section",
+        "Includes a Go code example using the module path stackyrd/pkg/caching",
+        "Code example shows getting the CachingManager from deps (deps.Get)",
+        "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
+        "Mentions the config toggle services.caching in config.yaml",
+        "Table of contents / section ordering is preserved correctly"
+      ]
+    }
+  ]
+}

@@ -18,18 +18,18 @@ import (
 
 var (
 	// GetMemSelf — atomic to avoid data-race on concurrent reads vs background writes
-	runtimeMemStats atomic.Pointer[runtime.MemStats]
-	statsMutex       sync.Mutex         // protects writes via GetRuntimeStats
+	runtimeMemStats  atomic.Pointer[runtime.MemStats]
+	statsMutex       sync.Mutex // protects writes via GetRuntimeStats
 	runtimeStats     bool
 	memSelfInterval  time.Duration
 	memSelfLastFetch time.Time
 	memSelfValue     atomic.Uint64
 
 	// GetRoutine
-	routineLastFetch      time.Time
-	routineInterval       time.Duration
-	routineFirstFetched   bool
-	routineValue          atomic.Int32
+	routineLastFetch    time.Time
+	routineInterval     time.Duration
+	routineFirstFetched bool
+	routineValue        atomic.Int32
 )
 
 var (
@@ -159,7 +159,7 @@ func GetRuntimeStats() runtime.MemStats {
 	if p == nil {
 		return runtime.MemStats{}
 	}
-	_ = *p  // force dereference to prove no escape (p is already a pointer copy)
+	_ = *p // force dereference to prove no escape (p is already a pointer copy)
 	return *p
 }
 

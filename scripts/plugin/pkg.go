@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	APP_NAME  = "stackyrd"
-	BASE_URL  = "http://localhost:8080/api/v1/plugins"
-	USER_AGENT = "stackyrd-plugin-cli/1.0"
+	APP_NAME     = "stackyrd"
+	BASE_URL     = "http://localhost:8080/api/v1/plugins"
+	USER_AGENT   = "stackyrd-plugin-cli/1.0"
 	HTTP_TIMEOUT = 30 * time.Second
 )
 
@@ -174,18 +174,18 @@ type PluginListResponse struct {
 }
 
 type PluginDetail struct {
-	Name              string `json:"name"`
-	Version           string `json:"version"`
-	Description       string `json:"description"`
-	Author            string `json:"author"`
-	Entrypoint        string `json:"entrypoint"`
-	Type              string `json:"type"`
-	Status            string `json:"status"`
-	LoadTimeMs        float64 `json:"load_time_ms"`
-	EmbeddedFileSize  int64  `json:"embedded_file_size"`
-	ExecuteCount      int64  `json:"execute_count"`
-	LastExecutionMs   float64 `json:"last_execution_ms"`
-	TotalExecutionMs  float64 `json:"total_execution_ms"`
+	Name             string  `json:"name"`
+	Version          string  `json:"version"`
+	Description      string  `json:"description"`
+	Author           string  `json:"author"`
+	Entrypoint       string  `json:"entrypoint"`
+	Type             string  `json:"type"`
+	Status           string  `json:"status"`
+	LoadTimeMs       float64 `json:"load_time_ms"`
+	EmbeddedFileSize int64   `json:"embedded_file_size"`
+	ExecuteCount     int64   `json:"execute_count"`
+	LastExecutionMs  float64 `json:"last_execution_ms"`
+	TotalExecutionMs float64 `json:"total_execution_ms"`
 }
 
 type ExecuteResponse struct {
@@ -256,6 +256,8 @@ func cmdList(logger *Logger, args []string) {
 			return P_GREEN
 		case "external":
 			return P_YELLOW
+		case "wasm":
+			return P_CYAN
 		case "go":
 			return P_PURPLE
 		default:
@@ -333,6 +335,8 @@ func cmdInfo(logger *Logger, args []string) {
 			return P_GREEN
 		case "external":
 			return P_YELLOW
+		case "wasm":
+			return P_CYAN
 		case "go":
 			return P_PURPLE
 		default:

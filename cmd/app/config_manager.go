@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"stackyrd/config"
+	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/utils"
 )
 
@@ -76,6 +77,17 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 		return "", nil
 	}
 
+	// Default banner: read from afero embedded filesystem
+	if cfg.App.BannerPath == DefaultBannerPath {
+		if infrastructure.Exists("banner") {
+			data, err := infrastructure.Read("banner")
+			if err == nil {
+				return string(data), nil
+			}
+		}
+	}
+
+	// Custom path: read from OS filesystem
 	bannerPath := cfg.App.BannerPath
 	if !filepath.IsAbs(bannerPath) {
 		bannerPath = filepath.Join(".", bannerPath)
@@ -83,7 +95,6 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 
 	banner, err := os.ReadFile(bannerPath)
 	if err != nil {
-		// Return empty string if banner file doesn't exist or can't be read
 		return "", nil
 	}
 

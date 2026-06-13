@@ -65,6 +65,16 @@ Thumbs.db
 .workspace/
 .kilo
 
+# Python artifacts
+*.pyc
+__pycache__/
+
+# Plugin store (runtime writable overlay)
+store/
+
+# Compiled binaries
+scripts/service/service_generator
+
 # Files
 stackyrd
 ISSUE_TASK.md

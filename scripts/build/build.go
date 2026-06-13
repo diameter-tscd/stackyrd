@@ -1,20 +1,24 @@
 package main
 
 import (
-	"archive/zip"
-	"context"
+	"archive/tar"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/ulikunitz/xz"
 )
 
 // Configuration variables
@@ -49,6 +53,25 @@ const (
 	B_WHITE  = "\033[1;97m"
 )
 
+// Archive format constants
+const (
+	FormatTar     = "tar"
+	Format7z      = "7z"
+	DefaultFormat = FormatTar
+)
+
+// validArchiveFormat checks if the format is supported and returns the normalized value
+func validArchiveFormat(f string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case FormatTar, "tar.xz", "txz":
+		return FormatTar, true
+	case Format7z, "sevenzip", "7-zip":
+		return Format7z, true
+	default:
+		return "", false
+	}
+}
+
 // Build configuration
 type BuildConfig struct {
 	UseGarble        bool
@@ -56,6 +79,7 @@ type BuildConfig struct {
 	UseUPX           bool
 	Timeout          time.Duration
 	Verbose          bool
+	ArchiveFormat    string
 }
 
 // BuildContext holds the build state
@@ -70,33 +94,34 @@ type BuildContext struct {
 // Logger for structured output
 type Logger struct {
 	verbose bool
+	writer  io.Writer
 }
 
 func (l *Logger) Info(msg string, args ...interface{}) {
-	fmt.Printf("%s[INFO]%s %s\n", B_CYAN, RESET, fmt.Sprintf(msg, args...))
+	fmt.Fprintf(l.writer, "%s[INFO]%s %s\n", B_CYAN, RESET, fmt.Sprintf(msg, args...))
 }
 
 func (l *Logger) Warn(msg string, args ...interface{}) {
-	fmt.Printf("%s[WARN]%s %s\n", B_YELLOW, RESET, fmt.Sprintf(msg, args...))
+	fmt.Fprintf(l.writer, "%s[WARN]%s %s\n", B_YELLOW, RESET, fmt.Sprintf(msg, args...))
 }
 
 func (l *Logger) Error(msg string, args ...interface{}) {
-	fmt.Printf("%s[ERROR]%s %s\n", B_RED, RESET, fmt.Sprintf(msg, args...))
+	fmt.Fprintf(l.writer, "%s[ERROR]%s %s\n", B_RED, RESET, fmt.Sprintf(msg, args...))
 }
 
 func (l *Logger) Debug(msg string, args ...interface{}) {
 	if l.verbose {
-		fmt.Printf("%s[DEBUG]%s %s\n", GRAY, RESET, fmt.Sprintf(msg, args...))
+		fmt.Fprintf(l.writer, "%s[DEBUG]%s %s\n", GRAY, RESET, fmt.Sprintf(msg, args...))
 	}
 }
 
 func (l *Logger) Success(msg string, args ...interface{}) {
-	fmt.Printf("%s[SUCCESS]%s %s\n", B_GREEN, RESET, fmt.Sprintf(msg, args...))
+	fmt.Fprintf(l.writer, "%s[SUCCESS]%s %s\n", B_GREEN, RESET, fmt.Sprintf(msg, args...))
 }
 
 // NewLogger creates a new logger
 func NewLogger(verbose bool) *Logger {
-	return &Logger{verbose: verbose}
+	return &Logger{verbose: verbose, writer: os.Stdout}
 }
 
 // checkPath checks the path folder and ensures we're in the project root
@@ -494,7 +519,6 @@ func (ctx *BuildContext) createBackup(logger *Logger) error {
 		APP_NAME,
 		APP_NAME + ".exe",
 		CONFIG_YML,
-		BANNER_TXT,
 	}
 
 	for _, file := range filesToBackup {
@@ -510,41 +534,95 @@ func (ctx *BuildContext) createBackup(logger *Logger) error {
 	return nil
 }
 
-// archiveBackup creates a ZIP archive of the backup
+// archiveBackup creates a compressed archive of the backup using the configured format.
 func (ctx *BuildContext) archiveBackup(logger *Logger) error {
-	logger.Info("Archiving backup...")
-
 	if _, err := os.Stat(ctx.BackupPath); os.IsNotExist(err) {
 		logger.Info("No backup created. Skipping archive.")
 		return nil
 	}
 
 	backupRoot := filepath.Dir(ctx.BackupPath)
-	archivePath := filepath.Join(backupRoot, ctx.Timestamp+".zip")
 
-	if err := createZipArchive(ctx.BackupPath, archivePath); err != nil {
-		return fmt.Errorf("failed to create archive: %w", err)
+	switch ctx.Config.ArchiveFormat {
+	case Format7z:
+		return ctx.archiveBackup7z(backupRoot, logger)
+	default:
+		return ctx.archiveBackupTar(backupRoot, logger)
+	}
+}
+
+func (ctx *BuildContext) archiveBackupTar(backupRoot string, logger *Logger) error {
+	logger.Info("Archiving backup with native LZMA2 compression (tar.xz)...")
+
+	archivePath := filepath.Join(backupRoot, ctx.Timestamp+".tar.xz")
+	if err := createTarXzArchive(ctx.BackupPath, archivePath); err != nil {
+		return fmt.Errorf("failed to create tar.xz archive: %w", err)
 	}
 
-	// Remove the uncompressed backup directory
 	if err := os.RemoveAll(ctx.BackupPath); err != nil {
 		logger.Warn("Failed to remove backup directory: %v", err)
 	}
 
-	logger.Success("Backup archived: %s", archivePath)
+	info, err := os.Stat(archivePath)
+	if err == nil {
+		logger.Success("Backup archived (%s): %s", humanizeSize(info.Size()), archivePath)
+	} else {
+		logger.Success("Backup archived: %s", archivePath)
+	}
 	return nil
 }
 
-// createZipArchive creates a ZIP file from a directory
-func createZipArchive(source, target string) error {
-	zipFile, err := os.Create(target)
+func (ctx *BuildContext) archiveBackup7z(backupRoot string, logger *Logger) error {
+	logger.Info("Archiving backup with 7z LZMA2...")
+
+	if err := exec.Command("7z", "-h").Run(); err != nil {
+		logger.Warn("7z binary not found. Falling back to native tar.xz compression.")
+		ctx.Config.ArchiveFormat = FormatTar
+		return ctx.archiveBackupTar(backupRoot, logger)
+	}
+
+	archivePath := filepath.Join(backupRoot, ctx.Timestamp+".7z")
+	cmd := exec.Command("7z", "a", "-t7z", "-m0=lzma2", "-mx=9", "-bd", "-y",
+		archivePath, ctx.BackupPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		logger.Warn("7z compression failed: %v. Falling back to native tar.xz.", err)
+		ctx.Config.ArchiveFormat = FormatTar
+		return ctx.archiveBackupTar(backupRoot, logger)
+	}
+
+	if err := os.RemoveAll(ctx.BackupPath); err != nil {
+		logger.Warn("Failed to remove backup directory: %v", err)
+	}
+
+	info, err := os.Stat(archivePath)
+	if err == nil {
+		logger.Success("Backup archived (%s): %s", humanizeSize(info.Size()), archivePath)
+	} else {
+		logger.Success("Backup archived: %s", archivePath)
+	}
+	return nil
+}
+
+// createTarXzArchive creates a tar.xz archive with LZMA2 compression from a directory.
+// LZMA2 is the same algorithm used by 7-Zip, providing high compression ratios natively.
+func createTarXzArchive(source, target string) error {
+	xzFile, err := os.Create(target)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = zipFile.Close() }()
+	defer func() { _ = xzFile.Close() }()
 
-	archive := zip.NewWriter(zipFile)
-	defer func() { _ = archive.Close() }()
+	xzWriter, err := xz.NewWriter(xzFile)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = xzWriter.Close() }()
+
+	tarWriter := tar.NewWriter(xzWriter)
+	defer func() { _ = tarWriter.Close() }()
 
 	info, err := os.Stat(source)
 	if err != nil {
@@ -556,28 +634,25 @@ func createZipArchive(source, target string) error {
 		baseDir = filepath.Base(source)
 	}
 
-	_ = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		header, err := zip.FileInfoHeader(info)
+		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
 		}
 
 		if baseDir != "" {
-			header.Name = filepath.Join(baseDir, strings.TrimPrefix(path, source))
+			header.Name = filepath.ToSlash(filepath.Join(baseDir, strings.TrimPrefix(path, source)))
 		}
 
 		if info.IsDir() {
 			header.Name += "/"
-		} else {
-			header.Method = zip.Deflate
 		}
 
-		writer, err := archive.CreateHeader(header)
-		if err != nil {
+		if err := tarWriter.WriteHeader(header); err != nil {
 			return err
 		}
 
@@ -591,11 +666,23 @@ func createZipArchive(source, target string) error {
 		}
 		defer func() { _ = file.Close() }()
 
-		_, err = io.Copy(writer, file)
+		_, err = io.Copy(tarWriter, file)
 		return err
 	})
+}
 
-	return nil
+// humanizeSize converts bytes to a human-readable string
+func humanizeSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // moveFile moves a file from src to dst
@@ -655,6 +742,61 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
+// compilePlugins pre-compiles plugin scripts in the builtin directory
+func (ctx *BuildContext) compilePlugins(logger *Logger) error {
+	logger.Info("Compiling plugin scripts...")
+
+	builtinDir := filepath.Join(ctx.ProjectDir, "pkg", "plugin", "builtin")
+	entries, err := os.ReadDir(builtinDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logger.Info("No builtin plugins directory found, skipping")
+			return nil
+		}
+		return fmt.Errorf("failed to read builtin plugins: %w", err)
+	}
+
+	compiled := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		scriptsDir := filepath.Join(builtinDir, entry.Name(), "scripts")
+		scriptsEntries, err := os.ReadDir(scriptsDir)
+		if err != nil {
+			continue
+		}
+		for _, script := range scriptsEntries {
+			if script.IsDir() {
+				continue
+			}
+			name := script.Name()
+			scriptPath := filepath.Join(scriptsDir, name)
+
+			if strings.HasSuffix(name, ".py") {
+				pycPath := filepath.Join(scriptsDir, strings.TrimSuffix(name, ".py")+".pyc")
+				logger.Debug("Compiling %s -> %s", scriptPath, pycPath)
+				cmd := exec.Command("python3", "-c",
+					fmt.Sprintf("import py_compile; py_compile.compile(%q, cfile=%q, doraise=True)", scriptPath, pycPath))
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					logger.Warn("Failed to compile Python plugin %s: %v", scriptPath, err)
+					continue
+				}
+				compiled++
+				logger.Success("Compiled Python plugin: %s", filepath.Base(scriptPath))
+			}
+		}
+	}
+
+	if compiled == 0 {
+		logger.Info("No Python plugin scripts to compile")
+	} else {
+		logger.Success("Compiled %d Python plugin script(s)", compiled)
+	}
+	return nil
+}
+
 // buildApplication builds the Go application
 func (ctx *BuildContext) buildApplication(logger *Logger) error {
 	logger.Info("Building Go binary...")
@@ -708,7 +850,6 @@ func (ctx *BuildContext) copyAssets(logger *Logger) error {
 		dst string
 	}{
 		{CONFIG_YML, filepath.Join(ctx.DistPath, CONFIG_YML)},
-		{BANNER_TXT, filepath.Join(ctx.DistPath, BANNER_TXT)},
 	}
 
 	for _, asset := range assets {
@@ -778,37 +919,21 @@ func printSuccess(distPath string) {
 	fmt.Println(GRAY + "======================================================================" + RESET)
 }
 
-// setupSignalHandler sets up graceful shutdown on interrupt
-func setupSignalHandler(cancel context.CancelFunc) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-sigChan
-		fmt.Println("\nReceived interrupt signal. Exiting...")
-		cancel()
-		os.Exit(1)
-	}()
-}
-
 // main function
 func main() {
-	ClearScreen()
-
 	// Parse command line flags
 	var (
 		timeoutSeconds = flag.Int("timeout", 10, "Timeout for user prompts in seconds")
 		verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 		useGarble      = flag.Bool("garble", false, "Enable garble obfuscation (skips interactive prompt)")
 		useUPX         = flag.Bool("upx", false, "Enable UPX compression (skips interactive prompt)")
+		archiveFormat  = flag.String("archive-format", DefaultFormat, "Backup archive format: tar (native LZMA2, default) or 7z (requires 7z binary)")
+		noTUI          = flag.Bool("no-tui", false, "Disable TUI, use plain CLI output")
 	)
 	flag.Parse()
 
 	// Initialize logger
 	logger := NewLogger(*verbose)
-
-	// Print banner
-	printBanner()
 
 	// Get project directory
 	projectDir, err := os.Getwd()
@@ -828,21 +953,56 @@ func main() {
 		ProjectDir: projectDir,
 	}
 
-	// Create context with cancellation for graceful shutdown
-	_, cancel := context.WithCancel(context.Background())
-	setupSignalHandler(cancel)
-
 	// Apply flag overrides for non-interactive mode
 	if *useGarble {
 		ctx.Config.UseGarble = true
-		logger.Info("Garble obfuscation enabled via -garble flag")
 	}
 	if *useUPX {
 		ctx.Config.UseUPX = true
-		logger.Info("UPX compression enabled via -upx flag")
 	}
 
-	// Execute build steps
+	// Validate archive format with fallback to default
+	if normalized, ok := validArchiveFormat(*archiveFormat); ok {
+		ctx.Config.ArchiveFormat = normalized
+	} else {
+		if !*noTUI {
+			fmt.Printf("Unknown archive format '%s'. Falling back to '%s'. Supported: tar, 7z\n", *archiveFormat, DefaultFormat)
+		} else {
+			logger.Warn("Unknown archive format '%s'. Falling back to '%s'. Supported: tar, 7z", *archiveFormat, DefaultFormat)
+		}
+		ctx.Config.ArchiveFormat = DefaultFormat
+	}
+
+	if *noTUI || !isTerminal() {
+		runCLIBuild(ctx, logger)
+	} else {
+		runTUIBuild(ctx, logger)
+	}
+}
+
+// isTerminal returns true if stdout is a terminal
+func isTerminal() bool {
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
+// runTUIBuild runs the build with the bubbletea TUI
+func runTUIBuild(ctx *BuildContext, logger *Logger) {
+	_, err := RunBuildTUI(ctx, logger)
+	if err != nil {
+		fmt.Printf("\nBuild failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runCLIBuild runs the build with plain CLI output
+func runCLIBuild(ctx *BuildContext, logger *Logger) {
+	ClearScreen()
+	printBanner()
+
 	steps := []struct {
 		name string
 		fn   func(*Logger) error
@@ -853,6 +1013,7 @@ func main() {
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
 		{"Archiving backup", ctx.archiveBackup},
+		{"Compiling plugins", ctx.compilePlugins},
 		{"Building application", ctx.buildApplication},
 		{"Asking user about UPX compression", ctx.askUserAboutUPX},
 		{"Compressing with UPX", ctx.compressWithUPX},
@@ -860,11 +1021,10 @@ func main() {
 	}
 
 	for i, step := range steps {
-		// Skip interactive prompts when flag overrides are set
-		if step.name == "Asking user about garble" && *useGarble {
+		if step.name == "Asking user about garble" && ctx.Config.UseGarble {
 			continue
 		}
-		if step.name == "Asking user about UPX compression" && *useUPX {
+		if step.name == "Asking user about UPX compression" && ctx.Config.UseUPX {
 			continue
 		}
 
@@ -877,6 +1037,651 @@ func main() {
 		}
 	}
 
-	// Print success message
 	printSuccess(ctx.DistPath)
+}
+
+// ─── Bubble Tea TUI ──────────────────────────────────────────────────────────
+
+type stepStatus int
+
+const (
+	statusPending stepStatus = iota
+	statusRunning
+	statusSuccess
+	statusError
+	statusSkipped
+)
+
+type stepInfo struct {
+	name       string
+	status     stepStatus
+	message    string
+	isPrompt   bool
+	promptText string
+	promptDef  bool
+	action     func(*BuildContext, *Logger) error
+}
+
+type (
+	tickMsg     time.Time
+	stepDoneMsg struct {
+		index int
+		err   error
+		msg   string
+	}
+	promptTimeoutMsg struct{ index int }
+)
+
+type BuildTuiModel struct {
+	steps   []stepInfo
+	current int
+	spinner spinner.Model
+	ctx     *BuildContext
+	logger  *Logger
+	width   int
+	height  int
+	started time.Time
+	done    bool
+	success bool
+
+	promptActive  bool
+	promptStarted time.Time
+
+	ready    bool
+	quitting bool
+
+	banner string
+	log    *logState
+
+	stepPipeR *os.File
+	stepPipeW *os.File
+}
+
+type logState struct {
+	mu    sync.Mutex
+	lines []string
+	max   int
+}
+
+func (s *logState) append(line string) {
+	s.mu.Lock()
+	s.lines = append(s.lines, line)
+	if len(s.lines) > s.max {
+		s.lines = s.lines[len(s.lines)-s.max:]
+	}
+	s.mu.Unlock()
+}
+
+func (s *logState) visible(n int) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.lines) <= n {
+		out := make([]string, len(s.lines))
+		copy(out, s.lines)
+		return out
+	}
+	out := make([]string, n)
+	copy(out, s.lines[len(s.lines)-n:])
+	return out
+}
+
+type logCaptureWriter struct {
+	log *logState
+}
+
+func (w *logCaptureWriter) Write(p []byte) (n int, err error) {
+	clean := stripANSI(string(p))
+	lines := strings.Split(strings.TrimRight(clean, "\r\n"), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			w.log.append(trimmed)
+		}
+	}
+	return len(p), nil
+}
+
+func stripANSI(s string) string {
+	var b bytes.Buffer
+	i := 0
+	for i < len(s) {
+		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				i = j + 1
+			} else {
+				i = j
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
+}
+
+var buildBannerStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#8daea5"))
+
+var buildSubStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#6272A4")).
+	Italic(true)
+
+var buildStepNameStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#F8F8F2")).
+	Width(34)
+
+var buildStepNameBoldStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FFB86C")).
+	Bold(true).
+	Width(34)
+
+var buildIconStyle = lipgloss.NewStyle().
+	Width(2)
+
+var buildMsgStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#C0C0C0"))
+
+var buildErrorMsgStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FF5555"))
+
+var buildSuccessStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#50FA7B")).
+	Bold(true)
+
+var buildPromptStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FFB86C")).
+	Bold(true)
+
+var buildFooterStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#6272A4"))
+
+var buildDividerStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#44475A"))
+
+func divider(width int) string {
+	return buildDividerStyle.Render(strings.Repeat("─", width))
+}
+
+func readBanner(projectDir string) string {
+	data, err := os.ReadFile(filepath.Join(projectDir, "pkg", "assets", "banner.txt"))
+	if err != nil {
+		return "  stackyrd"
+	}
+	return string(data)
+}
+
+func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6"))
+
+	prompts := map[string]struct {
+		text string
+		def  bool
+	}{
+		"Configure Garble":          {"Use garble build for obfuscation?", false},
+		"Configure UPX Compression": {"Apply UPX LZMA compression to the binary?", false},
+	}
+
+	skipPrompt := map[string]bool{
+		"Configure Garble":          ctx.Config.UseGarble,
+		"Configure UPX Compression": ctx.Config.UseUPX,
+	}
+
+	stepDefs := []struct {
+		name   string
+		action func(*BuildContext, *Logger) error
+	}{
+		{"Check Project Path", (*BuildContext).checkPath},
+		{"Check Required Tools", (*BuildContext).checkRequiredTools},
+		{"Configure Garble", nil},
+		{"Stop Running Process", (*BuildContext).stopRunningProcess},
+		{"Create Backup", (*BuildContext).createBackup},
+		{"Archive Backup", (*BuildContext).archiveBackup},
+		{"Compile Plugins", (*BuildContext).compilePlugins},
+		{"Build Application", (*BuildContext).buildApplication},
+		{"Configure UPX Compression", nil},
+		{"Compress with UPX", (*BuildContext).compressWithUPX},
+		{"Copy Assets", (*BuildContext).copyAssets},
+	}
+
+	steps := make([]stepInfo, len(stepDefs))
+	for i, sd := range stepDefs {
+		st := statusPending
+		if skipPrompt[sd.name] {
+			st = statusSkipped
+		}
+		info := stepInfo{
+			name:   sd.name,
+			status: st,
+			action: sd.action,
+		}
+		if p, ok := prompts[sd.name]; ok {
+			info.isPrompt = true
+			info.promptText = p.text
+			info.promptDef = p.def
+		}
+		if st == statusSkipped {
+			info.message = "enabled via flag"
+		}
+		steps[i] = info
+	}
+
+	return BuildTuiModel{
+		steps:   steps,
+		ctx:     ctx,
+		logger:  logger,
+		spinner: s,
+		started: time.Now(),
+		banner:  readBanner(ctx.ProjectDir),
+		log: &logState{
+			lines: make([]string, 0, 100),
+			max:   100,
+		},
+	}
+}
+
+func (m BuildTuiModel) Init() tea.Cmd {
+	return tea.Batch(
+		m.spinner.Tick,
+		tickCmd(),
+		func() tea.Msg {
+			return tea.WindowSizeMsg{Width: 100, Height: 30}
+		},
+	)
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Every(80*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func (m BuildTuiModel) runStepCmd(index int) tea.Cmd {
+	step := m.steps[index]
+	return func() tea.Msg {
+		if m.stepPipeW != nil {
+			oldOut := os.Stdout
+			oldErr := os.Stderr
+			os.Stdout = m.stepPipeW
+			os.Stderr = m.stepPipeW
+			err := step.action(m.ctx, m.logger)
+			os.Stdout = oldOut
+			os.Stderr = oldErr
+			msg := ""
+			if err == nil {
+				msg = "Done"
+			} else {
+				msg = err.Error()
+			}
+			time.Sleep(20 * time.Millisecond)
+			return stepDoneMsg{index: index, err: err, msg: msg}
+		}
+		err := step.action(m.ctx, m.logger)
+		msg := ""
+		if err == nil {
+			msg = "Done"
+		} else {
+			msg = err.Error()
+		}
+		return stepDoneMsg{index: index, err: err, msg: msg}
+	}
+}
+
+func (m BuildTuiModel) startPrompt(index int) tea.Cmd {
+	m.steps[index].status = statusRunning
+	if m.ctx.Config.Timeout > 0 {
+		return tea.Tick(m.ctx.Config.Timeout, func(t time.Time) tea.Msg {
+			return promptTimeoutMsg{index: index}
+		})
+	}
+	return nil
+}
+
+func (m *BuildTuiModel) advanceToNext() tea.Cmd {
+	m.current++
+	if m.current >= len(m.steps) {
+		m.done = true
+		m.success = true
+		for _, s := range m.steps {
+			if s.status == statusError {
+				m.success = false
+				break
+			}
+		}
+		return tea.Tick(800*time.Millisecond, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		})
+	}
+	return m.triggerCurrentStep()
+}
+
+func (m *BuildTuiModel) triggerCurrentStep() tea.Cmd {
+	step := &m.steps[m.current]
+
+	if step.status == statusSkipped {
+		return m.advanceToNext()
+	}
+
+	if step.isPrompt && step.status == statusPending {
+		step.status = statusRunning
+		m.promptActive = true
+		m.promptStarted = time.Now()
+		return m.startPrompt(m.current)
+	}
+
+	step.status = statusRunning
+	return m.runStepCmd(m.current)
+}
+
+func (m BuildTuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if m.done {
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+		switch msg.String() {
+		case "ctrl+c", "q":
+			if m.promptActive {
+				m.promptActive = false
+				s := &m.steps[m.current]
+				if s.name == "Configure Garble" {
+					m.ctx.Config.UseGarble = false
+				} else if s.name == "Configure UPX Compression" {
+					m.ctx.Config.UseUPX = false
+				}
+				s.status = statusSuccess
+				s.message = "skipped"
+				return m, m.advanceToNext()
+			}
+			m.quitting = true
+			return m, tea.Quit
+		}
+
+		if m.promptActive {
+			s := &m.steps[m.current]
+			switch msg.String() {
+			case "y", "Y":
+				m.promptActive = false
+				if s.name == "Configure Garble" {
+					m.ctx.Config.UseGarble = true
+				} else if s.name == "Configure UPX Compression" {
+					m.ctx.Config.UseUPX = true
+				}
+				s.status = statusSuccess
+				s.message = "yes"
+				return m, m.advanceToNext()
+			case "n", "N", "enter":
+				m.promptActive = false
+				if s.name == "Configure Garble" {
+					m.ctx.Config.UseGarble = false
+				} else if s.name == "Configure UPX Compression" {
+					m.ctx.Config.UseUPX = false
+				}
+				s.status = statusSuccess
+				s.message = "no"
+				return m, m.advanceToNext()
+			}
+		}
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if !m.ready {
+			m.ready = true
+			return m, m.triggerCurrentStep()
+		}
+
+	case tickMsg:
+		if m.done {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, tea.Batch(cmd, tickCmd())
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case stepDoneMsg:
+		if msg.index < len(m.steps) {
+			s := &m.steps[msg.index]
+			if msg.err != nil {
+				s.status = statusError
+				s.message = msg.msg
+				m.done = true
+				m.success = false
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return tickMsg(t)
+				})
+			}
+			s.status = statusSuccess
+			s.message = msg.msg
+			return m, m.advanceToNext()
+		}
+
+	case promptTimeoutMsg:
+		if m.promptActive && msg.index == m.current {
+			m.promptActive = false
+			s := &m.steps[msg.index]
+			if s.name == "Configure Garble" {
+				m.ctx.Config.UseGarble = s.promptDef
+			} else if s.name == "Configure UPX Compression" {
+				m.ctx.Config.UseUPX = s.promptDef
+			}
+			s.status = statusSuccess
+			s.message = "no (timeout)"
+			return m, m.advanceToNext()
+		}
+	}
+
+	return m, nil
+}
+
+var logHeaderStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#6272A4"))
+
+var logLineStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#C0C0C0"))
+
+func (m BuildTuiModel) View() string {
+	if !m.ready {
+		return ""
+	}
+
+	var b strings.Builder
+
+	if m.banner != "" {
+		lines := strings.Split(strings.TrimRight(m.banner, "\n"), "\n")
+		for _, l := range lines {
+			trimmed := strings.TrimRight(l, " ")
+			if trimmed != "" {
+				b.WriteString(buildBannerStyle.Render("  " + trimmed))
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(buildBannerStyle.Render("  stackyrd Builder"))
+	b.WriteString("\n")
+	b.WriteString(buildSubStyle.Render("  by diameter-tscd"))
+	b.WriteString("\n")
+
+	b.WriteString("\n")
+	b.WriteString(divider(min(m.width, 80)))
+	b.WriteString("\n")
+
+	for i, s := range m.steps {
+		var icon, statusText, label string
+		label = s.name
+
+		switch s.status {
+		case statusPending:
+			icon = buildIconStyle.Render(" ")
+			statusText = buildMsgStyle.Render("waiting")
+		case statusRunning:
+			if s.isPrompt && m.promptActive {
+				icon = buildIconStyle.Render("?")
+				elapsed := time.Since(m.promptStarted)
+				remaining := m.ctx.Config.Timeout - elapsed
+				if remaining < 0 {
+					remaining = 0
+				}
+				secs := int(remaining.Seconds())
+				if secs < 0 {
+					secs = 0
+				}
+				promptLine := fmt.Sprintf("%s (y/N) [%ds]", s.promptText, secs)
+				statusText = buildPromptStyle.Render(promptLine)
+			} else {
+				icon = buildIconStyle.Render(m.spinner.View())
+				statusText = buildMsgStyle.Render("running...")
+			}
+		case statusSuccess:
+			icon = buildIconStyle.Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Render("*"))
+			if s.message == "Done" || s.message == "" {
+				statusText = buildSuccessStyle.Render("ok")
+			} else if s.message == "yes" {
+				statusText = buildSuccessStyle.Render("enabled")
+			} else if s.message == "no" || s.message == "no (timeout)" || s.message == "skipped" {
+				statusText = buildMsgStyle.Render(s.message)
+			} else {
+				statusText = buildMsgStyle.Render(s.message)
+			}
+		case statusError:
+			icon = buildIconStyle.Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Render("!"))
+			statusText = buildErrorMsgStyle.Render(s.message)
+		case statusSkipped:
+			icon = buildIconStyle.Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#6272A4")).Render("-"))
+			statusText = buildMsgStyle.Render(s.message)
+		}
+
+		nameStyle := buildStepNameStyle
+		if i == m.current && s.status == statusRunning {
+			nameStyle = buildStepNameBoldStyle
+		}
+
+		line := fmt.Sprintf("  %s %s %s",
+			icon,
+			nameStyle.Render(label),
+			statusText,
+		)
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
+	b.WriteString(divider(min(m.width, 80)))
+	b.WriteString("\n")
+
+	maxWidth := min(m.width, 80)
+	if maxWidth < 30 {
+		maxWidth = 30
+	}
+
+	availLogLines := m.height - 26
+	if len(m.banner) > 0 {
+		bannerLineCount := strings.Count(m.banner, "\n")
+		availLogLines -= bannerLineCount - 1
+	}
+	if availLogLines < 3 {
+		availLogLines = 3
+	}
+
+	visibleLogs := m.log.visible(availLogLines)
+
+	if len(visibleLogs) > 0 || !m.done {
+		b.WriteString(logHeaderStyle.Render("  ▪ Build Log"))
+		b.WriteString("\n")
+		b.WriteString(buildDividerStyle.Render(strings.Repeat("─", maxWidth-4)))
+		b.WriteString("\n")
+
+		for _, line := range visibleLogs {
+			display := line
+			if len(display) > maxWidth-8 {
+				display = display[:maxWidth-8]
+			}
+			b.WriteString(logLineStyle.Render("  " + display))
+			b.WriteString("\n")
+		}
+
+		remainingLines := availLogLines - len(visibleLogs)
+		for i := 0; i < remainingLines; i++ {
+			b.WriteString("\n")
+		}
+	}
+
+	if m.done {
+		elapsed := time.Since(m.started).Round(time.Millisecond)
+		if m.success {
+			b.WriteString(buildSuccessStyle.Render(fmt.Sprintf("  Build complete in %s", elapsed)))
+			b.WriteString("\n")
+			b.WriteString(buildMsgStyle.Render(fmt.Sprintf("  Output: %s", m.ctx.DistPath)))
+		} else {
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("  Build failed"))
+			b.WriteString("\n")
+			b.WriteString(buildErrorMsgStyle.Render("  Check the errors above"))
+		}
+		b.WriteString("\n\n")
+		b.WriteString(buildFooterStyle.Render("  Press any key to exit"))
+	} else if m.promptActive {
+		b.WriteString(buildFooterStyle.Render("  y / n  |  q to skip  |  ctrl+c to quit"))
+	} else {
+		b.WriteString(buildFooterStyle.Render("  Building...  |  ctrl+c to quit"))
+	}
+
+	b.WriteString("\n")
+	container := lipgloss.NewStyle().Padding(1, 2)
+	return container.Render(b.String())
+}
+
+func RunBuildTUI(ctx *BuildContext, logger *Logger) (*BuildContext, error) {
+	m := NewBuildTuiModel(ctx, logger)
+
+	logR, logW, err := os.Pipe()
+	if err == nil {
+		m.stepPipeR = logR
+		m.stepPipeW = logW
+		go func() {
+			_, _ = io.Copy(&logCaptureWriter{log: m.log}, logR)
+		}()
+	}
+
+	logger.writer = &logCaptureWriter{log: m.log}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	final, err := p.Run()
+	if m.stepPipeW != nil {
+		m.stepPipeW.Close()
+	}
+	if m.stepPipeR != nil {
+		m.stepPipeR.Close()
+	}
+	if err != nil {
+		return ctx, err
+	}
+	fm, ok := final.(BuildTuiModel)
+	if !ok {
+		return ctx, fmt.Errorf("unexpected model type")
+	}
+	if fm.success {
+		return fm.ctx, nil
+	}
+	for _, s := range fm.steps {
+		if s.status == statusError {
+			return fm.ctx, fmt.Errorf("%s: %s", s.name, s.message)
+		}
+	}
+	return fm.ctx, fmt.Errorf("build failed")
 }

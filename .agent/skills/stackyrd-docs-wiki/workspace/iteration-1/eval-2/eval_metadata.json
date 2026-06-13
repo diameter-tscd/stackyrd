@@ -1,0 +1,27 @@
+{
+  "eval_id": 2,
+  "eval_name": "update-middleware-table",
+  "prompt": "I added the request_id middleware to internal/middleware/request_id.go. It generates a unique X-Request-ID for each incoming request and propagates it to downstream services. The config key is 'request_id' under middleware in config.yaml. Can you update the middleware table in docs_wiki/REFERENCE.md to include the new middleware? The table lists middleware with columns: Name, Config Key, Purpose. Also check if docs_wiki/README.md needs any updates — the Middleware doc table might list the middleware entries.",
+  "assertions": [
+    {
+      "text": "Adds request_id row to the middleware table in REFERENCE.md",
+      "name": "adds-to-reference-table"
+    },
+    {
+      "text": "Uses the correct three-column format matching existing entries (Name, Config Key, Purpose)",
+      "name": "correct-table-format"
+    },
+    {
+      "text": "The new entry is placed in a consistent position (alphabetical or end of table)",
+      "name": "consistent-ordering"
+    },
+    {
+      "text": "Does not modify any other part of REFERENCE.md beyond the middleware table",
+      "name": "no-unnecessary-changes"
+    },
+    {
+      "text": "Updates README.md if the middleware table there is also affected, or explains why no update is needed",
+      "name": "handles-readme"
+    }
+  ]
+}

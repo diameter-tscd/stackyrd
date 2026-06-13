@@ -25,9 +25,13 @@ func setupBenchRouter(numRoutes int) *gin.Engine {
 }
 
 func itoa(n int) string {
-	if n == 0 { return "0" }
+	if n == 0 {
+		return "0"
+	}
 	neg := n < 0
-	if neg { n = -n }
+	if neg {
+		n = -n
+	}
 	var b [20]byte
 	i := len(b) - 1
 	for n > 0 {

@@ -60,7 +60,7 @@ func executeSteps(ctx *AppContext, steps []AppStep) error {
 	for i, step := range steps {
 
 		stepNum := fmt.Sprintf("%d/%d", i+1, len(steps))
-		fmt.Printf("[%s] %s\n", stepNum, step.Name)
+		_, _ = fmt.Printf("[%s] %s\n", stepNum, step.Name)
 
 		if err := step.Fn(ctx); err != nil {
 			return fmt.Errorf("step failed: %w", err)
@@ -189,9 +189,9 @@ func (app *Application) runWithTUI() {
 func (app *Application) runWithConsole() {
 	// Print banner to console
 	if app.bannerText != "" {
-		fmt.Print(ColorPrimary)
-		fmt.Println(app.bannerText)
-		fmt.Print(ColorReset)
+		_, _ = fmt.Print(ColorPrimary)
+		_, _ = fmt.Println(app.bannerText)
+		_, _ = fmt.Print(ColorReset)
 	}
 
 	// Initialize logger

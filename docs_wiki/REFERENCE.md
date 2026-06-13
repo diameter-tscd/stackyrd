@@ -12,7 +12,7 @@ app:
   version: "1.0.1"
   debug: false
   env: "development"
-  banner_path: "banner.txt"
+  banner_path: "banner.txt"     # Embedded via pkg/assets/ — no external file needed at runtime
   startup_delay: 15             # TUI boot screen duration (seconds)
   quiet_startup: true            # Suppress console logs in TUI mode
   enable_tui: false              # Enable bubbletea terminal UI
@@ -268,7 +268,7 @@ func init() {
 
 | Name | Config Key | Purpose |
 |------|------------|---------|
-| Request ID | `request_id` | X-Request-ID header |
+| Request ID | `request_id` | Generates and propagates unique X-Request-ID per request |
 | Logger | `logger` | Request logging |
 | Permission | `permission_check` | Block DELETE by default |
 | CORS | `cors` | Cross-origin support |

@@ -44,6 +44,8 @@ stackyrd/
 │   ├── mongodb_service.go
 │   └── multi_tenant_service.go
 ├── pkg/
+│   ├── assets/            # Embedded application assets (banner.txt via //go:embed)
+│   │   └── embed.go
 │   ├── interfaces/
 │   │   └── service.go    # Service interface
 │   ├── plugin/            # Plugin system (auto-discovered, TS/Go hybrid)

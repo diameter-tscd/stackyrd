@@ -33,9 +33,9 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:            cfg.Address,
-		Password: cfg.Password,
-		DB:       cfg.DB,
+		Addr:         cfg.Address,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
 		PoolSize:     25,
 		MinIdleConns: 5,
 		PoolTimeout:  4 * time.Second,

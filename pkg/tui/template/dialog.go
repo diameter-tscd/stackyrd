@@ -35,10 +35,10 @@ type DialogResult struct {
 
 // DialogModel represents a reusable dialog component
 type DialogModel struct {
-	config      DialogConfig
-	textinput   textinput.Model
-	result      *DialogResult
-	isActive    bool
+	config    DialogConfig
+	textinput textinput.Model
+	result    *DialogResult
+	isActive  bool
 }
 
 // NewDialog creates a new dialog with the given configuration

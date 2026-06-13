@@ -2,8 +2,8 @@ package main_test
 
 import (
 	"context"
-	_ "stackyrd/internal/services/modules" // nolint:blank-imports triggers init() registrations
 	"io"
+	_ "stackyrd/internal/services/modules" // nolint:blank-imports triggers init() registrations
 	"sync"
 	"testing"
 	"time"
@@ -17,9 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ---------------------------------------------------------------------------
 // Config tests
-// ---------------------------------------------------------------------------
 
 func TestConfig_Defaults(t *testing.T) {
 	cfg, err := config.LoadConfig()
@@ -86,10 +84,8 @@ func TestConfig_InfraDefaults(t *testing.T) {
 	assert.False(t, cfg.Cron.Enabled)
 }
 
-// ---------------------------------------------------------------------------
 // PaginationRequest tests
 // PaginationRequest is defined in pkg/response — zero deps, pure value-object.
-// ---------------------------------------------------------------------------
 
 func TestPaginationRequest_Defaults(t *testing.T) {
 	pr := response.PaginationRequest{}
@@ -128,9 +124,7 @@ func TestPaginationRequest_Offset(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Registry tests
-// ---------------------------------------------------------------------------
 
 func TestRegistry_RegisterAndRetrieve(t *testing.T) {
 	l := logger.New(false, nil)
@@ -185,9 +179,7 @@ func TestRegistry_BootEmpty(t *testing.T) {
 	assert.NotPanics(t, func() { reg.Boot(gin.New()) })
 }
 
-// ---------------------------------------------------------------------------
 // Dependencies container tests
-// ---------------------------------------------------------------------------
 
 func TestDependencies_SetGet(t *testing.T) {
 	deps := registry.NewDependencies()
@@ -212,21 +204,23 @@ func TestDependencies_MissingKey(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// ---------------------------------------------------------------------------
 // Self-contained mock helpers
 // (avoid relying on pkg/testing to prevent import-name shadow issues)
-// ---------------------------------------------------------------------------
 
 type simpleMockConfig struct {
 	services map[string]bool
 }
 
 func (m *simpleMockConfig) IsServiceEnabled(name string) bool {
-	if v, ok := m.services[name]; ok { return v }
+	if v, ok := m.services[name]; ok {
+		return v
+	}
 	return false
 }
 func (m *simpleMockConfig) SetServiceEnabled(name string, enabled bool) {
-	if m.services == nil { m.services = make(map[string]bool) }
+	if m.services == nil {
+		m.services = make(map[string]bool)
+	}
 	m.services[name] = enabled
 }
 
@@ -240,16 +234,39 @@ type mockLogEntry struct {
 	Args    []interface{}
 }
 
-func (m *simpleMockLogger) Debug(msg string, args ...interface{}) { m.mu.Lock(); m.logs = append(m.logs, mockLogEntry{"DEBUG", msg, args}); m.mu.Unlock() }
-func (m *simpleMockLogger) Info(msg string, args ...interface{})  { m.mu.Lock(); m.logs = append(m.logs, mockLogEntry{"INFO", msg, args}); m.mu.Unlock() }
-func (m *simpleMockLogger) Warn(msg string, args ...interface{})  { m.mu.Lock(); m.logs = append(m.logs, mockLogEntry{"WARN", msg, args}); m.mu.Unlock() }
-func (m *simpleMockLogger) Error(msg string, args ...interface{}) { m.mu.Lock(); m.logs = append(m.logs, mockLogEntry{"ERROR", msg, args}); m.mu.Unlock() }
-func (m *simpleMockLogger) Fatal(msg string, args ...interface{}) { m.mu.Lock(); m.logs = append(m.logs, mockLogEntry{"FATAL", msg, args}); m.mu.Unlock() }
+func (m *simpleMockLogger) Debug(msg string, args ...interface{}) {
+	m.mu.Lock()
+	m.logs = append(m.logs, mockLogEntry{"DEBUG", msg, args})
+	m.mu.Unlock()
+}
+func (m *simpleMockLogger) Info(msg string, args ...interface{}) {
+	m.mu.Lock()
+	m.logs = append(m.logs, mockLogEntry{"INFO", msg, args})
+	m.mu.Unlock()
+}
+func (m *simpleMockLogger) Warn(msg string, args ...interface{}) {
+	m.mu.Lock()
+	m.logs = append(m.logs, mockLogEntry{"WARN", msg, args})
+	m.mu.Unlock()
+}
+func (m *simpleMockLogger) Error(msg string, args ...interface{}) {
+	m.mu.Lock()
+	m.logs = append(m.logs, mockLogEntry{"ERROR", msg, args})
+	m.mu.Unlock()
+}
+func (m *simpleMockLogger) Fatal(msg string, args ...interface{}) {
+	m.mu.Lock()
+	m.logs = append(m.logs, mockLogEntry{"FATAL", msg, args})
+	m.mu.Unlock()
+}
 func (m *simpleMockLogger) GetLogs() []mockLogEntry {
-	m.mu.RLock(); out := make([]mockLogEntry, len(m.logs)); copy(out, m.logs); m.mu.RUnlock()
+	m.mu.RLock()
+	out := make([]mockLogEntry, len(m.logs))
+	copy(out, m.logs)
+	m.mu.RUnlock()
 	return out
 }
-func (m *simpleMockLogger) Clear()                       { m.mu.Lock(); m.logs = m.logs[:0]; m.mu.Unlock() }
+func (m *simpleMockLogger) Clear() { m.mu.Lock(); m.logs = m.logs[:0]; m.mu.Unlock() }
 
 type simpleMockRedisManager struct {
 	mu      sync.RWMutex
@@ -258,7 +275,9 @@ type simpleMockRedisManager struct {
 
 func (m *simpleMockRedisManager) Set(_ context.Context, key string, value interface{}, _ time.Duration) error {
 	m.mu.Lock()
-	if m.storage == nil { m.storage = make(map[string]interface{}) }
+	if m.storage == nil {
+		m.storage = make(map[string]interface{})
+	}
 	m.storage[key] = value
 	m.mu.Unlock()
 	return nil
@@ -267,13 +286,17 @@ func (m *simpleMockRedisManager) Get(_ context.Context, key string) (string, err
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if v, ok := m.storage[key]; ok {
-		if s, ok := v.(string); ok { return s, nil }
+		if s, ok := v.(string); ok {
+			return s, nil
+		}
 	}
 	return "", nil
 }
 func (m *simpleMockRedisManager) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
-	if m.storage != nil { delete(m.storage, key) }
+	if m.storage != nil {
+		delete(m.storage, key)
+	}
 	m.mu.Unlock()
 	return nil
 }
@@ -289,10 +312,16 @@ type mockKafkaMessage struct {
 }
 
 func (m *simpleMockKafkaManager) Publish(topic string, value []byte) error {
-	m.mu.Lock(); m.messages = append(m.messages, mockKafkaMessage{topic, value}); m.mu.Unlock(); return nil
+	m.mu.Lock()
+	m.messages = append(m.messages, mockKafkaMessage{topic, value})
+	m.mu.Unlock()
+	return nil
 }
 func (m *simpleMockKafkaManager) GetMessages() []mockKafkaMessage {
-	m.mu.RLock(); out := make([]mockKafkaMessage, len(m.messages)); copy(out, m.messages); m.mu.RUnlock()
+	m.mu.RLock()
+	out := make([]mockKafkaMessage, len(m.messages))
+	copy(out, m.messages)
+	m.mu.RUnlock()
 	return out
 }
 func (*simpleMockKafkaManager) Close() error { return nil }
@@ -304,14 +333,18 @@ type simpleMockCronManager struct {
 
 func (m *simpleMockCronManager) AddJob(name string, _ string, cmd func()) error {
 	m.mu.Lock()
-	if m.jobs == nil { m.jobs = make(map[string]func()) }
+	if m.jobs == nil {
+		m.jobs = make(map[string]func())
+	}
 	m.jobs[name] = cmd
 	m.mu.Unlock()
 	return nil
 }
 func (m *simpleMockCronManager) RemoveJob(name string) error {
 	m.mu.Lock()
-	if m.jobs != nil { delete(m.jobs, name) }
+	if m.jobs != nil {
+		delete(m.jobs, name)
+	}
 	m.mu.Unlock()
 	return nil
 }
@@ -326,30 +359,34 @@ func (m *simpleMockFileReader) Read(path string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if d, ok := m.files[path]; ok {
-		out := make([]byte, len(d)); copy(out, d); return out, nil
+		out := make([]byte, len(d))
+		copy(out, d)
+		return out, nil
 	}
 	return nil, io.EOF
 }
 func (m *simpleMockFileReader) AddFile(path string, content []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.files == nil { m.files = make(map[string][]byte) }
-	d := make([]byte, len(content)); copy(d, content); m.files[path] = d
+	if m.files == nil {
+		m.files = make(map[string][]byte)
+	}
+	d := make([]byte, len(content))
+	copy(d, content)
+	m.files[path] = d
 }
 
-// ---------------------------------------------------------------------------
 // Twig mocks
-// ---------------------------------------------------------------------------
 
 type simpleMockPostgresManager struct{}
+
 func (*simpleMockPostgresManager) Close() error { return nil }
 
 type simpleMockMongoManager struct{}
+
 func (*simpleMockMongoManager) Close() error { return nil }
 
-// ---------------------------------------------------------------------------
 // Assertions against self-contained mocks
-// ---------------------------------------------------------------------------
 
 func TestMockConfig_Defaults(t *testing.T) {
 	mc := &simpleMockConfig{}
@@ -366,7 +403,11 @@ func TestMockConfig_Toggle(t *testing.T) {
 
 func TestMockLogger_LogLevels(t *testing.T) {
 	ml := &simpleMockLogger{}
-	ml.Debug("d", "k", 1); ml.Info("i", "k", 2); ml.Warn("w"); ml.Error("e"); ml.Fatal("f")
+	ml.Debug("d", "k", 1)
+	ml.Info("i", "k", 2)
+	ml.Warn("w")
+	ml.Error("e")
+	ml.Fatal("f")
 	logs := ml.GetLogs()
 	assert.Len(t, logs, 5)
 	assert.Equal(t, "DEBUG", logs[0].Level)
@@ -378,7 +419,8 @@ func TestMockLogger_LogLevels(t *testing.T) {
 
 func TestMockLogger_Clear(t *testing.T) {
 	ml := &simpleMockLogger{}
-	ml.Info("msg"); ml.Clear()
+	ml.Info("msg")
+	ml.Clear()
 	assert.Empty(t, ml.GetLogs())
 }
 
@@ -386,9 +428,11 @@ func TestMockRedisManager_SetGetDelete(t *testing.T) {
 	rm := &simpleMockRedisManager{}
 	assert.NoError(t, rm.Set(t.Context(), "k1", "v1", 0))
 	v, err := rm.Get(t.Context(), "k1")
-	assert.NoError(t, err); assert.Equal(t, "v1", v)
+	assert.NoError(t, err)
+	assert.Equal(t, "v1", v)
 	assert.NoError(t, rm.Delete(t.Context(), "k1"))
-	v, _ = rm.Get(t.Context(), "k1"); assert.Empty(t, v)
+	v, _ = rm.Get(t.Context(), "k1")
+	assert.Empty(t, v)
 }
 
 func TestMockKafkaManager_PublishGetMessages(t *testing.T) {

@@ -1,0 +1,35 @@
+{
+  "eval_id": 1,
+  "eval_name": "add-caching-doc",
+  "prompt": "I just added a new package at pkg/caching/ that provides Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch invalidation. It also has a CachingManager that wraps go-redis. Can you create the documentation for it in docs_wiki/ as a new file called CACHING.md? Make sure it matches the style and conventions of the existing docs (like RESILIENCE.md). Also update docs_wiki/README.md to add it to the Package Deep Dives table. The config key is 'caching', and it depends on the redis infrastructure component.",
+  "assertions": [
+    {
+      "text": "Creates docs_wiki/CACHING.md with proper H1 title and one-sentence summary",
+      "name": "creates-caching-md"
+    },
+    {
+      "text": "Uses fenced code blocks with language tags for Go examples",
+      "name": "uses-code-blocks"
+    },
+    {
+      "text": "Follows the package deep-dive pattern with sub-feature sections and usage examples",
+      "name": "deep-dive-pattern"
+    },
+    {
+      "text": "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
+      "name": "updates-readme-toc"
+    },
+    {
+      "text": "Includes a Best Practices section in CACHING.md",
+      "name": "best-practices-section"
+    },
+    {
+      "text": "Uses the project's module path (stackyrd) in all Go import paths",
+      "name": "correct-import-path"
+    },
+    {
+      "text": "Does not contain emojis in either file",
+      "name": "no-emojis"
+    }
+  ]
+}

@@ -89,10 +89,10 @@ func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *Asyn
 
 // BatchAsyncResult represents the result of a batch asynchronous operation
 type BatchAsyncResult[T any] struct {
-	Results    []AsyncResult[T]
-	Done        chan struct{}
-	batchSize   int
-	pending     int32 // number of results outstanding; CompleteResult is the sole completer
+	Results   []AsyncResult[T]
+	Done      chan struct{}
+	batchSize int
+	pending   int32 // number of results outstanding; CompleteResult is the sole completer
 }
 
 // NewBatchAsyncResult creates a new batch async result
@@ -103,10 +103,10 @@ func NewBatchAsyncResult[T any](count int, batchSize int) *BatchAsyncResult[T] {
 	}
 
 	return &BatchAsyncResult[T]{
-		Results:  results,
-		Done:     make(chan struct{}),
+		Results:   results,
+		Done:      make(chan struct{}),
 		batchSize: batchSize,
-		pending:  int32(count),
+		pending:   int32(count),
 	}
 }
 

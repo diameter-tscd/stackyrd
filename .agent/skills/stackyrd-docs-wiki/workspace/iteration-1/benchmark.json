@@ -1,0 +1,348 @@
+{
+  "metadata": {
+    "skill_name": "stackyrd-docs-wiki",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-06-13T08:49:07Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs_wiki/CACHING.md with proper H1 title and one-sentence summary",
+          "passed": true,
+          "evidence": "Creates '# Caching Guide' with summary line 'Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch invalidation.'"
+        },
+        {
+          "text": "Uses fenced code blocks with language tags for Go examples",
+          "passed": true,
+          "evidence": "Uses ```go, ```yaml, ```mermaid code blocks throughout"
+        },
+        {
+          "text": "Follows the package deep-dive pattern with sub-feature sections and usage examples",
+          "passed": true,
+          "evidence": "Sections: Overview, Architecture (mermaid), CachingManager (Basic/Typed ops), Cache-Aside (basic + fallback), TTL (per-key/inspection/refresh), Batch Invalidation (delete/pattern/tag), Configuration, Service Integration, Best Practices"
+        },
+        {
+          "text": "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
+          "passed": true,
+          "evidence": "Added row: '[**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache with TTL, cache-aside, batch invalidation' between Webhooks and Security"
+        },
+        {
+          "text": "Includes a Best Practices section in CACHING.md",
+          "passed": true,
+          "evidence": "Lines 237-245: '## Best Practices' with 7 numbered items"
+        },
+        {
+          "text": "Uses the project's module path (stackyrd) in all Go import paths",
+          "passed": true,
+          "evidence": "All imports use 'stackyrd/pkg/caching'"
+        },
+        {
+          "text": "Does not contain emojis in either file",
+          "passed": true,
+          "evidence": "No emojis found in CACHING.md or README.md output"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Adds request_id row to the middleware table in REFERENCE.md",
+          "passed": true,
+          "evidence": "Request ID row already existed at line 271; improved the Purpose column from 'X-Request-ID header' to 'Generates and propagates unique X-Request-ID per request'"
+        },
+        {
+          "text": "Uses the correct three-column format matching existing entries (Name, Config Key, Purpose)",
+          "passed": true,
+          "evidence": "Maintains existing format: | Request ID | `request_id` | Generates and propagates unique X-Request-ID per request |"
+        },
+        {
+          "text": "The new entry is placed in a consistent position (alphabetical or end of table)",
+          "passed": true,
+          "evidence": "Row kept in existing alphabetical position (first in table)"
+        },
+        {
+          "text": "Does not modify any other part of REFERENCE.md beyond the middleware table",
+          "passed": true,
+          "evidence": "Only the Purpose column for Request ID was changed. No other content modified."
+        },
+        {
+          "text": "Updates README.md if the middleware table there is also affected, or explains why no update is needed",
+          "passed": true,
+          "evidence": "Correctly determined README.md is a TOC without individual middleware entries, so no update needed. README.md copied unmodified."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Adds a new 'Using the Cache' section at the appropriate location (after 'Using Plugins from Services')",
+          "passed": true,
+          "evidence": "Added '## Using the Cache' section immediately after the 'Using Plugins from Services' section at line 218. However, the section appears TWICE (lines 218-261 and lines 263-313) due to a duplicate insertion bug."
+        },
+        {
+          "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
+          "passed": true,
+          "evidence": "Code examples import from 'stackyrd/pkg/caching' with import path in the init() and runtime code"
+        },
+        {
+          "text": "Code example shows getting the CachingManager from deps.Get",
+          "passed": true,
+          "evidence": "Shows 'deps.Get(\"caching\")' pattern in the init() function"
+        },
+        {
+          "text": "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
+          "passed": true,
+          "evidence": "getUser function shows: check cache with Get, on miss load from DB, Set with 5min TTL"
+        },
+        {
+          "text": "Mentions the config toggle services.caching in config.yaml",
+          "passed": true,
+          "evidence": "States 'Enable it via caching: true under services: in config.yaml' with a YAML code block"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 7,
+        "failed": 0,
+        "total": 7,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Creates docs_wiki/CACHING.md with proper H1 title and one-sentence summary",
+          "passed": true,
+          "evidence": "Creates '# Caching' with summary line 'Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch invalidation.'"
+        },
+        {
+          "text": "Uses fenced code blocks with language tags for Go examples",
+          "passed": true,
+          "evidence": "Uses ```go, ```yaml, ```mermaid code blocks throughout"
+        },
+        {
+          "text": "Follows the package deep-dive pattern with sub-feature sections and usage examples",
+          "passed": true,
+          "evidence": "Sections: Overview (pattern table), Configuration, CachingManager (Init/GetOrSet/GetSet/Batch/Bulk), Cache-Aside (sequence diagram + custom loader), Service Integration, Best Practices"
+        },
+        {
+          "text": "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
+          "passed": true,
+          "evidence": "Added row: '[**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache abstraction, TTL, cache-aside, batch invalidation' between Webhooks and Security"
+        },
+        {
+          "text": "Includes a Best Practices section in CACHING.md",
+          "passed": true,
+          "evidence": "Lines 167-174: '## Best Practices' with 7 items"
+        },
+        {
+          "text": "Uses the project's module path (stackyrd) in all Go import paths",
+          "passed": true,
+          "evidence": "All imports use 'stackyrd/pkg/caching'"
+        },
+        {
+          "text": "Does not contain emojis in either file",
+          "passed": true,
+          "evidence": "No emojis found in CACHING.md or README.md output"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Adds request_id row to the middleware table in REFERENCE.md",
+          "passed": false,
+          "evidence": "Determined that request_id already existed in the table and made no changes. The row existed but the purpose description was not improved."
+        },
+        {
+          "text": "Uses the correct three-column format matching existing entries (Name, Config Key, Purpose)",
+          "passed": true,
+          "evidence": "No modifications were made; existing format was implicitly preserved."
+        },
+        {
+          "text": "The new entry is placed in a consistent position (alphabetical or end of table)",
+          "passed": true,
+          "evidence": "No modifications were made; existing position was implicitly preserved."
+        },
+        {
+          "text": "Does not modify any other part of REFERENCE.md beyond the middleware table",
+          "passed": true,
+          "evidence": "No modifications at all."
+        },
+        {
+          "text": "Updates README.md if the middleware table there is also affected, or explains why no update is needed",
+          "passed": true,
+          "evidence": "Correctly determined README.md is a TOC without individual middleware entries, so no update needed."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Adds a new 'Using the Cache' section at the appropriate location (after 'Using Plugins from Services')",
+          "passed": true,
+          "evidence": "Added '## Using the Cache' section at line 218 immediately after 'Using Plugins from Services'"
+        },
+        {
+          "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
+          "passed": true,
+          "evidence": "Code examples use 'stackyrd/pkg/caching' import path"
+        },
+        {
+          "text": "Code example shows getting the CachingManager from deps.Get",
+          "passed": true,
+          "evidence": "Shows 'deps.Get(\"caching\")' pattern in the init() function"
+        },
+        {
+          "text": "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
+          "passed": true,
+          "evidence": "getUser function shows: Get -> miss -> FindUser -> Set with 5min TTL"
+        },
+        {
+          "text": "Mentions the config toggle services.caching in config.yaml",
+          "passed": true,
+          "evidence": "States 'Enable it via caching: true under services: in config.yaml' with YAML code block"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.9333,
+        "stddev": 0.1155,
+        "min": 0.8,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.07",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": [
+    "Assertions around import paths and emoji usage pass 100% in both configurations — these are universal conventions that don't require a skill",
+    "Eval 2 (update-middleware-table) assertion was poorly designed — request_id already existed in the table. With-skill improved the entry description; without-skill did nothing. The skill drove a better outcome not reflected by the pass rate",
+    "Eval 3 with-skill had a duplicate section bug (inserted 'Using the Cache' twice) that the assertions don't catch — the skill didn't prevent this quality issue",
+    "No timing/token data available — timing.json was not captured from subagent notifications",
+    "Both configurations handled eval 1 (creating CACHING.md) equally well because caching documentation follows well-known patterns. The skill's value is more evident for project-specific conventions like matching config keys and doc format conventions"
+  ]

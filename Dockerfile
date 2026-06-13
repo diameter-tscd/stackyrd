@@ -42,9 +42,8 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/stackyrd .
 
-# Copy config and banner
+# Copy config
 COPY --from=builder /app/config.yaml .
-COPY --from=builder /app/banner.txt .
 
 # Copy Python plugin host scripts (for external/ext: plugins)
 COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
@@ -79,9 +78,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy the binary from builder stage
 COPY --from=builder /app/stackyrd .
 
-# Copy config and banner
+# Copy config
 COPY --from=builder /app/config.yaml .
-COPY --from=builder /app/banner.txt .
 
 # Copy Python plugin host scripts (for external/ext: plugins)
 COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
@@ -110,9 +108,8 @@ WORKDIR /
 # Copy the binary from builder stage
 COPY --from=builder /app/stackyrd /stackyrd
 
-# Copy config and banner
+# Copy config
 COPY --from=builder /app/config.yaml .
-COPY --from=builder /app/banner.txt .
 
 # Copy Python host scripts (in case Python is layered on top)
 COPY --from=builder /app/pkg/plugin/python /pkg/plugin/python/

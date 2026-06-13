@@ -14,7 +14,7 @@ var validate *validator.Validate
 
 // Pre-compiled regexps — compiled once at package init, reused on every call
 var phoneRegex = regexp.MustCompile(`^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$`)
-var userRegex  = regexp.MustCompile(`^[a-zA-Z0-9_]{3,20}$`)
+var userRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{3,20}$`)
 
 func init() {
 	validate = validator.New()

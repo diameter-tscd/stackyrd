@@ -61,15 +61,15 @@ func handleList(c *gin.Context) {
 
 	metrics := CollectMetrics(reg)
 	c.JSON(http.StatusOK, gin.H{
-		"plugins":         result,
-		"total":           metrics.TotalPlugins,
-		"loaded":          metrics.LoadedPlugins,
-		"active_execs":    metrics.ActiveExecutions,
-		"goroutines":      metrics.GoroutineCount,
-		"memory_bytes":    metrics.MemoryUsageBytes,
-		"memory_limit":    metrics.MemoryLimitBytes,
-		"memory_percent":  metrics.MemoryPercent,
-		"uptime_seconds":  metrics.UptimeSeconds,
+		"plugins":        result,
+		"total":          metrics.TotalPlugins,
+		"loaded":         metrics.LoadedPlugins,
+		"active_execs":   metrics.ActiveExecutions,
+		"goroutines":     metrics.GoroutineCount,
+		"memory_bytes":   metrics.MemoryUsageBytes,
+		"memory_limit":   metrics.MemoryLimitBytes,
+		"memory_percent": metrics.MemoryPercent,
+		"uptime_seconds": metrics.UptimeSeconds,
 	})
 }
 
@@ -219,9 +219,14 @@ func handleListScripts(c *gin.Context) {
 
 	files := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() {
-			files = append(files, e.Name())
+		if e.IsDir() {
+			continue
 		}
+		name := e.Name()
+		if isCompiledArtifact(name) {
+			continue
+		}
+		files = append(files, name)
 	}
 	c.JSON(http.StatusOK, gin.H{"scripts": files})
 }
@@ -248,6 +253,20 @@ func handleGetScript(c *gin.Context) {
 		"name":    fileName,
 		"content": string(content),
 	})
+}
+
+func isCompiledArtifact(name string) bool {
+	switch {
+	case len(name) > 5 && name[len(name)-5:] == ".luac":
+		return true
+	case len(name) > 4 && name[len(name)-4:] == ".pyc":
+		return true
+	case len(name) > 7 && name[len(name)-7:] == ".min.js":
+		return true
+	case len(name) > 5 && name[len(name)-5:] == ".wasm":
+		return true
+	}
+	return false
 }
 
 func handleUnload(c *gin.Context) {

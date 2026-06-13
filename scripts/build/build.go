@@ -494,7 +494,6 @@ func (ctx *BuildContext) createBackup(logger *Logger) error {
 		APP_NAME,
 		APP_NAME + ".exe",
 		CONFIG_YML,
-		BANNER_TXT,
 	}
 
 	for _, file := range filesToBackup {
@@ -763,7 +762,6 @@ func (ctx *BuildContext) copyAssets(logger *Logger) error {
 		dst string
 	}{
 		{CONFIG_YML, filepath.Join(ctx.DistPath, CONFIG_YML)},
-		{BANNER_TXT, filepath.Join(ctx.DistPath, BANNER_TXT)},
 	}
 
 	for _, asset := range assets {

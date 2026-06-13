@@ -21,10 +21,12 @@ type CronJob struct {
 }
 
 type CronManager struct {
-	cron *cron.Cron
-	jobs map[cron.EntryID]*CronJob
-	mu   sync.RWMutex
-	pool *WorkerPool // Worker pool for async job execution
+	cron    *cron.Cron
+	jobs    map[cron.EntryID]*CronJob
+	mu      sync.RWMutex
+	pool    *WorkerPool // Worker pool for async job execution
+	poolMu  sync.Mutex
+	poolSet bool
 }
 
 // Name returns the display name of the component
@@ -33,14 +35,19 @@ func (c *CronManager) Name() string {
 }
 
 func NewCronManager() *CronManager {
-	// Initialize worker pool for async job execution
-	pool := NewWorkerPool(5) // Small pool for cron jobs
-	pool.Start()
-
 	return &CronManager{
 		cron: cron.New(cron.WithSeconds()), // Enable seconds field
 		jobs: make(map[cron.EntryID]*CronJob),
-		pool: pool,
+	}
+}
+
+func (c *CronManager) ensurePool() {
+	c.poolMu.Lock()
+	defer c.poolMu.Unlock()
+	if !c.poolSet {
+		c.pool = NewWorkerPool(5)
+		c.pool.Start()
+		c.poolSet = true
 	}
 }
 
@@ -218,12 +225,8 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 
 // SubmitAsyncJob submits a job to the worker pool for async execution
 func (c *CronManager) SubmitAsyncJob(job func()) {
-	if c.pool != nil {
-		c.pool.Submit(job)
-	} else {
-		// Fallback to direct execution if pool not available
-		go job()
-	}
+	c.ensurePool()
+	c.pool.Submit(job)
 }
 
 // GetPoolStatus returns the status of the worker pool

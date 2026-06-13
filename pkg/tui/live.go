@@ -696,10 +696,7 @@ func (m *LiveModel) updateFilteredLogs() {
 }
 
 func (m *LiveModel) updateQuery(query string) {
-	// execute query
-	go func() {
-		m.AddLog("info", "Execute query: "+query)
-	}()
+	m.AddLog("info", "Execute query: "+query)
 }
 
 // Scroll methods for navigating through logs

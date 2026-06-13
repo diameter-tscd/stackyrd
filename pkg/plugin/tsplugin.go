@@ -38,9 +38,6 @@ func (p *TSScriptPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 	if p.fs == nil {
 		return nil, fmt.Errorf("filesystem not available for plugin: %s", p.name)
 	}
-	if p.cache == nil {
-		p.cache = NewTSCache(".cache")
-	}
 
 	runtime := NewScriptRuntime(p, p.fs, p.cache)
 	return runtime.Execute(ctx, p.script, args)

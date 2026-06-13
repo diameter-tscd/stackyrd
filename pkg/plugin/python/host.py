@@ -10,8 +10,10 @@ the same directory as this host script.
 """
 
 import argparse
+import base64
 import importlib.util
 import json
+import marshal
 import os
 import sys
 import threading
@@ -48,7 +50,12 @@ class PluginHostServicer(plugin_pb2_grpc.PluginRuntimeServicer):
         module.__file__ = os.path.join(_host_dir, f"{self.name}_plugin.py")
         module.__name__ = f"plugins.{self.name}"
         module.__package__ = "plugins"
-        exec(source, module.__dict__)
+        if source.startswith("PYC:"):
+            bytecode = base64.b64decode(source[4:])
+            code = marshal.loads(bytecode)
+            exec(code, module.__dict__)
+        else:
+            exec(source, module.__dict__)
         self._module = module
         return module
 

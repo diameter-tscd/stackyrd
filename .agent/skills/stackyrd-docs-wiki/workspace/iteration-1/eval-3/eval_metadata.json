@@ -1,0 +1,27 @@
+{
+  "eval_id": 3,
+  "eval_name": "update-development-doc",
+  "prompt": "Can you update docs_wiki/DEVELOPMENT.md to add a new section about using the cache? It should go after the 'Using Plugins from Services' section. The caching package is at pkg/caching/ and provides a CachingManager that wraps go-redis with cache-aside pattern, TTL support, and batch invalidation. The config key is 'caching' under services in config.yaml. Write a section called 'Using the Cache' with a code example showing how to inject it via Dependencies and use the cache-aside pattern.",
+  "assertions": [
+    {
+      "text": "Adds a new 'Using the Cache' section at the appropriate location (after 'Using Plugins from Services')",
+      "name": "adds-cache-section"
+    },
+    {
+      "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
+      "name": "correct-import-path"
+    },
+    {
+      "text": "Code example shows getting the CachingManager from deps.Get",
+      "name": "deps-injection"
+    },
+    {
+      "text": "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
+      "name": "cache-aside-pattern"
+    },
+    {
+      "text": "Mentions the config toggle services.caching in config.yaml",
+      "name": "config-toggle"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Adds request_id row to the middleware table in REFERENCE.md",
+      "passed": true,
+      "evidence": "Request ID row already existed at line 271; improved the Purpose column from 'X-Request-ID header' to 'Generates and propagates unique X-Request-ID per request'"
+    },
+    {
+      "text": "Uses the correct three-column format matching existing entries (Name, Config Key, Purpose)",
+      "passed": true,
+      "evidence": "Maintains existing format: | Request ID | `request_id` | Generates and propagates unique X-Request-ID per request |"
+    },
+    {
+      "text": "The new entry is placed in a consistent position (alphabetical or end of table)",
+      "passed": true,
+      "evidence": "Row kept in existing alphabetical position (first in table)"
+    },
+    {
+      "text": "Does not modify any other part of REFERENCE.md beyond the middleware table",
+      "passed": true,
+      "evidence": "Only the Purpose column for Request ID was changed. No other content modified."
+    },
+    {
+      "text": "Updates README.md if the middleware table there is also affected, or explains why no update is needed",
+      "passed": true,
+      "evidence": "Correctly determined README.md is a TOC without individual middleware entries, so no update needed. README.md copied unmodified."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  }
+}

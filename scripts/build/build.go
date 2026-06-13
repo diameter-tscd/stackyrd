@@ -655,6 +655,61 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
+// compilePlugins pre-compiles plugin scripts in the builtin directory
+func (ctx *BuildContext) compilePlugins(logger *Logger) error {
+	logger.Info("Compiling plugin scripts...")
+
+	builtinDir := filepath.Join(ctx.ProjectDir, "pkg", "plugin", "builtin")
+	entries, err := os.ReadDir(builtinDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logger.Info("No builtin plugins directory found, skipping")
+			return nil
+		}
+		return fmt.Errorf("failed to read builtin plugins: %w", err)
+	}
+
+	compiled := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		scriptsDir := filepath.Join(builtinDir, entry.Name(), "scripts")
+		scriptsEntries, err := os.ReadDir(scriptsDir)
+		if err != nil {
+			continue
+		}
+		for _, script := range scriptsEntries {
+			if script.IsDir() {
+				continue
+			}
+			name := script.Name()
+			scriptPath := filepath.Join(scriptsDir, name)
+
+			if strings.HasSuffix(name, ".py") {
+				pycPath := filepath.Join(scriptsDir, strings.TrimSuffix(name, ".py") + ".pyc")
+				logger.Debug("Compiling %s -> %s", scriptPath, pycPath)
+				cmd := exec.Command("python3", "-c",
+					fmt.Sprintf("import py_compile; py_compile.compile(%q, cfile=%q, doraise=True)", scriptPath, pycPath))
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					logger.Warn("Failed to compile Python plugin %s: %v", scriptPath, err)
+					continue
+				}
+				compiled++
+				logger.Success("Compiled Python plugin: %s", filepath.Base(scriptPath))
+			}
+		}
+	}
+
+	if compiled == 0 {
+		logger.Info("No Python plugin scripts to compile")
+	} else {
+		logger.Success("Compiled %d Python plugin script(s)", compiled)
+	}
+	return nil
+}
+
 // buildApplication builds the Go application
 func (ctx *BuildContext) buildApplication(logger *Logger) error {
 	logger.Info("Building Go binary...")
@@ -853,6 +908,7 @@ func main() {
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
 		{"Archiving backup", ctx.archiveBackup},
+		{"Compiling plugins", ctx.compilePlugins},
 		{"Building application", ctx.buildApplication},
 		{"Asking user about UPX compression", ctx.askUserAboutUPX},
 		{"Compressing with UPX", ctx.compressWithUPX},

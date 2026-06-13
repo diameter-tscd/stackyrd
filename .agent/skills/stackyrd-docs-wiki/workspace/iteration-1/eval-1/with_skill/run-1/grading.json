@@ -1,0 +1,45 @@
+{
+  "expectations": [
+    {
+      "text": "Creates docs_wiki/CACHING.md with proper H1 title and one-sentence summary",
+      "passed": true,
+      "evidence": "Creates '# Caching Guide' with summary line 'Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch invalidation.'"
+    },
+    {
+      "text": "Uses fenced code blocks with language tags for Go examples",
+      "passed": true,
+      "evidence": "Uses ```go, ```yaml, ```mermaid code blocks throughout"
+    },
+    {
+      "text": "Follows the package deep-dive pattern with sub-feature sections and usage examples",
+      "passed": true,
+      "evidence": "Sections: Overview, Architecture (mermaid), CachingManager (Basic/Typed ops), Cache-Aside (basic + fallback), TTL (per-key/inspection/refresh), Batch Invalidation (delete/pattern/tag), Configuration, Service Integration, Best Practices"
+    },
+    {
+      "text": "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
+      "passed": true,
+      "evidence": "Added row: '[**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache with TTL, cache-aside, batch invalidation' between Webhooks and Security"
+    },
+    {
+      "text": "Includes a Best Practices section in CACHING.md",
+      "passed": true,
+      "evidence": "Lines 237-245: '## Best Practices' with 7 numbered items"
+    },
+    {
+      "text": "Uses the project's module path (stackyrd) in all Go import paths",
+      "passed": true,
+      "evidence": "All imports use 'stackyrd/pkg/caching'"
+    },
+    {
+      "text": "Does not contain emojis in either file",
+      "passed": true,
+      "evidence": "No emojis found in CACHING.md or README.md output"
+    }
+  ],
+  "summary": {
+    "passed": 7,
+    "failed": 0,
+    "total": 7,
+    "pass_rate": 1.0
+  }
+}

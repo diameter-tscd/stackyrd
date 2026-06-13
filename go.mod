@@ -31,6 +31,7 @@ require (
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
 	github.com/tetratelabs/wazero v1.12.0
+	github.com/ulikunitz/xz v0.5.15
 	github.com/yuin/gopher-lua v1.1.2
 	go.mongodb.org/mongo-driver v1.17.6
 	golang.org/x/image v0.39.0

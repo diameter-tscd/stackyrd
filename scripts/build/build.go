@@ -687,7 +687,7 @@ func (ctx *BuildContext) compilePlugins(logger *Logger) error {
 			scriptPath := filepath.Join(scriptsDir, name)
 
 			if strings.HasSuffix(name, ".py") {
-				pycPath := filepath.Join(scriptsDir, strings.TrimSuffix(name, ".py") + ".pyc")
+				pycPath := filepath.Join(scriptsDir, strings.TrimSuffix(name, ".py")+".pyc")
 				logger.Debug("Compiling %s -> %s", scriptPath, pycPath)
 				cmd := exec.Command("python3", "-c",
 					fmt.Sprintf("import py_compile; py_compile.compile(%q, cfile=%q, doraise=True)", scriptPath, pycPath))

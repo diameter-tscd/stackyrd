@@ -20,12 +20,12 @@ import (
 )
 
 var (
-	builtinFS        embed.FS
-	storeBase        string
-	globalLogger     *logger.Logger
-	globalInfraRegistry   *infrastructure.ComponentRegistry
-	pluginStartTime  time.Time
-	memoryHardLimit  int64
+	builtinFS           embed.FS
+	storeBase           string
+	globalLogger        *logger.Logger
+	globalInfraRegistry *infrastructure.ComponentRegistry
+	pluginStartTime     time.Time
+	memoryHardLimit     int64
 )
 
 type PluginConfig struct {

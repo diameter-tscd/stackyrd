@@ -53,16 +53,16 @@ type Runtime interface {
 }
 
 type PluginStats struct {
-	Name              string  `json:"name"`
-	Status            string  `json:"status"`
-	Type              string  `json:"type"`
-	Entrypoint        string  `json:"entrypoint"`
-	LoadTimeMs        float64 `json:"load_time_ms"`
-	EmbeddedFileSize  int64   `json:"embedded_file_size"`
-	ExecuteCount      int64   `json:"execute_count"`
-	LastExecuteMs     float64 `json:"last_execution_ms"`
-	TotalExecuteMs    float64 `json:"total_execution_ms"`
-	MemoryUsageBytes  int64   `json:"memory_usage_bytes"`
+	Name             string  `json:"name"`
+	Status           string  `json:"status"`
+	Type             string  `json:"type"`
+	Entrypoint       string  `json:"entrypoint"`
+	LoadTimeMs       float64 `json:"load_time_ms"`
+	EmbeddedFileSize int64   `json:"embedded_file_size"`
+	ExecuteCount     int64   `json:"execute_count"`
+	LastExecuteMs    float64 `json:"last_execution_ms"`
+	TotalExecuteMs   float64 `json:"total_execution_ms"`
+	MemoryUsageBytes int64   `json:"memory_usage_bytes"`
 }
 
 type PluginManagerMetrics struct {

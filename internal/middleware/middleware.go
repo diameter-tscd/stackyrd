@@ -25,7 +25,7 @@ type MiddlewareRegistry struct {
 // Global registry instance
 var (
 	globalMiddlewareRegistry *MiddlewareRegistry
-	registryOnce            sync.Once
+	registryOnce             sync.Once
 )
 
 // GetGlobalMiddlewareRegistry returns the singleton middleware registry

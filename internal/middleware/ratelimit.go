@@ -34,8 +34,8 @@ type visitor struct {
 }
 
 var (
-	rateLimiters   []*RateLimiter
-	rateLimitersMu sync.Mutex
+	rateLimiters    []*RateLimiter
+	rateLimitersMu  sync.Mutex
 	rateCleanupOnce sync.Once
 )
 

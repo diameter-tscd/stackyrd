@@ -61,15 +61,15 @@ func handleList(c *gin.Context) {
 
 	metrics := CollectMetrics(reg)
 	c.JSON(http.StatusOK, gin.H{
-		"plugins":         result,
-		"total":           metrics.TotalPlugins,
-		"loaded":          metrics.LoadedPlugins,
-		"active_execs":    metrics.ActiveExecutions,
-		"goroutines":      metrics.GoroutineCount,
-		"memory_bytes":    metrics.MemoryUsageBytes,
-		"memory_limit":    metrics.MemoryLimitBytes,
-		"memory_percent":  metrics.MemoryPercent,
-		"uptime_seconds":  metrics.UptimeSeconds,
+		"plugins":        result,
+		"total":          metrics.TotalPlugins,
+		"loaded":         metrics.LoadedPlugins,
+		"active_execs":   metrics.ActiveExecutions,
+		"goroutines":     metrics.GoroutineCount,
+		"memory_bytes":   metrics.MemoryUsageBytes,
+		"memory_limit":   metrics.MemoryLimitBytes,
+		"memory_percent": metrics.MemoryPercent,
+		"uptime_seconds": metrics.UptimeSeconds,
 	})
 }
 

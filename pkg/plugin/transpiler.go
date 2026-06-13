@@ -38,11 +38,11 @@ func (c *TSCache) Compile(fs afero.Fs, path string, source []byte) ([]byte, erro
 
 	loaderTS := api.LoaderTS
 	result := api.Transform(string(source), api.TransformOptions{
-		Loader:           loaderTS,
-		Target:           api.ES2020,
-		MinifyWhitespace: true,
+		Loader:            loaderTS,
+		Target:            api.ES2020,
+		MinifyWhitespace:  true,
 		MinifyIdentifiers: true,
-		MinifySyntax:     true,
+		MinifySyntax:      true,
 	})
 
 	if len(result.Errors) > 0 {

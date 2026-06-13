@@ -15,8 +15,8 @@ import (
 type ComponentRegistry struct {
 	components     map[string]InfrastructureComponent // write-once after boot
 	factories      map[string]ComponentFactory        // write-once at init
-	componentsMu   sync.RWMutex                      // guards components map
-	factoriesMu    sync.Mutex                       // guards factories map (init phase only)
+	componentsMu   sync.RWMutex                       // guards components map
+	factoriesMu    sync.Mutex                         // guards factories map (init phase only)
 	cachedSnapshot map[string]InfrastructureComponent // TTL-cached GetAll copy; nil = stale
 	cacheExpiry    time.Time
 	cacheMu        sync.Mutex

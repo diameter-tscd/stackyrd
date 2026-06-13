@@ -14,9 +14,9 @@ import (
 	_ "stackyrd/internal/services/modules"
 	_ "stackyrd/pkg/infrastructure" // nolint:blank-imports triggers init() auto-registrations
 
+	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
-	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
 )

@@ -11,24 +11,37 @@ type Item[T any] struct {
 }
 
 type Cache[T any] struct {
-	items map[string]Item[T]
-	mu    sync.RWMutex
+	items  map[string]Item[T]
+	mu     sync.RWMutex
+	stopCh chan struct{}
 }
 
 // New creates a new in-memory cache with a background cleanup goroutine
-// that evicts expired items every 5 minutes.
+// that evicts expired items every 5 minutes. Call Close to stop the
+// cleanup goroutine.
 func New[T any]() *Cache[T] {
 	c := &Cache[T]{
-		items: make(map[string]Item[T]),
+		items:  make(map[string]Item[T]),
+		stopCh: make(chan struct{}),
 	}
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			c.Cleanup()
+		for {
+			select {
+			case <-ticker.C:
+				c.Cleanup()
+			case <-c.stopCh:
+				return
+			}
 		}
 	}()
 	return c
+}
+
+// Close stops the background cleanup goroutine.
+func (c *Cache[T]) Close() {
+	close(c.stopCh)
 }
 
 // Set adds an item to the cache with a TTL (duration).

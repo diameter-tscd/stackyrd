@@ -72,29 +72,23 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 }
 
 func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		now := time.Now()
+	now := time.Now()
 
-		// Collect expired keys under RLock
-		rl.mu.RLock()
-		expired := make([]string, 0, len(rl.visitors)>>4)
-		for ip, v := range rl.visitors {
-			if now.Sub(v.lastSeen) > rl.window {
-				expired = append(expired, ip)
-			}
+	rl.mu.RLock()
+	expired := make([]string, 0, len(rl.visitors)>>4)
+	for ip, v := range rl.visitors {
+		if now.Sub(v.lastSeen) > rl.window {
+			expired = append(expired, ip)
 		}
-		rl.mu.RUnlock()
+	}
+	rl.mu.RUnlock()
 
-		// Apply deletions under short write-lock
-		if len(expired) > 0 {
-			rl.mu.Lock()
-			for _, ip := range expired {
-				delete(rl.visitors, ip)
-			}
-			rl.mu.Unlock()
+	if len(expired) > 0 {
+		rl.mu.Lock()
+		for _, ip := range expired {
+			delete(rl.visitors, ip)
 		}
+		rl.mu.Unlock()
 	}
 }
 

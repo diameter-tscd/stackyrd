@@ -5,6 +5,7 @@ import (
 	"io"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"sync"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -16,6 +17,10 @@ type MinIOManager struct {
 	BucketName string
 	Connected  bool
 	Pool       *WorkerPool // Async worker pool
+
+	statusCache   map[string]interface{}
+	statusExpiry  time.Time
+	statusMu      sync.RWMutex
 }
 
 // Name returns the display name of the component
@@ -62,22 +67,40 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		}
 	}
 
+	m.statusMu.RLock()
+	if m.statusCache != nil && time.Now().Before(m.statusExpiry) {
+		cached := m.statusCache
+		m.statusMu.RUnlock()
+		return cached
+	}
+	m.statusMu.RUnlock()
+
 	ctx := context.Background()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
-		return map[string]interface{}{
+		stats := map[string]interface{}{
 			"connected":   true,
 			"bucket_name": m.BucketName,
 			"status":      "Bucket not found",
 		}
+		m.statusMu.Lock()
+		m.statusCache = stats
+		m.statusExpiry = time.Now().Add(2 * time.Second)
+		m.statusMu.Unlock()
+		return stats
 	}
 
-	return map[string]interface{}{
+	stats := map[string]interface{}{
 		"connected":   true,
 		"bucket_name": m.BucketName,
 		"status":      "Healthy",
 		"endpoint":    m.Client.EndpointURL().String(),
 	}
+	m.statusMu.Lock()
+	m.statusCache = stats
+	m.statusExpiry = time.Now().Add(2 * time.Second)
+	m.statusMu.Unlock()
+	return stats
 }
 
 // Async MinIO Operations

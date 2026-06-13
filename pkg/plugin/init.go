@@ -133,7 +133,7 @@ func computeEmbeddedFileSize(baseDir string) int64 {
 	var total int64
 	_ = fs.WalkDir(builtinFS, baseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return fs.SkipDir
 		}
 		if !d.IsDir() {
 			info, err := d.Info()
@@ -146,6 +146,27 @@ func computeEmbeddedFileSize(baseDir string) int64 {
 	return total
 }
 
+func computeAllPluginSizes(builtinDir string, pluginNames []string) map[string]int64 {
+	sizes := make(map[string]int64, len(pluginNames))
+	for _, name := range pluginNames {
+		baseDir := filepath.Join(builtinDir, name)
+		var dirTotal int64
+		_ = fs.WalkDir(builtinFS, baseDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return fs.SkipDir
+			}
+			if !d.IsDir() {
+				info, err := d.Info()
+				if err == nil {
+					dirTotal += info.Size()
+				}
+			}
+			return nil
+		})
+		sizes[name] = dirTotal
+	}
+	return sizes
+}
 func scanBuiltinPlugins(pCfg PluginConfig, l *logger.Logger) error {
 	reg := GetGlobalPluginRegistry()
 	builtinDir := "builtin"
@@ -156,6 +177,14 @@ func scanBuiltinPlugins(pCfg PluginConfig, l *logger.Logger) error {
 	}
 
 	skipped := 0
+
+	var pluginDirs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			pluginDirs = append(pluginDirs, entry.Name())
+		}
+	}
+	pluginSizes := computeAllPluginSizes(builtinDir, pluginDirs)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -212,7 +241,7 @@ func scanBuiltinPlugins(pCfg PluginConfig, l *logger.Logger) error {
 
 		fsys := buildPluginFS(builtinFS, pluginPrefix, storeDir)
 
-		fileSize := computeEmbeddedFileSize(pluginPrefix)
+		fileSize := pluginSizes[pluginName]
 
 		pluginType := entrypointType(meta.Entrypoint)
 		stats := &PluginStats{

@@ -22,7 +22,7 @@
 | [**Pagination**](PAGINATION.md) | `pkg/pagination/` | Cursor-based pagination with forward/backward navigation |
 | [**Logging**](LOGGING.md) | `pkg/logging/` | Structured logging, log rotation, sampling |
 | [**Webhooks**](WEBHOOK.md) | `pkg/webhook/` | Webhook sending/receiving, HMAC signing, event handlers |
-| [**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache with TTL, cache-aside, batch invalidation |
+| [**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache abstraction, TTL, cache-aside, batch invalidation |
 | [**Security**](SECURITY.md) | *middleware* | Auth modes, security headers, CORS, encryption, best practices |
 
 ## Operations

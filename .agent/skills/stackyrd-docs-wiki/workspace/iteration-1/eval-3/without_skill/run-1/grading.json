@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Adds a new 'Using the Cache' section at the appropriate location (after 'Using Plugins from Services')",
+      "passed": true,
+      "evidence": "Added '## Using the Cache' section at line 218 immediately after 'Using Plugins from Services'"
+    },
+    {
+      "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
+      "passed": true,
+      "evidence": "Code examples use 'stackyrd/pkg/caching' import path"
+    },
+    {
+      "text": "Code example shows getting the CachingManager from deps.Get",
+      "passed": true,
+      "evidence": "Shows 'deps.Get(\"caching\")' pattern in the init() function"
+    },
+    {
+      "text": "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
+      "passed": true,
+      "evidence": "getUser function shows: Get -> miss -> FindUser -> Set with 5min TTL"
+    },
+    {
+      "text": "Mentions the config toggle services.caching in config.yaml",
+      "passed": true,
+      "evidence": "States 'Enable it via caching: true under services: in config.yaml' with YAML code block"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  }
+}

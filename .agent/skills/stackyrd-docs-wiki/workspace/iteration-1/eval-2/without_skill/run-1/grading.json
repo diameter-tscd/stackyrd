@@ -1,0 +1,35 @@
+{
+  "expectations": [
+    {
+      "text": "Adds request_id row to the middleware table in REFERENCE.md",
+      "passed": false,
+      "evidence": "Determined that request_id already existed in the table and made no changes. The row existed but the purpose description was not improved."
+    },
+    {
+      "text": "Uses the correct three-column format matching existing entries (Name, Config Key, Purpose)",
+      "passed": true,
+      "evidence": "No modifications were made; existing format was implicitly preserved."
+    },
+    {
+      "text": "The new entry is placed in a consistent position (alphabetical or end of table)",
+      "passed": true,
+      "evidence": "No modifications were made; existing position was implicitly preserved."
+    },
+    {
+      "text": "Does not modify any other part of REFERENCE.md beyond the middleware table",
+      "passed": true,
+      "evidence": "No modifications at all."
+    },
+    {
+      "text": "Updates README.md if the middleware table there is also affected, or explains why no update is needed",
+      "passed": true,
+      "evidence": "Correctly determined README.md is a TOC without individual middleware entries, so no update needed."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.8
+  }
+}

@@ -18,9 +18,9 @@ type MinIOManager struct {
 	Connected  bool
 	Pool       *WorkerPool // Async worker pool
 
-	statusCache   map[string]interface{}
-	statusExpiry  time.Time
-	statusMu      sync.RWMutex
+	statusCache  map[string]interface{}
+	statusExpiry time.Time
+	statusMu     sync.RWMutex
 }
 
 // Name returns the display name of the component

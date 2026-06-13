@@ -1156,7 +1156,6 @@ func main() {
 
 	ClearScreen()
 
-
 	cmd := ""
 	cmdArgs := []string{}
 	if len(os.Args) > 1 {

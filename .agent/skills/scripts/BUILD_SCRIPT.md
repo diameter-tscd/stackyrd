@@ -57,7 +57,7 @@ The script executes these steps in order:
 8. buildApplication   → go build or garble build with ldflags (embeds compiled plugins via //go:embed)
 9. askUserAboutUPX    → Prompt (or skip via -upx) for UPX LZMA compression
 10. compressWithUPX   → Run upx --lzma on the binary
-11. copyAssets        → Copy config.yaml and banner.txt to dist/
+11. copyAssets        → Copy config.yaml to dist/
 ```
 
 ---
@@ -83,7 +83,7 @@ Uses `pgrep -x stackyrd` (or `tasklist` on Windows) to find running instances an
 
 ### 5. Backup (`createBackup`)
 
-Copies existing `dist/` files (`stackyrd`, `stackyrd.exe`, `config.yaml`, `banner.txt`) to `dist/backups/{timestamp}/`. Skips non-existent files.
+Copies existing `dist/` files (`stackyrd`, `stackyrd.exe`, `config.yaml`) to `dist/backups/{timestamp}/`. Skips non-existent files.
 
 ### 6. Backup Archiving (`archiveBackup`)
 
@@ -125,7 +125,9 @@ Compression failure is non-fatal (build continues without compression).
 
 ### 11. Asset Copying (`copyAssets`)
 
-Copies `config.yaml` and `banner.txt` from project root to `dist/`. Missing files are skipped.
+Copies `config.yaml` from project root to `dist/`. Missing file is skipped.
+
+> **Note**: `banner.txt` is no longer copied as a build asset. It is embedded in the binary at compile time via `pkg/assets/embed.go` and served through the afero virtual filesystem (`infrastructure.Init`).
 
 ---
 
@@ -135,7 +137,6 @@ Copies `config.yaml` and `banner.txt` from project root to `dist/`. Missing file
 dist/
 ├── stackyrd              # Compiled binary
 ├── config.yaml           # Copied from project root
-├── banner.txt            # Copied from project root (if exists)
 └── backups/
     └── 20260528_143020.zip  # Timestamped backup archive
 ```
@@ -198,7 +199,7 @@ type BuildContext struct {
 | `APP_NAME` | `stackyrd` | Binary name |
 | `MAIN_PATH` | `./cmd/app` | Main package path |
 | `CONFIG_YML` | `config.yaml` | Config file to copy |
-| `BANNER_TXT` | `banner.txt` | Banner file to copy |
+| ~~`BANNER_TXT`~~ | ~~`banner.txt`~~ | ~~Banner file to copy~~ *(retained for backward compat, no longer used in copy)* |
 
 ---
 

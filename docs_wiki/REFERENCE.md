@@ -12,7 +12,7 @@ app:
   version: "1.0.1"
   debug: false
   env: "development"
-  banner_path: "banner.txt"
+  banner_path: "banner.txt"     # Embedded via pkg/assets/ — no external file needed at runtime
   startup_delay: 15             # TUI boot screen duration (seconds)
   quiet_startup: true            # Suppress console logs in TUI mode
   enable_tui: false              # Enable bubbletea terminal UI

@@ -542,45 +542,6 @@ func IsChildPath(parent, child string) bool {
 	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
-// FileCopyBuffer copies a file through a reusable byte buffer pool to minimize allocations.
-// DEPRECATED: Use CopyFile instead.
-func FileCopyBuffer(src, dst string, buf []byte) error {
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
-
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-	defer func() { _ = srcFile.Close() }()
-
-	if err := EnsureDir(filepath.Dir(dst)); err != nil {
-		return fmt.Errorf("failed to create parent directories: %w", err)
-	}
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer func() { _ = dstFile.Close() }()
-
-	if len(buf) == 0 {
-		buf = make([]byte, 32*1024)
-	}
-
-	_, err = io.CopyBuffer(dstFile, srcFile, buf)
-	if err != nil {
-		return fmt.Errorf("failed to copy file: %w", err)
-	}
-
-	fi, err := srcFile.Stat()
-	if err == nil {
-		_ = os.Chmod(dst, fi.Mode())
-	}
-
-	return nil
-}
-
 // ReadSeekerAt reads a range of bytes from a file at a given offset.
 func ReadSeekerAt(path string, offset int64, length int64) ([]byte, error) {
 	path = filepath.Clean(path)

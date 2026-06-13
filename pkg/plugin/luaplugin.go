@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	lua "github.com/yuin/gopher-lua"
 	"github.com/spf13/afero"
+	lua "github.com/yuin/gopher-lua"
 )
 
 type luaRuntime struct{}
@@ -70,7 +70,7 @@ func (p *LuaScriptPlugin) Execute(ctx Context, args map[string]interface{}) (*Re
 	resultCh := make(chan *Result, 1)
 
 	sandbox := NewPluginSandbox(ctx.Limits)
-	execErr := sandbox.ExecuteWithGuard(context.TODO(), ctx.Limits, func() {
+	execErr := sandbox.ExecuteWithGuard(context.Background(), ctx.Limits, func() {
 		L := lua.NewState()
 		defer L.Close()
 

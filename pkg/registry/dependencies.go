@@ -11,9 +11,9 @@ type Dependencies struct {
 	components map[string]interface{}
 	mu         sync.RWMutex
 	// TTL cache for GetAll() to avoid copying the entire map on every health check
-	cachedAll    map[string]interface{}
-	cacheExpiry  time.Time
-	cacheTTL     time.Duration
+	cachedAll   map[string]interface{}
+	cacheExpiry time.Time
+	cacheTTL    time.Duration
 }
 
 // NewDependencies creates a new dependencies container

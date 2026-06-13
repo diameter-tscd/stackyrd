@@ -482,10 +482,10 @@ func compressWithAutoDetect(reader io.Reader, writer io.Writer, options Compress
 
 // BatchProcessOptions configures batch image processing.
 type BatchProcessOptions struct {
-	Concurrency int    // max concurrent goroutines (default: number of CPUs)
-	OutputDir   string // output directory (default: same as input)
-	Suffix      string // suffix for output filenames (default: "_processed")
-	Overwrite   bool   // overwrite existing output files
+	Concurrency int                          // max concurrent goroutines (default: number of CPUs)
+	OutputDir   string                       // output directory (default: same as input)
+	Suffix      string                       // suffix for output filenames (default: "_processed")
+	Overwrite   bool                         // overwrite existing output files
 	OnProgress  func(path string, err error) // progress callback
 }
 

@@ -42,6 +42,56 @@ Each reference file contains:
 - Testing guidance
 - Edge cases and pitfalls
 
+## Build Script (`scripts/build/build.go`)
+
+The build script is a standalone single-file Go program (`package main`) that compiles the stackyrd application. Run it from anywhere in the project tree (it auto-discovers the project root via `go.mod`).
+
+### Execution Modes
+
+| Mode | How | When |
+|------|-----|------|
+| **TUI** (default) | `go run ./scripts/build/` | Interactive terminal with alt-screen bubbletea TUI |
+| **CLI** | `go run ./scripts/build/ --no-tui` | CI/CD, piped stdout, non-interactive terminals |
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--timeout` | `10` | Seconds before user prompts auto-select default (0 = wait forever) |
+| `--verbose` | `false` | Enable debug log output |
+| `--garble` | `false` | Enable garble obfuscation (skips interactive prompt) |
+| `--upx` | `false` | Enable UPX LZMA compression (skips interactive prompt) |
+| `--archive-format` | `tar` | Backup archive format: `tar` (native LZMA2, default) or `7z` (requires `7z` binary). Unknown values warn and fall back to `tar`. Aliases: `tar.xz`/`txz` → `tar`, `sevenzip`/`7-zip` → `7z` |
+| `--no-tui` | `false` | Force plain CLI output mode |
+
+### Build Steps (TUI + CLI)
+
+1. **Check Project Path** — find `go.mod` and `chdir` to project root
+2. **Check Required Tools** — verify/install `goversioninfo` and `garble`
+3. **Configure Garble** — interactive prompt (TUI: `y`/`n` keypress, CLI: stdin with countdown timer)
+4. **Stop Running Process** — kill any running `stackyrd` instance via `pgrep`/`tasklist`
+5. **Create Backup** — timestamped copy of existing dist files
+6. **Archive Backup** — compress backup with LZMA2 (`tar.xz` natively or `7z` binary)
+7. **Compile Plugins** — pre-compile Python plugin scripts in `pkg/plugin/builtin/`
+8. **Build Application** — `go build` or `garble build` with trimmed ldflags
+9. **Configure UPX** — interactive prompt (same pattern as garble)
+10. **Compress with UPX** — apply `upx --lzma --best` to the binary
+11. **Copy Assets** — copy `config.yaml` to dist
+
+### TUI Architecture
+
+The TUI (`BuildTuiModel`) uses `charmbracelet/bubbletea` with `tea.WithAltScreen()`:
+- **Step list** — top section showing all 11 steps with status icons (pending/running/success/error/skipped)
+- **Build Log** — bottom section showing captured log output in a fixed-height panel, auto-truncated to terminal size
+- **Prompt handling** — inline prompts with live countdown timer and `y`/`n`/`q`/`ctrl+c` keybindings
+- **Output capture** — `os.Stdout`/`os.Stderr` redirected to an OS pipe during step execution; logger writes to a `logCaptureWriter`; both feed a thread-safe `logState` buffer with ANSI stripping
+
+### Critical Rules
+
+- Always run with `go run ./scripts/build/` (package mode) — single-file `go run scripts/build/build.go` fails because Go compiles only that file
+- The banner is read from `pkg/assets/banner.txt` at runtime; if missing, falls back to "  stackyrd" text
+- `go build ./scripts/build/` and `go build ./...` both compile cleanly
+
 ## General Conventions
 
 | Convention | Rule |

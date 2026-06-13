@@ -86,17 +86,43 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "pkg/plugin/sandbox.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 63,
+									"snippet": {
+										"text": "if int64(memInfo.RSS) \u003e maxBytes {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 63
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "pkg/utils/system.go"
 								},
 								"region": {
 									"endColumn": 28,
-									"endLine": 168,
+									"endLine": 185,
 									"snippet": {
 										"text": "routineValue.Store(int32(runtime.NumGoroutine()))"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 28,
-									"startLine": 168
+									"startLine": 185
 								}
 							}
 						}
@@ -116,13 +142,39 @@
 								},
 								"region": {
 									"endColumn": 14,
-									"endLine": 62,
+									"endLine": 79,
 									"snippet": {
 										"text": "pid := int32(os.Getpid())"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 14,
-									"startLine": 62
+									"startLine": 79
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e int32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/sandbox.go"
+								},
+								"region": {
+									"endColumn": 32,
+									"endLine": 106,
+									"snippet": {
+										"text": "go MemMonitor(execCtx, int32(os.Getpid()), memory, func() {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 32,
+									"startLine": 106
 								}
 							}
 						}
@@ -142,13 +194,13 @@
 								},
 								"region": {
 									"endColumn": 18,
-									"endLine": 105,
+									"endLine": 109,
 									"snippet": {
 										"text": "pending:  int32(count),"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 18,
-									"startLine": 105
+									"startLine": 109
 								}
 							}
 						}
@@ -167,14 +219,14 @@
 									"uri": "pkg/utils/strings.go"
 								},
 								"region": {
-									"endColumn": 29,
-									"endLine": 13,
+									"endColumn": 17,
+									"endLine": 15,
 									"snippet": {
-										"text": "var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))"
+										"text": "seededRand   = rand.New(rand.NewSource(time.Now().UnixNano()))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 29,
-									"startLine": 13
+									"startColumn": 17,
+									"startLine": 15
 								}
 							}
 						}
@@ -193,14 +245,14 @@
 									"uri": "pkg/resilience/retry.go"
 								},
 								"region": {
-									"endColumn": 13,
-									"endLine": 202,
+									"endColumn": 15,
+									"endLine": 14,
 									"snippet": {
-										"text": "jitter := rand.Float64() * 0.5"
+										"text": "jitterRand = rand.New(rand.NewSource(time.Now().UnixNano()))"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 13,
-									"startLine": 202
+									"startColumn": 15,
+									"startLine": 14
 								}
 							}
 						}
@@ -220,13 +272,13 @@
 								},
 								"region": {
 									"endColumn": 26,
-									"endLine": 540,
+									"endLine": 649,
 									"snippet": {
 										"text": "if err := os.WriteFile(dstPath, data, 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 26,
-									"startLine": 540
+									"startLine": 649
 								}
 							}
 						}
@@ -246,13 +298,13 @@
 								},
 								"region": {
 									"endColumn": 24,
-									"endLine": 494,
+									"endLine": 612,
 									"snippet": {
 										"text": "if err := os.WriteFile(dst, data, 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 24,
-									"startLine": 494
+									"startLine": 612
 								}
 							}
 						}
@@ -272,13 +324,13 @@
 								},
 								"region": {
 									"endColumn": 23,
-									"endLine": 470,
+									"endLine": 588,
 									"snippet": {
 										"text": "file, err := os.Open(path)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 23,
-									"startLine": 470
+									"startLine": 588
 								}
 							}
 						}
@@ -294,17 +346,44 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "pkg/plugin/external_runtime.go"
+								},
+								"region": {
+									"endColumn": 22,
+									"endLine": 146,
+									"snippet": {
+										"text": "p.cmd = exec.Command(hostPath, hostScript, \"--socket\", socketPath, \"--name\", p.name)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 22,
+									"startLine": 146
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Command injection via taint analysis"
+					},
+					"ruleId": "G702",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "scripts/pkg/pkg.go"
 								},
 								"region": {
 									"endColumn": 10,
-									"endLine": 571,
+									"endLine": 536,
 									"snippet": {
 										"text": "cmd := exec.Command(yrdconvPath, fmt.Sprintf(\"-dir=%s\", yrdPath))"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 10,
-									"startLine": 571
+									"startLine": 536
 								}
 							}
 						}
@@ -325,13 +404,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 573,
+									"endLine": 682,
 									"snippet": {
 										"text": "cmd = exec.Command(\"go\", \"build\", \"-ldflags=-s -w -buildid=\", \"-trimpath\", \"-o\", outputPath, MAIN_PATH)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 573
+									"startLine": 682
 								}
 							}
 						}
@@ -352,13 +431,40 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 571,
+									"endLine": 680,
 									"snippet": {
 										"text": "cmd = exec.Command(\"garble\", \"build\", \"-ldflags=-s -w -buildid=\", \"-trimpath\", \"-o\", outputPath, MAIN_PATH)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 571
+									"startLine": 680
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/external_runtime.go"
+								},
+								"region": {
+									"endColumn": 10,
+									"endLine": 146,
+									"snippet": {
+										"text": "p.cmd = exec.Command(hostPath, hostScript, \"--socket\", socketPath, \"--name\", p.name)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 10,
+									"startLine": 146
 								}
 							}
 						}
@@ -595,13 +701,13 @@
 								},
 								"region": {
 									"endColumn": 9,
-									"endLine": 283,
+									"endLine": 401,
 									"snippet": {
 										"text": "cmd = exec.Command(\"tasklist\", \"/FI\", fmt.Sprintf(\"IMAGENAME eq %s.exe\", APP_NAME))"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 9,
-									"startLine": 283
+									"startLine": 401
 								}
 							}
 						}
@@ -703,13 +809,13 @@
 								},
 								"region": {
 									"endColumn": 19,
-									"endLine": 735,
+									"endLine": 736,
 									"snippet": {
 										"text": "content, err := os.ReadFile(filePath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 19,
-									"startLine": 735
+									"startLine": 736
 								}
 							}
 						}
@@ -757,13 +863,13 @@
 								},
 								"region": {
 									"endColumn": 18,
-									"endLine": 524,
+									"endLine": 508,
 									"snippet": {
 										"text": "outFile, err := os.Create(downloadPath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 18,
-									"startLine": 524
+									"startLine": 508
 								}
 							}
 						}
@@ -811,13 +917,13 @@
 								},
 								"region": {
 									"endColumn": 19,
-									"endLine": 432,
+									"endLine": 450,
 									"snippet": {
 										"text": "outFile, err := os.Create(localPath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 19,
-									"startLine": 432
+									"startLine": 450
 								}
 							}
 						}
@@ -865,13 +971,13 @@
 								},
 								"region": {
 									"endColumn": 18,
-									"endLine": 636,
+									"endLine": 745,
 									"snippet": {
 										"text": "dstFile, err := os.Create(dst)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 18,
-									"startLine": 636
+									"startLine": 745
 								}
 							}
 						}
@@ -919,13 +1025,13 @@
 								},
 								"region": {
 									"endColumn": 18,
-									"endLine": 630,
+									"endLine": 739,
 									"snippet": {
 										"text": "srcFile, err := os.Open(src)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 18,
-									"startLine": 630
+									"startLine": 739
 								}
 							}
 						}
@@ -973,13 +1079,13 @@
 								},
 								"region": {
 									"endColumn": 17,
-									"endLine": 535,
+									"endLine": 644,
 									"snippet": {
 										"text": "data, err := os.ReadFile(srcPath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 17,
-									"startLine": 535
+									"startLine": 644
 								}
 							}
 						}
@@ -1027,13 +1133,13 @@
 								},
 								"region": {
 									"endColumn": 15,
-									"endLine": 489,
+									"endLine": 607,
 									"snippet": {
 										"text": "data, err := os.ReadFile(src)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 15,
-									"startLine": 489
+									"startLine": 607
 								}
 							}
 						}
@@ -1081,13 +1187,13 @@
 								},
 								"region": {
 									"endColumn": 16,
-									"endLine": 470,
+									"endLine": 588,
 									"snippet": {
 										"text": "file, err := os.Open(path)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 16,
-									"startLine": 470
+									"startLine": 588
 								}
 							}
 						}
@@ -1135,13 +1241,13 @@
 								},
 								"region": {
 									"endColumn": 18,
-									"endLine": 422,
+									"endLine": 540,
 									"snippet": {
 										"text": "zipFile, err := os.Create(target)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 18,
-									"startLine": 422
+									"startLine": 540
 								}
 							}
 						}
@@ -1486,13 +1592,13 @@
 								},
 								"region": {
 									"endColumn": 16,
-									"endLine": 422,
+									"endLine": 441,
 									"snippet": {
 										"text": "resp, err := http.Get(remotePath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 16,
-									"startLine": 422
+									"startLine": 441
 								}
 							}
 						}
@@ -1512,13 +1618,13 @@
 								},
 								"region": {
 									"endColumn": 15,
-									"endLine": 93,
+									"endLine": 95,
 									"snippet": {
 										"text": "resp, err := http.Get(configURL)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 15,
-									"startLine": 93
+									"startLine": 95
 								}
 							}
 						}
@@ -1564,14 +1670,14 @@
 									"uri": "scripts/pkg/pkg.go"
 								},
 								"region": {
-									"endColumn": 13,
-									"endLine": 537,
+									"endColumn": 7,
+									"endLine": 517,
 									"snippet": {
-										"text": "if err := os.Chmod(downloadPath, 0755); err != nil {"
+										"text": "_ = os.Chmod(downloadPath, 0755)"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 13,
-									"startLine": 537
+									"startColumn": 7,
+									"startLine": 517
 								}
 							}
 						}
@@ -1646,13 +1752,40 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 131,
+									"endLine": 286,
+									"snippet": {
+										"text": "if err := os.MkdirAll(filepath.Dir(INDEX_CACHE_PATH), 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 286
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 153,
 									"snippet": {
 										"text": "if err := os.MkdirAll(ctx.InstallRoot, 0755); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 131
+									"startLine": 153
 								}
 							}
 						}
@@ -1673,13 +1806,13 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 370,
+									"endLine": 488,
 									"snippet": {
 										"text": "if err := os.MkdirAll(ctx.BackupPath, 0755); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 370
+									"startLine": 488
 								}
 							}
 						}
@@ -1700,13 +1833,13 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 358,
+									"endLine": 476,
 									"snippet": {
 										"text": "if err := os.MkdirAll(backupRoot, 0755); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 358
+									"startLine": 476
 								}
 							}
 						}
@@ -1727,13 +1860,94 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 154,
+									"endLine": 155,
 									"snippet": {
 										"text": "if err := os.MkdirAll(ctx.DistPath, 0755); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 154
+									"startLine": 155
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/store.go"
+								},
+								"region": {
+									"endColumn": 13,
+									"endLine": 193,
+									"snippet": {
+										"text": "if err := os.MkdirAll(d, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 13,
+									"startLine": 193
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/store.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 177,
+									"snippet": {
+										"text": "if err := os.MkdirAll(storeDir, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 177
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 4
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/init.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 65,
+									"snippet": {
+										"text": "if err := os.MkdirAll(storeBase, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 65
 								}
 							}
 						}
@@ -1781,13 +1995,13 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 869,
+									"endLine": 870,
 									"snippet": {
 										"text": "if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 869
+									"startLine": 870
 								}
 							}
 						}
@@ -1808,13 +2022,67 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 671,
+									"endLine": 672,
 									"snippet": {
 										"text": "if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 671
+									"startLine": 672
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306",
+					"ruleIndex": 7
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 322,
+									"snippet": {
+										"text": "if err := os.WriteFile(tmpPath, data, 0644); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 322
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect WriteFile permissions to be 0600 or less"
+					},
+					"ruleId": "G306",
+					"ruleIndex": 7
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "scripts/pkg/pkg.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 289,
+									"snippet": {
+										"text": "return os.WriteFile(INDEX_CACHE_PATH, []byte(body), 0644)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 289
 								}
 							}
 						}
@@ -1835,13 +2103,13 @@
 								},
 								"region": {
 									"endColumn": 14,
-									"endLine": 540,
+									"endLine": 649,
 									"snippet": {
 										"text": "if err := os.WriteFile(dstPath, data, 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 14,
-									"startLine": 540
+									"startLine": 649
 								}
 							}
 						}
@@ -1862,13 +2130,13 @@
 								},
 								"region": {
 									"endColumn": 12,
-									"endLine": 494,
+									"endLine": 612,
 									"snippet": {
 										"text": "if err := os.WriteFile(dst, data, 0644); err != nil {"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 12,
-									"startLine": 494
+									"startLine": 612
 								}
 							}
 						}
@@ -1939,6 +2207,110 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
+									"uri": "pkg/plugin/plugin.pb.go"
+								},
+								"region": {
+									"endColumn": 19,
+									"endLine": 284,
+									"snippet": {
+										"text": "RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 19,
+									"startLine": 284
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of unsafe calls should be audited"
+					},
+					"ruleId": "G103"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/plugin.pb.go"
+								},
+								"region": {
+									"endColumn": 32,
+									"endLine": 284,
+									"snippet": {
+										"text": "RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 32,
+									"startLine": 284
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of unsafe calls should be audited"
+					},
+					"ruleId": "G103"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/plugin.pb.go"
+								},
+								"region": {
+									"endColumn": 84,
+									"endLine": 251,
+									"snippet": {
+										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 84,
+									"startLine": 251
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of unsafe calls should be audited"
+					},
+					"ruleId": "G103"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/plugin/plugin.pb.go"
+								},
+								"region": {
+									"endColumn": 71,
+									"endLine": 251,
+									"snippet": {
+										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 71,
+									"startLine": 251
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of unsafe calls should be audited"
+					},
+					"ruleId": "G103"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
 									"uri": "scripts/swagger/swagger.go"
 								},
 								"region": {
@@ -1957,33 +2329,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/swagger/swagger.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 109,
-									"snippet": {
-										"text": "cmd.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 109
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2009,7 +2356,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2035,7 +2383,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2061,7 +2410,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2087,7 +2437,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2113,7 +2464,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2139,7 +2491,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2165,33 +2518,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/service/service.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 359,
-									"snippet": {
-										"text": "fmt.Scanln(\u0026input)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 359
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2217,7 +2545,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2225,17 +2554,17 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "scripts/service/service.go"
+									"uri": "scripts/plugin/pkg.go"
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 319,
+									"endLine": 500,
 									"snippet": {
-										"text": "fmt.Scanln(\u0026input)"
+										"text": "fs.Parse(args)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 319
+									"startLine": 500
 								}
 							}
 						}
@@ -2243,7 +2572,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2251,17 +2581,17 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "scripts/service/service.go"
+									"uri": "scripts/plugin/pkg.go"
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 288,
+									"endLine": 467,
 									"snippet": {
-										"text": "fmt.Scanln(\u0026fileName)"
+										"text": "fs.Parse(args)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 288
+									"startLine": 467
 								}
 							}
 						}
@@ -2269,7 +2599,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2277,17 +2608,17 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "scripts/service/service.go"
+									"uri": "scripts/plugin/pkg.go"
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 269,
+									"endLine": 423,
 									"snippet": {
-										"text": "fmt.Scanln(\u0026wireName)"
+										"text": "fs.Parse(args)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 269
+									"startLine": 423
 								}
 							}
 						}
@@ -2295,163 +2626,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/service/service.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 234,
-									"snippet": {
-										"text": "fmt.Scanln(\u0026serviceName)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 234
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/service/service.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 170,
-									"snippet": {
-										"text": "cmd.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 170
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/pkg/pkg.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 604,
-									"snippet": {
-										"text": "os.Remove(yrdPath)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 604
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/pkg/pkg.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 437,
-									"snippet": {
-										"text": "outFile.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 437
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/pkg/pkg.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 180,
-									"snippet": {
-										"text": "cmd.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 180
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/build/build.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 478,
-									"snippet": {
-										"text": "filepath.Walk(source, func(path string, info os.FileInfo, err error) error {\nif err != nil {\nreturn err\n}\n\nheader, err := zip.FileInfoHeader(info)\nif err != nil {\nreturn err\n}\n\nif baseDir != \"\" {\nheader.Name = filepath.Join(baseDir, strings.TrimPrefix(path, source))\n}\n\nif info.IsDir() {\nheader.Name += \"/\"\n} else {\nheader.Method = zip.Deflate\n}\n\nwriter, err := archive.CreateHeader(header)\nif err != nil {\nreturn err\n}\n\nif info.IsDir() {\nreturn nil\n}\n\nfile, err := os.Open(path)\nif err != nil {\nreturn err\n}\ndefer file.Close()\n\n_, err = io.Copy(writer, file)\nreturn err\n})\n"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 441
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2463,13 +2639,13 @@
 								},
 								"region": {
 									"endColumn": 3,
-									"endLine": 232,
+									"endLine": 263,
 									"snippet": {
 										"text": "fmt.Scanln(\u0026choice)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 3,
-									"startLine": 232
+									"startLine": 263
 								}
 							}
 						}
@@ -2477,7 +2653,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2488,40 +2665,14 @@
 									"uri": "scripts/build/build.go"
 								},
 								"region": {
-									"endColumn": 2,
-									"endLine": 120,
-									"snippet": {
-										"text": "cmd.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 120
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/websocket/handler.go"
-								},
-								"region": {
 									"endColumn": 3,
-									"endLine": 151,
+									"endLine": 233,
 									"snippet": {
-										"text": "c.Conn.Close()"
+										"text": "fmt.Scanln(\u0026choice)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 3,
-									"startLine": 151
+									"startLine": 233
 								}
 							}
 						}
@@ -2529,7 +2680,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2537,17 +2689,17 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/webhook/handler.go"
+									"uri": "pkg/plugin/runtime.go"
 								},
 								"region": {
 									"endColumn": 2,
-									"endLine": 240,
+									"endLine": 70,
 									"snippet": {
-										"text": "w.Write([]byte(`{\"status\":\"ok\"}`))"
+										"text": "vm.Set(\"$done\", func(opts map[string]interface{}) {\nsuccess, _ := opts[\"success\"].(bool)\ndata := opts[\"data\"]\nerrStr, _ := opts[\"error\"].(string)\nresult := \u0026Result{Success: success, Data: data, Error: errStr}\nselect {\ncase doneCh \u003c- result:\ndefault:\n}\n})\n"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 2,
-									"startLine": 240
+									"startLine": 61
 								}
 							}
 						}
@@ -2555,137 +2707,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/utils/system.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 214,
-									"snippet": {
-										"text": "cmd.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 214
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/tui/live.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 596,
-									"snippet": {
-										"text": "t.program.Run()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 596
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/request/request.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 24,
-									"snippet": {
-										"text": "validate.RegisterValidation(\"username\", validateUsername)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 24
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/request/request.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 23,
-									"snippet": {
-										"text": "validate.RegisterValidation(\"phone\", validatePhone)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 23
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/logging/structured.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 228,
-									"snippet": {
-										"text": "sl.writer.Write(data)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 228
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2711,33 +2734,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/logging/sampler.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 150,
-									"snippet": {
-										"text": "sl.logger.writer.Write(data)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 150
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				},
 				{
 					"level": "warning",
@@ -2763,345 +2761,8 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/logging/rotation.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 116,
-									"snippet": {
-										"text": "os.Remove(rw.filename)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 116
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/logging/rotation.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 105,
-									"snippet": {
-										"text": "rw.file.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 105
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/logging/rotation.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 92,
-									"snippet": {
-										"text": "file.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 92
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/infrastructure/mongo.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 360,
-									"snippet": {
-										"text": "serverStatus.Decode(\u0026serverInfo)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 360
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/infrastructure/mongo.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 82,
-									"snippet": {
-										"text": "client.Disconnect(context.Background())"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 82
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "internal/services/modules/broadcast_service.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 161,
-									"snippet": {
-										"text": "s.sendSSEEvent(c, initialEvent)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 161
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "internal/middleware/encryption.go"
-								},
-								"region": {
-									"endColumn": 4,
-									"endLine": 123,
-									"snippet": {
-										"text": "gz.Close()"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 4,
-									"startLine": 123
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "internal/middleware/encryption.go"
-								},
-								"region": {
-									"endColumn": 5,
-									"endLine": 66,
-									"snippet": {
-										"text": "c.Writer.Write(w.body.Bytes())"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 5,
-									"startLine": 66
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "internal/middleware/encryption.go"
-								},
-								"region": {
-									"endColumn": 5,
-									"endLine": 62,
-									"snippet": {
-										"text": "c.Writer.Write([]byte(encoded))"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 5,
-									"startLine": 62
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "docs_wiki/examples/response_examples.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 107,
-									"snippet": {
-										"text": "c.ShouldBindQuery(\u0026search)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 107
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "cmd/app/application.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 263,
-									"snippet": {
-										"text": "srv.Shutdown(context.Background(), app.logger)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 263
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "cmd/app/application.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 248,
-									"snippet": {
-										"text": "srv.Shutdown(context.Background(), app.logger)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 248
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "cmd/app/application.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 245,
-									"snippet": {
-										"text": "srv.Shutdown(context.Background(), app.logger)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 245
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104"
+					"ruleId": "G104",
+					"ruleIndex": 1
 				}
 			],
 			"taxonomies": [
@@ -3139,6 +2800,17 @@
 							"id": "22",
 							"shortDescription": {
 								"text": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The program calls a function that can never be guaranteed to work safely."
+							},
+							"guid": "b5fcdc26-1906-39a8-aa7f-04cbe2339bce",
+							"helpUri": "https://cwe.mitre.org/data/definitions/242.html",
+							"id": "242",
+							"shortDescription": {
+								"text": "Use of Inherently Dangerous Function"
 							}
 						},
 						{
@@ -3228,6 +2900,44 @@
 					"informationUri": "https://github.com/securego/gosec/",
 					"name": "gosec",
 					"rules": [
+						{
+							"defaultConfiguration": {
+								"level": "warning"
+							},
+							"fullDescription": {
+								"text": "Use of unsafe calls should be audited"
+							},
+							"help": {
+								"text": "Use of unsafe calls should be audited\nSeverity: LOW\nConfidence: HIGH\n"
+							},
+							"id": "G103",
+							"name": "Use of Inherently Dangerous Function",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"LOW"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "b5fcdc26-1906-39a8-aa7f-04cbe2339bce",
+										"id": "242",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Use of unsafe calls should be audited"
+							}
+						},
 						{
 							"defaultConfiguration": {
 								"level": "warning"
@@ -3568,6 +3278,44 @@
 							],
 							"shortDescription": {
 								"text": "Expect WriteFile permissions to be 0600 or less"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Command injection via taint analysis"
+							},
+							"help": {
+								"text": "Command injection via taint analysis\nSeverity: HIGH\nConfidence: HIGH\n"
+							},
+							"id": "G702",
+							"name": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "1a37bf66-7c5a-3aa0-94bb-ffae58a9e01c",
+										"id": "78",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Command injection via taint analysis"
 							}
 						},
 						{

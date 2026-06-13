@@ -21,9 +21,7 @@ import (
 	"stackyrd/pkg/registry"
 )
 
-// ---------------------------------------------------------------------------
 // Sub-benchmarks: config + logger + router init (non-blocking)
-// ---------------------------------------------------------------------------
 
 func BenchmarkAppStartup(b *testing.B) {
 	gin.SetMode(gin.TestMode)
@@ -211,9 +209,7 @@ func BenchmarkAppStartup_FullStartupTUI(b *testing.B) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Infrastructure component benchmark
-// ---------------------------------------------------------------------------
 
 func BenchmarkAppStartup_Infrastructure(b *testing.B) {
 	b.Run("ComponentInit", BenchmarkAppStartup_InfraComponentInit)
@@ -247,9 +243,7 @@ func BenchmarkAppStartup_InfraComponentInit(b *testing.B) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Full-path snapshot benchmark
-// ---------------------------------------------------------------------------
 
 // BenchmarkStartupSnapshot times the complete synchronous startup pipeline in
 // a single loop and produces one per-iteration figure (ns/op) so CI can reject
@@ -307,9 +301,7 @@ func BenchmarkStartupSnapshot(b *testing.B) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Integration tests: health endpoints must be reachable after full startup init
-// ---------------------------------------------------------------------------
 
 func TestStartup_HealthEndpointReady(t *testing.T) {
 	r, deps := mustBuildDiagnosticRouter(t)
@@ -393,9 +385,7 @@ type httptestRecorder struct {
 	*httptest.ResponseRecorder
 }
 
-// ---------------------------------------------------------------------------
 // Guard assertions: auto-discovery must not be silently broken
-// ---------------------------------------------------------------------------
 
 // TestStartup_AutoDiscoveredServiceFactoriesArePresent asserts that at least
 // one service factory is registered by the init() side-effect in each service
@@ -433,9 +423,7 @@ func TestStartup_AutoDiscoveredMiddlewareFactoriesArePresent(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // CI guidance
-// ---------------------------------------------------------------------------
 
 // BenchmarkThresholdMilliseconds is the recommended maximum acceptable per-
 // iteration startup time for BenchmarkStartupSnapshot in CI.

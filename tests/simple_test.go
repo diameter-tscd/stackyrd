@@ -17,9 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ---------------------------------------------------------------------------
 // Config tests
-// ---------------------------------------------------------------------------
 
 func TestConfig_Defaults(t *testing.T) {
 	cfg, err := config.LoadConfig()
@@ -86,10 +84,8 @@ func TestConfig_InfraDefaults(t *testing.T) {
 	assert.False(t, cfg.Cron.Enabled)
 }
 
-// ---------------------------------------------------------------------------
 // PaginationRequest tests
 // PaginationRequest is defined in pkg/response — zero deps, pure value-object.
-// ---------------------------------------------------------------------------
 
 func TestPaginationRequest_Defaults(t *testing.T) {
 	pr := response.PaginationRequest{}
@@ -128,9 +124,7 @@ func TestPaginationRequest_Offset(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Registry tests
-// ---------------------------------------------------------------------------
 
 func TestRegistry_RegisterAndRetrieve(t *testing.T) {
 	l := logger.New(false, nil)
@@ -185,9 +179,7 @@ func TestRegistry_BootEmpty(t *testing.T) {
 	assert.NotPanics(t, func() { reg.Boot(gin.New()) })
 }
 
-// ---------------------------------------------------------------------------
 // Dependencies container tests
-// ---------------------------------------------------------------------------
 
 func TestDependencies_SetGet(t *testing.T) {
 	deps := registry.NewDependencies()
@@ -212,10 +204,8 @@ func TestDependencies_MissingKey(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// ---------------------------------------------------------------------------
 // Self-contained mock helpers
 // (avoid relying on pkg/testing to prevent import-name shadow issues)
-// ---------------------------------------------------------------------------
 
 type simpleMockConfig struct {
 	services map[string]bool
@@ -386,9 +376,7 @@ func (m *simpleMockFileReader) AddFile(path string, content []byte) {
 	m.files[path] = d
 }
 
-// ---------------------------------------------------------------------------
 // Twig mocks
-// ---------------------------------------------------------------------------
 
 type simpleMockPostgresManager struct{}
 
@@ -398,9 +386,7 @@ type simpleMockMongoManager struct{}
 
 func (*simpleMockMongoManager) Close() error { return nil }
 
-// ---------------------------------------------------------------------------
 // Assertions against self-contained mocks
-// ---------------------------------------------------------------------------
 
 func TestMockConfig_Defaults(t *testing.T) {
 	mc := &simpleMockConfig{}

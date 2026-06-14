@@ -1,8 +1,10 @@
 package config
 
 import (
+	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -195,6 +197,20 @@ type GrafanaConfig struct {
 	APIKey   string `mapstructure:"api_key"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+}
+
+// LoadDotEnv loads environment variables from a .env file.
+// If envFilePath is empty, it defaults to ".env" in the current directory.
+// Silently returns nil if the file does not exist.
+func LoadDotEnv(envFilePath string) error {
+	path := envFilePath
+	if path == "" {
+		path = ".env"
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	return godotenv.Load(path)
 }
 
 // LoadConfig loads configuration from local file or URL

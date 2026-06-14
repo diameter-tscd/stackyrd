@@ -92,6 +92,105 @@ The TUI (`BuildTuiModel`) uses `charmbracelet/bubbletea` with `tea.WithAltScreen
 - The banner is read from `pkg/assets/banner.txt` at runtime; if missing, falls back to "  stackyrd" text
 - `go build ./scripts/build/` and `go build ./...` both compile cleanly
 
+## Service Generator Script (`scripts/service/service.go`)
+
+The service generator is a standalone Go CLI tool for scaffolding new service modules. It shares the same bubbletea TUI architecture as the build script.
+
+### Execution Modes
+
+| Mode | How | When |
+|------|-----|------|
+| **TUI** (default) | `go run ./scripts/service/` | Interactive terminal with alt-screen bubbletea TUI |
+| **CLI** | `go run ./scripts/service/ --no-tui` | CI/CD, piped stdout, non-interactive terminals |
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-verbose` | `false` | Enable verbose/debug logging |
+| `-dry-run` | `false` | Only analyze, don't generate files |
+| `-no-tui` | `false` | Disable TUI, use plain CLI output |
+
+### TUI Workflow
+
+The TUI (`ServiceTuiModel`) follows the same step/status/prompt/log-capture pattern as the build script:
+
+```
+1. Find project root (walk up to go.mod)
+2. Prompt: Service name (text input, duplicate check)
+3. Prompt: Wire name (default: {name}-service)
+4. Prompt: File name (default: {name}_service.go)
+5. Prompt: Service pattern (1-6 select)
+6. Prompt: Generate test file? (y/n)
+7. Prompt: Generate database model? (y/n)
+8. Prompt: Add custom routes? (y/n) → loop
+9. Display configuration summary
+10. Check method duplication
+11. Prompt: Proceed with generation? (Y/n, 10s timeout)
+12. Generate service file
+13. Generate test file (if selected)
+14. Display frozen summary (auto-closing in 15s)
+```
+
+### Prompts
+
+| Type | Behavior |
+|------|----------|
+| **textinput** | `bubbles/textinput` with placeholder, Enter to submit |
+| **y/n** | Keypress: `y`/`n`, 10s timeout, `q` cancels step |
+| **select** | 1-6 + Enter, `q` cancels |
+| **confirm** | Y/n with 10s timeout defaulting to Yes |
+
+### Summary & Auto-Exit
+
+After generation, a frozen summary shows service name, wire name, file, pattern, test/model flags, routes, and next steps. A live countdown "Auto-closing in 15s" runs; any key dismisses early. On exit, the console clears and a clean one-liner is printed.
+
+### Rawterm Safety Net
+
+Both the build and service scripts share the `ttyGuard` pattern:
+
+```go
+type ttyGuard struct {
+    fd       int
+    oldState *term.State
+}
+func (g *ttyGuard) Save() error    // term.GetState(fd)
+func (g *ttyGuard) Restore()      // term.Restore(fd, oldState), nil-safe
+```
+
+- `Save()` at the top of the TUI entry function, `defer Restore()`
+- Signal handler goroutine catches SIGINT/SIGTERM → Restore → exit(128+signo)
+- Panic recovery defers Restore then re-panics
+- `golang.org/x/term` is already in `go.mod` — no new dependency needed
+
+### Critical Rules
+
+- Run with `go run ./scripts/service/` (package mode) or `go run scripts/service/service.go` (single file works)
+- Alignment in summary uses `fmt.Sprintf("     %12s  %s", label+":", value)` — NEVER `lipgloss.Width()` within styled strings (ANSI codes interfere)
+- `ttyGuard.Restore()` is nil-safe and idempotent
+- See `.kilo/skills/scripts/SERVICE_SCRIPT.md` for full documentation
+
+## Shared TUI Pattern (Build + Service)
+
+Both `scripts/build/build.go` and `scripts/service/service.go` share a common TUI architecture:
+
+| Aspect | Pattern |
+|--------|---------|
+| Framework | `charmbracelet/bubbletea` with `tea.WithAltScreen()` |
+| Step list | Slice of step structs: `name`, `status`, `action func` |
+| Status icons | `○` pending, spinner running, `✓` success, `✗` error, `-` skipped |
+| Prompt types | y/n (keypress), select (numbered + Enter), textinput (bubbles/textinput), confirm (Y/n + timeout) |
+| Log capture | OS pipe → `io.Copy` goroutine → thread-safe `logState` buffer |
+| Logger writer | Redirected to `logCaptureWriter` that strips ANSI and appends to `logState` |
+| Auto-exit | `setDone()` captures `completedIn`, returns `tea.Tick(15s, doneTimeoutMsg)`; keypress exits early |
+| Console clear | `ClearScreen()` on TUI exit → clean one-liner |
+| Alignment | `fmt.Sprintf` width specifiers (never `lipgloss.Width()`) |
+| Terminal safety | `ttyGuard.Save()` before TUI → `defer Restore()`, signal handler, panic recovery |
+| Signal handling | Goroutine catches SIGINT/SIGTERM → `guard.Restore()` → `os.Exit(128+signo)` |
+| Dependency | `golang.org/x/term` for `term.GetState`/`term.Restore` (already in `go.mod`) |
+
+For a reusable reference of this pattern, see `TUI_INFO_PATTERN.md` at the project root.
+
 ## General Conventions
 
 | Convention | Rule |

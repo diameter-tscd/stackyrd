@@ -353,7 +353,7 @@ Four plugin types are supported: **TypeScript**, **Lua**, **Python** (gRPC subpr
 - Runtime script overrides can be uploaded via `PUT /api/v1/plugins/:name/scripts/:file`.
 - Config overrides can be set in `config.yaml` → `plugins.overrides`.
 - Plugin execution is tracked with per-plugin stats (count, duration, memory).
-- See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for complete documentation, and `.agent/skills/PLUGIN_PKG.md` for package internals.
+- See [docs_wiki/PLUGIN_SYSTEM.md](docs_wiki/PLUGIN_SYSTEM.md) for complete documentation, and `.agent/skills/PLUGIN_PKG.md` for package internals.
 
 ---
 

@@ -130,7 +130,7 @@ Error: redis: dial tcp 127.0.0.1:6379: connect: connection refused
 
 ## Plugin Issues
 
-See the [Plugin System Guide](../PLUGIN_GUIDE.md#troubleshooting) for detailed plugin troubleshooting.
+See the [Plugin System](PLUGIN_SYSTEM.md#troubleshooting) for detailed plugin troubleshooting.
 
 ### Quick Plugin Checks
 

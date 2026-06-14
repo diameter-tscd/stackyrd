@@ -1,10 +1,8 @@
-# Plugin System Guide
+# Plugin System
+
+Four plugin types (TypeScript, Lua, Python, Go) extend application logic at runtime via sandboxed VM execution, gRPC subprocesses, or native Go code.
 
 ## Overview
-
-stackyrd's plugin system lets you extend application logic without modifying the core. Plugins can query infrastructure components, perform data transformations, trigger workflows, or integrate external services. They are embedded in the binary, auto-discovered at startup, and managed through a REST API.
-
-Four plugin types are supported:
 
 | Type | Entrypoint | Runtime | Language | Best for |
 |------|------------|---------|----------|----------|
@@ -13,26 +11,26 @@ Four plugin types are supported:
 | **Python** | `ext:scripts/handler.py` | gRPC subprocess | Python | Cross-language, existing Python code, ML/data |
 | **Go** | `go:FuncName` | Native Go | Go | Maximum performance, direct infra access |
 
----
+### Boot Order
 
-## Table of Contents
+Plugin initialization happens before service auto-discovery:
 
-- [Quick Start](#quick-start)
-- [TypeScript Plugins](#typescript-plugins)
-- [Python Plugins](#python-plugins)
-- [Go Plugins](#go-plugins)
-- [Lua Plugins](#lua-plugins)
-- [Management API](#management-api)
-- [Calling Plugins from Services](#calling-plugins-from-services)
-- [Configuration](#configuration)
-- [Filesystem & Overlays](#filesystem--overlays)
-- [Sandbox & Limits](#sandbox--limits)
-- [Built-in Plugins](#built-in-plugins)
-- [Best Practices](#best-practices)
-- [Limitations](#limitations)
-- [Troubleshooting](#troubleshooting)
+```
+Infrastructure async init → populate Dependencies → PLUGIN INIT → bridge→Set("plugins") → Middleware → AutoDiscoverServices
+```
 
----
+### Architecture
+
+```mermaid
+flowchart TD
+    A[PluginRegistry<br/>singleton]
+    A --> B[RuntimeRegistry<br/>prefix-based: ts: → goja, ext: → gRPC, lua: → gopher-lua, go: → native]
+    A --> C[PluginBridge<br/>InfrastructureComponent → deps.plugins]
+    A --> D[Transpiler<br/>esbuild TS→JS + SHA256 cache]
+    A --> E[Sandbox<br/>timeout + RSS memory enforcement]
+    A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
+    A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
+```
 
 ## Quick Start
 
@@ -77,11 +75,9 @@ curl -s -X POST http://localhost:8080/api/v1/plugins/lua_demo/execute \
   -d '{"args": {"name": "Lua"}}' | jq
 ```
 
----
-
 ## TypeScript Plugins
 
-TypeScript plugins run in-process in a sandboxed goja VM. They have access to infrastructure components via injected globals. No Go code is needed.
+TypeScript plugins run in-process in a sandboxed goja VM with access to infrastructure components via injected globals. No Go code is needed.
 
 ### How it works
 
@@ -91,8 +87,6 @@ TypeScript plugins run in-process in a sandboxed goja VM. They have access to in
 4. The plugin calls `$done()` to return results
 
 ### Creating a TypeScript plugin
-
-#### 1. Create the manifest
 
 `pkg/plugin/builtin/my_plugin/plugin.yaml`:
 
@@ -107,8 +101,6 @@ limits:
   max_memory_bytes: 26214400
 ```
 
-#### 2. Create the handler
-
 `pkg/plugin/builtin/my_plugin/scripts/handler.ts`:
 
 ```typescript
@@ -116,7 +108,6 @@ function handler(): void {
     const input = $args.input || "default";
     $logger.info("Processing: " + input);
 
-    // Access infrastructure components
     const redisInfo = $infra.get("redis");
     if (redisInfo) {
         $logger.debug("Redis status: " + JSON.stringify(redisInfo.GetStatus()));
@@ -142,9 +133,9 @@ handler();
 | `$logger` | `{ info, warn, error, debug }` | Scoped logger tagged with the plugin ID |
 | `$limits` | `{ max_timeout_ms, max_memory_bytes }` | Effective resource limits for this execution |
 | `$infra` | `{ get(name): Component }` | Access to infrastructure components |
-| `$done` | `(result) => void` | **Must be called** to signal completion. Argument: `{ success, data?, error? }` |
+| `$done` | `(result) => void` | Must be called to signal completion. Argument: `{ success, data?, error? }` |
 
-Type declarations are available at `pkg/plugin/sdk/plugin.d.ts`. Reference it in your IDE for autocompletion.
+Type declarations are available at `pkg/plugin/sdk/plugin.d.ts`.
 
 ### Upload a new script at runtime
 
@@ -154,7 +145,7 @@ curl -s -X PUT http://localhost:8080/api/v1/plugins/my_plugin/scripts/handler.ts
   -d '{"content": "function handler() { $done({success: true, data: {msg: \"updated\"}}); } handler();"}' | jq
 ```
 
-The script is written to the on-disk overlay (`store/plugins/my_plugin/scripts/handler.ts`), shadowing the embedded version. The next execute call transpiles the new source.
+The script is written to the on-disk overlay (`store/plugins/my_plugin/scripts/handler.ts`), shadowing the embedded version.
 
 ### Limitations
 
@@ -163,29 +154,118 @@ The script is written to the on-disk overlay (`store/plugins/my_plugin/scripts/h
 - No persistent state between calls — each call gets a fresh VM
 - Max resource usage is capped by `limits` in plugin.yaml
 
----
+## Lua Plugins
+
+Lua plugins run in-process in a sandboxed gopher-lua VM (pure Go, no CGo). Ideal for lightweight scripting with infrastructure access and no subprocess overhead.
+
+### How it works
+
+1. Plugin is defined by a `plugin.yaml` manifest and `.lua` files in `scripts/`
+2. Each `Execute()` call creates a fresh gopher-lua VM with injected globals
+3. The plugin calls `done()` to return results
+4. No transpilation step — Lua runs directly in the embedded VM
+
+### Creating a Lua plugin
+
+`pkg/plugin/builtin/my_lua_plugin/plugin.yaml`:
+
+```yaml
+name: my_lua_plugin
+version: 1.0.0
+description: My custom Lua plugin
+author: you
+entrypoint: "lua:scripts/handler.lua"
+limits:
+  max_timeout_ms: 10000
+  max_memory_bytes: 33554432
+```
+
+`pkg/plugin/builtin/my_lua_plugin/scripts/handler.lua`:
+
+```lua
+function handle(args)
+    local name = args["name"] or "world"
+    logger:info("Processing request for " .. name)
+
+    local redis = infra:get("redis")
+    if redis then
+        logger:debug("Redis status: " .. redis:GetStatus())
+    end
+
+    done({
+        success = true,
+        data = {
+            message = "Hello, " .. name .. "!",
+            plugin_name = plugin_name,
+            limits = limits
+        }
+    })
+end
+```
+
+### Injected globals
+
+| Global | Type | Description |
+|--------|------|-------------|
+| `args` | `table` | User-supplied execution arguments from the API call |
+| `logger` | `table` | Scoped logger with `info`, `warn`, `error`, `debug` methods |
+| `limits` | `table` | Effective resource limits (`max_timeout_ms`, `max_memory_bytes`) |
+| `infra` | `table` | Access to infrastructure components via `get(name)` |
+| `done` | `function` | Must be called to signal completion. Argument: `{ success, data?, error? }` |
+| `plugin_name` | `string` | Plugin name from manifest |
+
+### Sandboxed environment
+
+Lua plugins run in a restricted environment. Only safe libraries are loaded:
+
+| Library | Functions |
+|---------|-----------|
+| `base` | `print`, `type`, `tostring`, `tonumber`, `ipairs`, `pairs`, `pcall`, `error`, `select` |
+| `table` | `table.insert`, `table.remove`, `table.sort`, `table.concat` |
+| `string` | `string.len`, `string.sub`, `string.gsub`, `string.match`, `string.upper`, `string.lower`, `string.format` |
+| `math` | `math.abs`, `math.floor`, `math.ceil`, `math.min`, `math.max`, `math.sqrt`, `math.sin`, `math.random` |
+
+Excluded for security: `io`, `os` (except `os.time`), `debug`, `loadfile`, `dofile`, `require` with file paths.
+
+### Upload a new script at runtime
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/plugins/my_lua_plugin/scripts/handler.lua \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "function handle(args) done({success = true, data = {msg = \"updated\"}}) end"}' | jq
+```
+
+### Limitations
+
+- No `require` with file paths — only sandboxed standard libraries are available
+- No `io` or `os` library access (except `os.time`)
+- No persistent state between calls — each call gets a fresh VM
+- Max resource usage is capped by `limits` in plugin.yaml
+- Lua numeric precision is limited to double (64-bit float)
 
 ## Python Plugins
 
-Python plugins run as subprocesses communicating via gRPC over a Unix socket. They are ideal for ML inference, data processing, or integrating Python libraries.
+Python plugins run as subprocesses communicating via gRPC over a Unix socket. Ideal for ML inference, data processing, or integrating Python libraries.
 
 ### Architecture
 
-```
-stackyrd                         Python subprocess (host.py)
-┌─────────────────┐             ┌─────────────────────────┐
-│ ExternalPlugin   │             │                         │
-│                  │  gRPC over  │  gRPC Server            │
-│  EnsureRunning──►│───Unix─────►│  PluginRuntimeServicer  │
-│  Send Execute───►│──socket────►│  Load handler.py        │
-│  Receive result ◄│◄────────────│  Plugin.execute(args)   │
-│  Close() ───────►│   KILL     │  (process exits)         │
-└─────────────────┘             └─────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph stackyrd
+        EP[ExternalPlugin<br/>EnsureRunning / Execute]
+    end
+    subgraph "Python subprocess"
+        GRPC[gRPC Server<br/>PluginRuntimeServicer]
+        H[handler.py<br/>Plugin.execute]
+    end
+    EP -->|gRPC Unix socket| GRPC
+    GRPC --> H
+    H -->|result| GRPC
+    GRPC -->|result| EP
+    EP -.->|Close / KILL| GRPC
 ```
 
 ### Creating a Python plugin
-
-#### 1. Create the manifest
 
 `pkg/plugin/builtin/my_python_plugin/plugin.yaml`:
 
@@ -199,8 +279,6 @@ limits:
   max_timeout_ms: 15000
   max_memory_bytes: 33554432
 ```
-
-#### 2. Create the handler
 
 `pkg/plugin/builtin/my_python_plugin/scripts/handler.py`:
 
@@ -248,11 +326,11 @@ class Plugin:
 ### Environment variables
 
 - `PLUGIN_PYTHON_HOST` — override path to `host.py` (default: `pkg/plugin/python/host.py`)
-- The system uses `python3` found via `PATH`. Override with `PLUGIN_PYTHON_BIN` if needed.
+- `PLUGIN_PYTHON_BIN` — override Python binary (default: `python3` from PATH)
 
 ### Lifecycle
 
-- The Python subprocess starts on the **first** `Execute()` call
+- The Python subprocess starts on the first `Execute()` call
 - It stays alive for subsequent calls (reuses the same gRPC connection)
 - It is killed on `Close()` (when plugin is unloaded or app shuts down)
 - If the subprocess crashes, the next call restarts it automatically
@@ -263,7 +341,7 @@ class Plugin:
 pip3 install grpcio protobuf
 ```
 
-Generated gRPC stubs are at `pkg/plugin/python/plugin_pb2.py` and `pkg/plugin/python/plugin_pb2_grpc.py`. Regenerate them if the proto changes:
+Generated gRPC stubs are at `pkg/plugin/python/plugin_pb2.py` and `pkg/plugin/python/plugin_pb2_grpc.py`. Regenerate if the proto changes:
 
 ```bash
 python3 -m grpc_tools.protoc \
@@ -272,21 +350,16 @@ python3 -m grpc_tools.protoc \
   --grpc_python_out=pkg/plugin/python \
   pkg/plugin/plugin.proto
 
-# Fix import paths after generation
 sed -i '' 's/from pkg.plugin import/import/' pkg/plugin/python/plugin_pb2_grpc.py
 ```
 
----
-
 ## Go Plugins
 
-Go plugins compile into the stackyrd binary and run as native Go code. They have direct access to all infrastructure components and the full Go runtime.
+Go plugins compile into the stackyrd binary and run as native Go code with direct access to all infrastructure components and the full Go runtime.
 
 ### Creating a Go plugin
 
-#### 1. Register the plugin factory
-
-Create a flat `.go` file in `pkg/plugin/` (e.g., `pkg/plugin/plugin_myplugin.go`):
+Place the `.go` file in `pkg/plugin/` (e.g., `pkg/plugin/plugin_myplugin.go`):
 
 ```go
 package plugin
@@ -312,11 +385,10 @@ func (p *MyPlugin) Meta() PluginMeta {
 }
 
 func (p *MyPlugin) Execute(ctx Context, args map[string]interface{}) (*Result, error) {
-    // Access any infrastructure component
     redis, ok := ctx.Registry.Get("redis")
     if ok {
         status := redis.GetStatus()
-        // ...
+        _ = status
     }
 
     return &Result{
@@ -339,8 +411,6 @@ func (p *MyPlugin) Close() error {
 var _ Plugin = (*MyPlugin)(nil)
 ```
 
-#### 2. Create the manifest
-
 `pkg/plugin/builtin/myplugin/plugin.yaml`:
 
 ```yaml
@@ -354,107 +424,7 @@ limits:
   max_memory_bytes: 52428800
 ```
 
-**Important:** `.go` files must NOT be placed inside `builtin/` subdirectories — Go requires all files with the same `package` declaration to be in one directory. Place the `.go` file directly in `pkg/plugin/`.
-
----
-
-## Lua Plugins
-
-Lua plugins run in-process in a sandboxed gopher-lua VM (pure Go, no CGo). They are ideal for lightweight scripting where you need infrastructure access without subprocess overhead.
-
-### How it works
-
-1. Plugin is defined by a `plugin.yaml` manifest and `.lua` files in `scripts/`
-2. Each `Execute()` call creates a fresh gopher-lua VM with injected globals
-3. The plugin calls `done()` to return results
-4. No transpilation step — Lua runs directly in the embedded VM
-
-### Creating a Lua plugin
-
-#### 1. Create the manifest
-
-`pkg/plugin/builtin/my_lua_plugin/plugin.yaml`:
-
-```yaml
-name: my_lua_plugin
-version: 1.0.0
-description: My custom Lua plugin
-author: you
-entrypoint: "lua:scripts/handler.lua"
-limits:
-  max_timeout_ms: 10000
-  max_memory_bytes: 33554432
-```
-
-#### 2. Create the handler
-
-`pkg/plugin/builtin/my_lua_plugin/scripts/handler.lua`:
-
-```lua
-function handle(args)
-    local name = args["name"] or "world"
-    logger:info("Processing request for " .. name)
-
-    -- Access infrastructure components
-    local redis = infra:get("redis")
-    if redis then
-        logger:debug("Redis status: " .. redis:GetStatus())
-    end
-
-    done({
-        success = true,
-        data = {
-            message = "Hello, " .. name .. "!",
-            plugin_name = plugin_name,
-            limits = limits
-        }
-    })
-end
-```
-
-### Injected globals
-
-| Global | Type | Description |
-|--------|------|-------------|
-| `args` | `table` | User-supplied execution arguments from the API call |
-| `logger` | `table` | Scoped logger with `info`, `warn`, `error`, `debug` methods |
-| `limits` | `table` | Effective resource limits (`max_timeout_ms`, `max_memory_bytes`) |
-| `infra` | `table` | Access to infrastructure components via `get(name)` |
-| `done` | `function` | **Must be called** to signal completion. Argument: `{ success, data?, error? }` |
-| `plugin_name` | `string` | Plugin name from manifest |
-
-### Sandboxed environment
-
-Lua plugins run in a restricted environment. Only safe libraries are loaded:
-
-| Library | Functions |
-|---------|-----------|
-| `base` | `print`, `type`, `tostring`, `tonumber`, `ipairs`, `pairs`, `pcall`, `error`, `select`, etc. |
-| `table` | `table.insert`, `table.remove`, `table.sort`, `table.concat`, etc. |
-| `string` | `string.len`, `string.sub`, `string.gsub`, `string.match`, `string.upper`, `string.lower`, `string.format`, etc. |
-| `math` | `math.abs`, `math.floor`, `math.ceil`, `math.min`, `math.max`, `math.sqrt`, `math.sin`, `math.random`, etc. |
-
-**Excluded** (for security): `io`, `os` (except `os.time` which is in base), `debug`, `loadfile`, `dofile`, `require` with file paths.
-
-### Upload a new script at runtime
-
-```bash
-curl -s -X PUT http://localhost:8080/api/v1/plugins/my_lua_plugin/scripts/handler.lua \
-  -H 'Content-Type: application/json' \
-  -d '{"content": "function handle(args) done({success = true, data = {msg = \"updated\"}}) end"}' | jq
-```
-
-The script is written to the on-disk overlay (`store/plugins/my_lua_plugin/scripts/handler.lua`), shadowing the embedded version. The next execute call loads the new source.
-
-### Limitations
-
-- No `require` with file paths — only the sandboxed standard libraries are available
-- No `io` or `os` library access (except `os.time`) — filesystem and OS operations are blocked
-- No persistent state between calls — each call gets a fresh VM
-- Max resource usage is capped by `limits` in plugin.yaml
-- Lua numeric precision is limited to `double` (64-bit float)
-
----
+The `.go` file must NOT be placed inside `builtin/` subdirectories — Go requires all files with the same `package` declaration to be in one directory. Place the `.go` file directly in `pkg/plugin/`.
 
 ## Management API
 
@@ -514,7 +484,7 @@ curl -s -X PUT http://localhost:8080/api/v1/plugins/inspector/scripts/handler.ts
   -d '{"content": "function handler() { $done({success: true, data: {msg: \"hello\"}}); } handler();"}' | jq
 ```
 
-The file is written to the on-disk overlay. Only applies to TS plugins.
+The file is written to the on-disk overlay. Only applies to TS and Lua plugins.
 
 ### List scripts
 
@@ -536,8 +506,6 @@ curl -s -X DELETE http://localhost:8080/api/v1/plugins/inspector | jq
 
 The plugin is removed from the registry. Re-discovered on next app restart.
 
----
-
 ## Calling Plugins from Services
 
 Services can call plugins via `PluginBridge`, which is available in the `Dependencies` bag as `"plugins"`.
@@ -545,7 +513,6 @@ Services can call plugins via `PluginBridge`, which is available in the `Depende
 ### From a service
 
 ```go
-// In the service factory:
 registry.RegisterService("my_service", func(cfg *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
     var bridge *plugin.PluginBridge
     if b, ok := deps.Get("plugins"); ok {
@@ -554,14 +521,12 @@ registry.RegisterService("my_service", func(cfg *config.Config, logger *logger.L
     return NewMyService(logger, bridge)
 })
 
-// At runtime:
 func (s *MyService) handleStatus(c *gin.Context) {
     if s.bridge != nil && s.bridge.HasPlugin("inspector") {
         result, err := s.bridge.Execute("inspector", map[string]interface{}{
             "mode": "ping",
         })
         if err != nil { /* handle */ }
-        // result.Success, result.Data, result.Error
     }
 }
 ```
@@ -576,6 +541,7 @@ if comp, ok := reg.Get("plugins"); ok {
         result, _ := bridge.Execute("aggregator", map[string]interface{}{
             "mode": "dashboard",
         })
+        _ = result
     }
 }
 ```
@@ -589,11 +555,9 @@ if bridge != nil && bridge.HasPlugin("inspector") {
 }
 ```
 
----
-
 ## Configuration
 
-### `config.yaml`
+### config.yaml
 
 ```yaml
 plugins:
@@ -620,7 +584,7 @@ plugins:
 
 ### Allowlist
 
-When `allowlist` is non-empty, only plugin names in this list are registered at boot. Plugins not in the list are silently skipped. An empty list (or omitted) allows all built-in plugins. Example:
+When `allowlist` is non-empty, only plugin names in this list are registered at boot. Plugins not in the list are silently skipped. An empty list (or omitted) allows all built-in plugins.
 
 ```yaml
 plugins:
@@ -629,9 +593,7 @@ plugins:
 
 ### Hard cap
 
-The `default_limits` act as a **hard cap** — if a plugin's `plugin.yaml` or config `overrides` set limits higher than the defaults, they are clamped to the defaults. This prevents runaway plugins from consuming excessive resources.
-
----
+The `default_limits` act as a hard cap — if a plugin's `plugin.yaml` or config `overrides` set limits higher than the defaults, they are clamped to the defaults.
 
 ## Filesystem & Overlays
 
@@ -654,8 +616,6 @@ store/plugins/{name}/
     config/       — reserved
     data/         — reserved
 ```
-
----
 
 ## Sandbox & Limits
 
@@ -691,8 +651,6 @@ store/plugins/{name}/
 | Panic | `recover()` |
 | Memory | No automatic limit (native Go) |
 
----
-
 ## Built-in Plugins
 
 ### Inspector (`ts:scripts/handler.ts`)
@@ -712,29 +670,21 @@ Modes: `status` (default), `ping`.
 Advanced diagnostics with dashboard, query, and transform modes.
 
 ```bash
-# Dashboard — inspect all components with latency
 curl -s -X POST http://localhost:8080/api/v1/plugins/aggregator/execute \
   -H 'Content-Type: application/json' \
   -d '{"args": {"mode": "dashboard"}}' | jq
+```
 
-# Transform — apply string operations
+```bash
 curl -s -X POST http://localhost:8080/api/v1/plugins/aggregator/execute \
   -H 'Content-Type: application/json' \
-  -d '{"args": {
-    "mode": "transform",
-    "input": {"name": "  hello  "},
-    "rules": [{"field": "name", "operation": "trim"}, {"field": "name", "operation": "uppercase"}]
-  }}' | jq
+  -d '{"args": {"mode": "transform", "input": {"name": "  hello  "}, "rules": [{"field": "name", "operation": "trim"}, {"field": "name", "operation": "uppercase"}]}}' | jq
+```
 
-# Query — run command against a component
+```bash
 curl -s -X POST http://localhost:8080/api/v1/plugins/aggregator/execute \
   -H 'Content-Type: application/json' \
   -d '{"args": {"mode": "query", "component": "redis", "command": "status"}}' | jq
-
-# Echo — connectivity test
-curl -s -X POST http://localhost:8080/api/v1/plugins/aggregator/execute \
-  -H 'Content-Type: application/json' \
-  -d '{"args": {"mode": "echo"}}' | jq
 ```
 
 ### Python Demo (`ext:scripts/handler.py`)
@@ -749,7 +699,7 @@ curl -s -X POST http://localhost:8080/api/v1/plugins/python_demo/execute \
 
 ### Lua Demo (`lua:scripts/handler.lua`)
 
-Minimal Lua plugin — demonstrates the basic `handle()` + `done()` pattern with sandboxed gopher-lua.
+Minimal Lua plugin demonstrating the basic `handle()` + `done()` pattern.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/plugins/lua_demo/execute \
@@ -767,65 +717,59 @@ curl -s -X POST http://localhost:8080/api/v1/plugins/lua_transformer/execute \
   -d '{"args": {"mode": "map", "data": {"name": "  Alice  ", "score": 95.678}, "mappings": [{"from": "name", "to": "name", "fn": "trim"}, {"from": "score", "to": "rounded_score", "fn": "round", "places": 1}]}}' | jq
 ```
 
----
-
 ## Best Practices
 
 ### General
 
-- **Keep plugins stateless** — each `Execute()` should be self-contained. Use Redis or Postgres for persistence.
-- **Handle infrastructure availability** — components may not be ready. Check for nil and set `available: false` gracefully.
-- **Set appropriate limits** — match `max_timeout_ms` and `max_memory_bytes` to the plugin's workload.
-- **Use the overlay for iterative development** — upload scripts via the API instead of rebuilding the binary.
+- Keep plugins stateless — each `Execute()` should be self-contained. Use Redis or Postgres for persistence.
+- Handle infrastructure availability — components may not be ready. Check for nil and set `available: false` gracefully.
+- Set appropriate limits — match `max_timeout_ms` and `max_memory_bytes` to the plugin's workload.
+- Use the overlay for iterative development — upload scripts via the API instead of rebuilding the binary.
 
 ### TypeScript
 
-- **Cache expensive data in variables** — the goja VM is fresh per call, but you can use `$infra.get()` to fetch cached data from Redis.
-- **Keep handlers small** — decompose complex logic into helper functions in the same file.
-- **Log liberally** — `$logger.info/debug/warn/error` is forwarded to the structured logger.
+- Cache expensive data in variables — the goja VM is fresh per call, but `$infra.get()` can fetch cached data from Redis.
+- Keep handlers small — decompose complex logic into helper functions in the same file.
+- Log liberally — `$logger.info/debug/warn/error` is forwarded to the structured logger.
 
 ### Python
 
-- **Install dependencies in the same Python environment** — the `host.py` script runs with the system `python3`.
-- **Handle imports inside execute()** — lazy imports avoid loading modules at startup if they're not needed.
-- **Watch for GIL-bound workloads** — Python's GIL means CPU-heavy work blocks the gRPC server. Use multiprocessing for CPU-bound tasks.
+- Install dependencies in the same Python environment — `host.py` runs with the system `python3`.
+- Handle imports inside `execute()` — lazy imports avoid loading modules at startup if they are not needed.
+- Watch for GIL-bound workloads — Python's GIL means CPU-heavy work blocks the gRPC server. Use multiprocessing for CPU-bound tasks.
 
 ### Lua
 
-- **Keep handlers simple** — decompose complex logic into helper functions within the same file.
-- **Use logger methods** — `logger:info/debug/warn/error` is forwarded to the structured logger.
-- **Watch for numeric precision** — Lua uses double-precision floats; avoid integer overflow for very large numbers.
-- **Sanitize string concatenation** — use `..` operator carefully with nil values (use `tostring()` when needed).
+- Keep handlers simple — decompose complex logic into helper functions within the same file.
+- Use logger methods — `logger:info/debug/warn/error` is forwarded to the structured logger.
+- Watch for numeric precision — Lua uses double-precision floats.
+- Sanitize string concatenation — use `..` operator carefully with nil values (use `tostring()` when needed).
 
 ### Go
 
-- **Use the factory pattern** — register via `init()` with `RegisterPlugin` to keep auto-discovery working.
-- **Avoid blocking `Execute()`** — don't call `Close()` from within `Execute()` (deadlock risk).
-
----
+- Use the factory pattern — register via `init()` with `RegisterPlugin` to keep auto-discovery working.
+- Avoid blocking `Execute()` — do not call `Close()` from within `Execute()` (deadlock risk).
 
 ## Limitations
 
 | Limitation | Detail |
 |------------|--------|
-| **No hot-reload** | Plugins are loaded at startup. Unload is manual via DELETE API. Re-init requires restart. |
-| **TS: No external imports** | goja does not support `require` or ES module imports. All logic must be in the handler file. |
-| **TS: No async** | `$done()` must be called synchronously. No `Promise`, `setTimeout`, or `fetch`. |
-| **Lua: No file I/O** | `io`, `os` (except `os.time`), `loadfile`, `dofile`, and `require` with file paths are disabled for security. |
-| **Lua: Numeric precision** | Lua uses double-precision floats; integers above 2^53 may lose precision. |
-| **Python: Subprocess latency** | First call starts the Python host (~200ms). Subsequent calls are fast (reused connection). |
-| **Python: gRPC dependency** | Python plugins require `grpcio` and `protobuf` installed on the host. |
-| **Go: Same process** | Go plugins run in the same address space as stackyrd. A buggy Go plugin can crash the app. |
-| **No persistent plugin storage** | Each plugin has a `data/` directory in the overlay, but it's not a database. |
-| **No plugin-to-plugin calls** | Plugins can only call infrastructure components, not other plugins. |
-
----
+| No hot-reload | Plugins are loaded at startup. Unload is manual via DELETE API. Re-init requires restart. |
+| TS: No external imports | goja does not support `require` or ES module imports. All logic must be in the handler file. |
+| TS: No async | `$done()` must be called synchronously. No `Promise`, `setTimeout`, or `fetch`. |
+| Lua: No file I/O | `io`, `os` (except `os.time`), `loadfile`, `dofile`, and `require` with file paths are disabled for security. |
+| Lua: Numeric precision | Lua uses double-precision floats; integers above 2^53 may lose precision. |
+| Python: Subprocess latency | First call starts the Python host (~200ms). Subsequent calls are fast (reused connection). |
+| Python: gRPC dependency | Python plugins require `grpcio` and `protobuf` installed on the host. |
+| Go: Same process | Go plugins run in the same address space as stackyrd. A buggy Go plugin can crash the app. |
+| No persistent plugin storage | Each plugin has a `data/` directory in the overlay, but it is not a database. |
+| No plugin-to-plugin calls | Plugins can only call infrastructure components, not other plugins. |
 
 ## Troubleshooting
 
 ### Plugin not appearing in the list
 
-```
+```bash
 curl -s http://localhost:8080/api/v1/plugins | jq
 ```
 
@@ -837,10 +781,6 @@ Check:
 
 ### TypeScript plugin execution fails
 
-```
-{"success":false,"error":"..."}
-```
-
 Common causes:
 - Syntax error in `.ts` file (check esbuild transpilation in logs)
 - `$done()` not called (plugin hangs until timeout)
@@ -849,7 +789,7 @@ Common causes:
 
 ### Python plugin execution fails
 
-```
+```bash
 {"success":false,"error":"failed to start plugin host: ..."}
 ```
 
@@ -860,10 +800,6 @@ Check:
 - Socket path is writable (`/tmp/`)
 
 ### Lua plugin execution fails
-
-```
-{"success":false,"error":"..."}
-```
 
 Common causes:
 - Syntax error in `.lua` file (check for missing `end`, incorrect operators)
@@ -877,15 +813,3 @@ Common causes:
 - Increase `limits.max_timeout_ms` in `plugin.yaml` or via config override
 - Check if the plugin is making slow infrastructure calls
 - For Python: ensure the gRPC server is responding (the host stays alive between calls)
-
----
-
-## Reference
-
-- Package internals: `.agent/skills/PLUGIN_PKG.md`
-- TypeScript type declarations: `pkg/plugin/sdk/plugin.d.ts`
-- Python SDK: `pkg/plugin/python/sdk.py`
-- gRPC proto: `pkg/plugin/plugin.proto`
-- Lua runtime: `pkg/plugin/luaplugin.go`
-- Plugin registry: `pkg/plugin/registry.go`
-- Plugin bridge: `pkg/plugin/bridge.go`

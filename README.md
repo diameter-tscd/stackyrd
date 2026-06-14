@@ -61,7 +61,7 @@ go run scripts/pkg/pkg.go
 ## Documentation
 
 - **[Full Documentation](docs_wiki/)** — Comprehensive guides and references
-- **[Plugin System Guide](PLUGIN_GUIDE.md)** — Creating and managing TypeScript, Lua, Python, and Go plugins
+- **[Plugin System](docs_wiki/PLUGIN_SYSTEM.md)** — Creating and managing TypeScript, Lua, Python, and Go plugins
 - **[Contributing Guide](CONTRIBUTING.md)** — Development workflow and guidelines
 
 ## License

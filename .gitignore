@@ -73,7 +73,8 @@ __pycache__/
 store/
 
 # Compiled binaries
-scripts/service/service_generator
+scripts/service/service
+service
 
 # Files
 stackyrd

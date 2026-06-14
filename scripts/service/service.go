@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/term"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -908,6 +909,56 @@ func printBanner() {
 	fmt.Println(GRAY + "----------------------------------------------------------------------" + RESET)
 }
 
+// ─── Terminal Safety Guard ──────────────────────────────────────────────────────
+
+// ttyGuard saves terminal state before entering TUI mode and restores it on exit.
+// It is a last-resort safety net for abnormal exits (panic, uncatchable signal).
+// It does NOT interfere with bubbletea's own terminal management.
+type ttyGuard struct {
+	fd       int
+	oldState *term.State
+}
+
+func (g *ttyGuard) Save() error {
+	g.fd = int(os.Stdin.Fd())
+	oldState, err := term.GetState(g.fd)
+	if err != nil {
+		return fmt.Errorf("term.GetState: %w", err)
+	}
+	g.oldState = oldState
+	return nil
+}
+
+func (g *ttyGuard) Restore() {
+	if g.oldState == nil {
+		return
+	}
+	_ = term.Restore(g.fd, g.oldState)
+	g.oldState = nil
+	// Leave alternate screen buffer if stuck in it.
+	fmt.Fprint(os.Stderr, "\033[?1049l")
+}
+
+// setupTUISignalHandler catches signals during TUI mode and restores the terminal.
+// Returns a channel that is closed when TUI mode ends (caller must close it).
+func setupTUISignalHandler(guard *ttyGuard) chan struct{} {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-sigCh:
+			guard.Restore()
+			fmt.Fprintf(os.Stderr, "\r\nReceived %v\n", sig)
+			os.Exit(128 + int(sig.(syscall.Signal)))
+		case <-done:
+			signal.Stop(sigCh)
+		}
+	}()
+	return done
+}
+
 // ─── TUI Types ──────────────────────────────────────────────────────────────────
 
 type stepStatus int
@@ -1761,7 +1812,25 @@ func (m ServiceTuiModel) View() string {
 	return container.Render(b.String())
 }
 
-func RunServiceTUI(ctx *ServiceContext, logger *Logger) (*ServiceContext, error) {
+func RunServiceTUI(ctx *ServiceContext, logger *Logger) (retCtx *ServiceContext, retErr error) {
+	// ── terminal safety guard ──
+	var guard ttyGuard
+	if err := guard.Save(); err != nil {
+		logger.Warn("Failed to save terminal state: %v", err)
+	}
+	defer guard.Restore()
+	sigDone := setupTUISignalHandler(&guard)
+	defer close(sigDone)
+
+	// ── panic recovery ──
+	defer func() {
+		if r := recover(); r != nil {
+			guard.Restore()
+			// Re-panic so the stack trace prints.
+			panic(r)
+		}
+	}()
+
 	m := NewServiceTuiModel(ctx, logger)
 
 	logR, logW, err := os.Pipe()

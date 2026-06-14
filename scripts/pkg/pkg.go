@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -237,6 +238,37 @@ func setupSignalHandler(cancel context.CancelFunc) {
 		cancel()
 		os.Exit(1)
 	}()
+}
+
+type TerminalGuard struct {
+	fd       int
+	oldState *term.State
+}
+
+func NewTerminalGuard() (*TerminalGuard, error) {
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, fmt.Errorf("make raw: %w", err)
+	}
+	return &TerminalGuard{fd: fd, oldState: oldState}, nil
+}
+
+func (g *TerminalGuard) Restore() {
+	if g.oldState == nil {
+		return
+	}
+	_ = term.Restore(g.fd, g.oldState)
+	g.oldState = nil
+}
+
+func GuardTerminal() *TerminalGuard {
+	g, err := NewTerminalGuard()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "raw mode: %v\n", err)
+		os.Exit(1)
+	}
+	return g
 }
 
 func confirmPrompt(msg string, logger *Logger) bool {
@@ -1358,13 +1390,14 @@ type stepInfo struct {
 }
 
 type (
-	tickMsg     time.Time
-	stepDoneMsg struct {
+	tickMsg        time.Time
+	stepDoneMsg    struct {
 		index int
 		err   error
 		msg   string
 	}
 	promptTimeoutMsg struct{ index int }
+	doneTimeoutMsg   struct{}
 )
 
 type PkgTuiModel struct {
@@ -1376,8 +1409,10 @@ type PkgTuiModel struct {
 	width   int
 	height  int
 	started time.Time
-	done    bool
-	success bool
+	done        bool
+	success     bool
+	doneAt      time.Time
+	completedIn time.Duration
 
 	promptActive  bool
 	promptStarted time.Time
@@ -1620,20 +1655,27 @@ func (m PkgTuiModel) startPrompt(index int) tea.Cmd {
 	return nil
 }
 
+func (m *PkgTuiModel) setDone(success bool) tea.Cmd {
+	m.done = true
+	m.success = success
+	m.doneAt = time.Now()
+	m.completedIn = time.Since(m.started).Round(time.Millisecond)
+	return tea.Tick(15*time.Second, func(t time.Time) tea.Msg {
+		return doneTimeoutMsg{}
+	})
+}
+
 func (m *PkgTuiModel) advanceToNext() tea.Cmd {
 	m.current++
 	if m.current >= len(m.steps) {
-		m.done = true
-		m.success = true
+		success := true
 		for _, s := range m.steps {
 			if s.status == statusError {
-				m.success = false
+				success = false
 				break
 			}
 		}
-		return tea.Tick(800*time.Millisecond, func(t time.Time) tea.Msg {
-			return tickMsg(t)
-		})
+		return m.setDone(success)
 	}
 	return m.triggerCurrentStep()
 }
@@ -1703,12 +1745,15 @@ func (m PkgTuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.done {
-			m.quitting = true
-			return m, tea.Quit
+			return m, nil
 		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, tea.Batch(cmd, tickCmd())
+
+	case doneTimeoutMsg:
+		m.quitting = true
+		return m, tea.Quit
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -1721,11 +1766,7 @@ func (m PkgTuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				s.status = statusError
 				s.message = msg.msg
-				m.done = true
-				m.success = false
-				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-					return tickMsg(t)
-				})
+				return m, m.setDone(false)
 			}
 			s.status = statusSuccess
 			s.message = msg.msg
@@ -1877,18 +1918,61 @@ func (m PkgTuiModel) View() string {
 	}
 
 	if m.done {
-		elapsed := time.Since(m.started).Round(time.Millisecond)
 		if m.success {
-			b.WriteString(pkgSuccessStyle.Render(fmt.Sprintf("  Install complete in %s", elapsed)))
+			b.WriteString(pkgSuccessStyle.Render(fmt.Sprintf("  \u2713 Completed in %s\n", m.completedIn)))
 			b.WriteString("\n")
-			b.WriteString(pkgMsgStyle.Render(fmt.Sprintf("  Output: %s", m.ctx.InstallRoot)))
+
+			detailLines := []struct {
+				label string
+				value string
+			}{
+				{"Package", m.ctx.SelectedPkg.Name},
+				{"Version", m.ctx.SelectedVersion},
+				{"Output", m.ctx.InstallRoot},
+			}
+			if m.ctx.ReadmeURL != "" {
+				detailLines = append(detailLines, struct {
+					label string
+					value string
+				}{"README", m.ctx.ReadmeURL})
+			}
+
+			for _, dl := range detailLines {
+				b.WriteString(pkgMsgStyle.Render(fmt.Sprintf("     %12s  %s", dl.label+":", dl.value)))
+				b.WriteString("\n")
+			}
+
+			b.WriteString("\n")
+			b.WriteString(pkgMsgStyle.Render("     Next steps:"))
+			b.WriteString("\n")
+			nextSteps := []string{
+				"Import the package in your project to activate it",
+				"Run 'go mod tidy' to ensure dependencies are resolved",
+			}
+			for i, step := range nextSteps {
+				b.WriteString(pkgMsgStyle.Render(fmt.Sprintf("     %12s  %d. %s", "", i+1, step)))
+				b.WriteString("\n")
+			}
 		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("  Install failed"))
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("  Failed"))
 			b.WriteString("\n")
 			b.WriteString(pkgErrorMsgStyle.Render("  Check the errors above"))
 		}
-		b.WriteString("\n\n")
-		b.WriteString(pkgFooterStyle.Render("  Press any key to exit"))
+
+		sinceDone := time.Since(m.doneAt)
+		remaining := 15*time.Second - sinceDone
+		secs := int(remaining.Seconds())
+		if secs < 0 {
+			secs = 0
+		}
+		closing := ""
+		if m.success {
+			closing = fmt.Sprintf("  Auto-closing in %ds", secs)
+		} else {
+			closing = "  Press any key to exit"
+		}
+		b.WriteString("\n")
+		b.WriteString(pkgFooterStyle.Render(closing))
 	} else if m.promptActive {
 		b.WriteString(pkgFooterStyle.Render("  y / n  |  q to skip  |  ctrl+c to quit"))
 	} else {
@@ -1997,8 +2081,12 @@ func main() {
 
 	logger.verbose = *verboseFlag || verbose
 
-	_, cancel := context.WithCancel(context.Background())
-	setupSignalHandler(cancel)
+	useTUI := !*noTUI && isTerminal()
+
+	if !useTUI {
+		_, cancel := context.WithCancel(context.Background())
+		setupSignalHandler(cancel)
+	}
 
 	projectDir, err := os.Getwd()
 	if err != nil {
@@ -2024,8 +2112,6 @@ func main() {
 		ctx.SelectedPkg = &PackageInfo{Name: parts[0]}
 		ctx.SelectedVersion = parts[1]
 	}
-
-	useTUI := !*noTUI && isTerminal()
 
 	if useTUI && *installPkg == "" {
 		ClearScreen()
@@ -2073,11 +2159,12 @@ func main() {
 
 	if useTUI {
 		_, err := RunPkgTUI(ctx, logger)
+		ClearScreen()
 		if err != nil {
-			fmt.Printf("\nInstall failed: %v\n", err)
+			fmt.Printf("Install failed: %v\n", err)
 			os.Exit(1)
 		}
-		printInstallSuccess(ctx)
+		fmt.Printf("\u2713 Completed: %s\n", ctx.SelectedPkg.Name)
 	} else {
 		ClearScreen()
 		printBanner()

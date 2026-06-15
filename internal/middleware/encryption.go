@@ -16,6 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var base64BufPool = sync.Pool{
+	New: func() interface{} { return new(bytes.Buffer) },
+}
+
 func init() {
 	// Register Encryption middleware (conditionally enabled based on config)
 	RegisterMiddleware("encryption", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
@@ -55,11 +59,17 @@ func EncryptionMiddleware(cfg *config.Config, l *logger.Logger) gin.HandlerFunc 
 			contentType := c.Writer.Header().Get("Content-Type")
 			if strings.Contains(contentType, "application/json") {
 				// Apply obfuscation (base64 encoding for demo)
-				encoded := base64.StdEncoding.EncodeToString(w.body.Bytes())
+				buf := base64BufPool.Get().(*bytes.Buffer)
+				buf.Reset()
+				enc := base64.NewEncoder(base64.StdEncoding, buf)
+				enc.Write(w.body.Bytes())
+				enc.Close()
+				encoded := buf.Bytes()
 				c.Writer.Header().Set("X-Obfuscated", "true")
 				c.Writer.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
 				c.Writer.WriteHeaderNow()
-				_, _ = c.Writer.Write([]byte(encoded))
+				_, _ = c.Writer.Write(encoded)
+				base64BufPool.Put(buf)
 			} else {
 				// Pass through non-JSON responses
 				c.Writer.WriteHeaderNow()

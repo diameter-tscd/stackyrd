@@ -87,6 +87,10 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal args: %w", err)
 	}
+	const maxArgsSize = 10 << 20 // 10 MB
+	if len(argsJSON) > maxArgsSize {
+		return nil, fmt.Errorf("plugin args too large: %d bytes exceeds %d byte limit", len(argsJSON), maxArgsSize)
+	}
 
 	scriptBytes, err := afero.ReadFile(p.fs, p.modulePath)
 	if err != nil {

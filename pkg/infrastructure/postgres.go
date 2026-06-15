@@ -55,6 +55,12 @@ func NewPostgresDB(cfg config.PostgresConfig) (*PostgresManager, error) {
 		return nil, fmt.Errorf("failed to open postgres connection: %w", err)
 	}
 
+	// Configure connection pool
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(1 * time.Minute)
+
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
 	}

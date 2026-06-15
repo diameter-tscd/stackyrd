@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
@@ -86,11 +85,6 @@ func (ps *PluginSandbox) ExecuteWithGuard(ctx context.Context, limits ResourceLi
 		timeout = time.Duration(limits.MaxTimeoutMs) * time.Millisecond
 	}
 
-	memory := ps.sandbox.MaxMemoryBytes
-	if limits.MaxMemoryBytes > 0 && limits.MaxMemoryBytes < memory {
-		memory = limits.MaxMemoryBytes
-	}
-
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -101,12 +95,6 @@ func (ps *PluginSandbox) ExecuteWithGuard(ctx context.Context, limits ResourceLi
 				errCh <- fmt.Errorf("plugin panic: %v", r)
 			}
 		}()
-
-		if memory > 0 {
-			go MemMonitor(execCtx, int32(os.Getpid()), memory, func() {
-				cancel()
-			})
-		}
 
 		fnDone := make(chan struct{}, 1)
 		go func() {

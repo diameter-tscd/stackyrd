@@ -43,9 +43,12 @@ func NewMultiTenantService(
 		allConnections := postgresConnectionManager.GetAllConnections()
 		for tenant, db := range allConnections {
 			if db.ORM != nil {
-				if err := db.ORM.AutoMigrate(&MultiTenantOrder{}); err != nil {
-					logger.Error("Error migrating MultiTenantOrder", err, "tenant", tenant)
-				}
+				tenant, db := tenant, db
+				go func() {
+					if err := db.ORM.AutoMigrate(&MultiTenantOrder{}); err != nil {
+						logger.Error("Error migrating MultiTenantOrder", err, "tenant", tenant)
+					}
+				}()
 			}
 		}
 	}

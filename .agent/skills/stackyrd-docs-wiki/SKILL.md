@@ -57,8 +57,11 @@ All docs_wiki files follow these consistent conventions. Match them exactly.
 
 ### Diagrams
 - Use Mermaid `flowchart TD` (top-down) or `flowchart LR` (left-right) for
-  architecture, boot sequence, request flow, and project structure diagrams.
+  architecture, boot sequence, request flow, project structure, and
+  illustration design (e.g., data flow, system context, deployment topology).
 - Use Mermaid `stateDiagram-v2` for state machines (e.g., circuit breaker).
+- Use Mermaid `sequenceDiagram` for interaction sequences between components
+  (e.g., request lifecycles, plugin execution flows).
 - Diagrams should show key components and their relationships, not every
   implementation detail.
 

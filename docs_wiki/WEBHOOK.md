@@ -6,6 +6,31 @@ Webhook management with HMAC-SHA256 signing/verification, retry logic, and concu
 
 The `pkg/webhook/` package supports both sending outgoing webhooks and receiving incoming webhooks with signature verification.
 
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant M as WebhookManager
+    participant T as Target URL
+    participant H as Local Handler
+
+    Note over S,T: Outgoing Webhook
+    S->>M: Send(event)
+    M->>M: Serialize JSON
+    M->>M: Sign HMAC-SHA256
+    M->>T: POST payload + signature
+    T-->>M: Response
+    M->>M: Retry on failure (up to MaxRetries)
+    M-->>S: Response
+
+    Note over S,H: Incoming Webhook
+    T->>M: POST /webhook
+    M->>M: Verify HMAC-SHA256
+    M->>M: Unmarshal WebhookEvent
+    M->>H: Dispatch by event type
+    H-->>M: Handler executed
+    M-->>T: 200 OK
+```
+
 ## Configuration
 
 ```go

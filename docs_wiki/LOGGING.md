@@ -6,6 +6,21 @@ Structured JSON logging with sampling, rotation, and context enrichment.
 
 stackyrd provides two logging subsystems:
 
+```mermaid
+flowchart LR
+    S[Service / Middleware] -->|pkg/logger| Z[Zerolog Logger]
+    S -->|pkg/logging| SL[StructuredLogger]
+    SL --> RW[RotatingWriter]
+    SL --> SMP[Sampler]
+    SMP -->|SampleByRate| RW
+    SMP -->|SampleByCount| RW
+    SMP -->|SampleByTime| RW
+    SMP -->|AdaptiveSampling| RW
+    RW --> F[Log File<br/>app.log]
+    RW --> G[gzip archive<br/>app.log.1.gz]
+    Z -->|stdout| H[Console]
+```
+
 | Package | Purpose |
 |---------|---------|
 | `pkg/logger/` | Zerolog-based structured logger used by services and infrastructure |

@@ -82,19 +82,47 @@ func (wm *WebhookManager) Register(eventType string, handler func(event WebhookE
 	wm.handlers[eventType] = append(wm.handlers[eventType], handler)
 }
 
-// Trigger triggers webhook handlers for an event
+// Trigger triggers webhook handlers for an event.
+// Runs all handlers for the event type sequentially in a single goroutine,
+// bounded by the semaphore to cap total concurrent goroutines regardless of
+// the number of registered handlers.
 func (wm *WebhookManager) Trigger(event WebhookEvent) {
 	wm.mu.RLock()
 	handlers := wm.handlers[event.Type]
 	wm.mu.RUnlock()
 
-	for _, handler := range handlers {
-		wm.semaphore <- struct{}{}
-		go func(fn func(WebhookEvent)) {
-			defer func() { <-wm.semaphore }()
-			fn(event)
-		}(handler)
+	if len(handlers) == 0 {
+		return
 	}
+
+	wm.semaphore <- struct{}{}
+	go func(evt WebhookEvent) {
+		defer func() { <-wm.semaphore }()
+		for _, handler := range handlers {
+			handler(evt)
+		}
+	}(event)
+}
+
+// appendJSONField appends a string field to a JSON object at the top level
+// without re-marshalling the entire object.  The value is JSON-encoded to
+// safely handle special characters.
+func appendJSONField(jsonPayload []byte, key, value string) ([]byte, error) {
+	if len(jsonPayload) == 0 || jsonPayload[len(jsonPayload)-1] != '}' {
+		return nil, fmt.Errorf("invalid JSON payload")
+	}
+	val, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	payload := make([]byte, 0, len(jsonPayload)+len(key)+len(val)+4)
+	payload = append(payload, jsonPayload[:len(jsonPayload)-1]...)
+	payload = append(payload, ',', '"')
+	payload = append(payload, key...)
+	payload = append(payload, '"', ':')
+	payload = append(payload, val...)
+	payload = append(payload, '}')
+	return payload, nil
 }
 
 // Send sends a webhook event to a URL
@@ -108,11 +136,14 @@ func (wm *WebhookManager) Send(ctx context.Context, event WebhookEvent) (*Webhoo
 		return nil, err
 	}
 
-	// Sign the payload
+	// Sign the payload — append signature to the marshalled JSON to avoid a
+	// second full marshal of the event struct.
 	if wm.config.Secret != "" {
 		signature := wm.SignPayload(payload)
-		event.Signature = signature
-		payload, _ = json.Marshal(event)
+		payload, err = appendJSONField(payload, "signature", signature)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var lastErr error

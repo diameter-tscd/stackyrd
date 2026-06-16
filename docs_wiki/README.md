@@ -9,7 +9,7 @@
 | [**Development Guide**](DEVELOPMENT.md) | Adding services/middleware/infrastructure/plugins, request validation, DI, pagination, resilience patterns, testing |
 | [**API Documentation**](API_DOCS.md) | Swagger annotations, response format, helpers reference, doc generation |
 | [**Technical Reference**](REFERENCE.md) | Full config.yaml reference, health endpoints, component registry, plugin system API, middleware list, common commands |
-| [**Plugin System**](PLUGIN_SYSTEM.md) | Four plugin types (TypeScript, Lua, Python, Go): creation, management API, sandbox, troubleshooting |
+| [**Plugin System**](PLUGIN_SYSTEM.md) | Four plugin types (TypeScript, Lua, Python, Go): creation, HTTP routes, WebSocket, persistent state, background execution, management API, sandbox, troubleshooting |
 
 ## Package Deep Dives
 

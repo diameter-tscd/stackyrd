@@ -26,6 +26,7 @@ var (
 	globalInfraRegistry *infrastructure.ComponentRegistry
 	pluginStartTime     time.Time
 	memoryHardLimit     int64
+	globalBgManager     *BackgroundManager
 )
 
 type PluginConfig struct {
@@ -72,11 +73,15 @@ func Init(cfg *config.Config, l *logger.Logger, rg *gin.RouterGroup) error {
 
 	initPluginsFromRegistry(pCfg, l)
 
+	wirePluginRoutes(rg, l)
+
 	bridge := NewPluginBridge(GetGlobalPluginRegistry(), l)
 	globalInfraRegistry.SetComponent("plugins", bridge)
 	l.Info("PluginBridge registered in infrastructure ComponentRegistry as 'plugins'")
 
 	RegisterManagementRoutes(rg.Group("/plugins"))
+
+	startBackgroundPlugins(l)
 
 	l.Info("Plugin system initialized")
 	return nil
@@ -347,4 +352,75 @@ func SetStoreBase(base string) {
 
 func init() {
 	GetGlobalPluginRegistry()
+}
+
+func loadBackgroundPluginConfig() struct {
+	Enabled    bool
+	MaxPlugins int
+} {
+	cfg := struct {
+		Enabled    bool
+		MaxPlugins int
+	}{
+		Enabled:    true,
+		MaxPlugins: 10,
+	}
+	if viper.IsSet("plugins.background.enabled") {
+		cfg.Enabled = viper.GetBool("plugins.background.enabled")
+	}
+	if viper.IsSet("plugins.background.max_plugins") {
+		cfg.MaxPlugins = viper.GetInt("plugins.background.max_plugins")
+	}
+	return cfg
+}
+
+func startBackgroundPlugins(l *logger.Logger) {
+	bgCfg := loadBackgroundPluginConfig()
+	if !bgCfg.Enabled {
+		return
+	}
+
+	bgManager := NewBackgroundManager()
+	globalBgManager = bgManager
+	reg := GetGlobalPluginRegistry()
+
+	started := 0
+	for name, p := range reg.GetAll() {
+		if bgCfg.MaxPlugins > 0 && started >= bgCfg.MaxPlugins {
+			l.Warn("Background plugin limit reached, skipping", "name", name, "max", bgCfg.MaxPlugins)
+			continue
+		}
+
+		bg, ok := p.(BackgroundPlugin)
+		if !ok {
+			continue
+		}
+		meta, _ := reg.GetMeta(name)
+		if !meta.Background {
+			continue
+		}
+
+		ctx := Context{
+			Logger:   l,
+			Registry: globalInfraRegistry,
+			Limits:   meta.Limits,
+			State:    reg.GetOrCreateState(name),
+		}
+		if err := bgManager.Start(name, bg, ctx); err != nil {
+			l.Error("Failed to start background plugin", err, "name", name)
+			continue
+		}
+		started++
+		l.Info("Background plugin started", "name", name)
+	}
+
+	if started > 0 {
+		l.Info("Background plugins started", "count", started)
+	}
+}
+
+func stopBackgroundPlugins() {
+	if globalBgManager != nil {
+		globalBgManager.StopAll()
+	}
 }

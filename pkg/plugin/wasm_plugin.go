@@ -16,12 +16,16 @@ type wasmRuntime struct{}
 func (r *wasmRuntime) Prefix() string { return "wasm:" }
 
 func (r *wasmRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) {
-	return &WasmPlugin{
+	p := &WasmPlugin{
 		name:       meta.Name,
 		meta:       meta,
 		fs:         fs,
 		modulePath: meta.Entrypoint[5:],
-	}, nil
+	}
+	if len(meta.Routes) > 0 {
+		return &scriptRoutePlugin{Plugin: p, routes: meta.Routes}, nil
+	}
+	return p, nil
 }
 
 func init() { RegisterRuntime(&wasmRuntime{}) }

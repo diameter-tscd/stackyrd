@@ -24,12 +24,16 @@ func (r *externalRuntime) Prefix() string { return "ext:" }
 
 func (r *externalRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) {
 	modulePath := meta.Entrypoint[4:]
-	return &ExternalPlugin{
+	p := &ExternalPlugin{
 		name:       meta.Name,
 		meta:       meta,
 		fs:         fs,
 		modulePath: modulePath,
-	}, nil
+	}
+	if len(meta.Routes) > 0 {
+		return &scriptRoutePlugin{Plugin: p, routes: meta.Routes}, nil
+	}
+	return p, nil
 }
 
 func init() { RegisterRuntime(&externalRuntime{}) }

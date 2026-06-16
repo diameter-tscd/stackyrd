@@ -16,7 +16,14 @@ Four plugin types (TypeScript, Lua, Python, Go) extend application logic at runt
 Plugin initialization happens before service auto-discovery:
 
 ```
-Infrastructure async init → populate Dependencies → PLUGIN INIT → bridge→Set("plugins") → Middleware → AutoDiscoverServices
+Infrastructure async init → populate Dependencies → PLUGIN INIT:
+  1. Scan builtin plugins → register manifests + filesystems + stats
+  2. Instantiate all plugins (CreatePlugin with route/background wrapping)
+  3. Wire plugin HTTP routes + static files ← NEW
+  4. Register PluginBridge as infra component
+  5. Register management routes (/api/v1/plugins)
+  6. Start background plugins ← NEW
+→ Middleware → AutoDiscoverServices
 ```
 
 ### Architecture
@@ -30,6 +37,9 @@ flowchart TD
     A --> E[Sandbox<br/>timeout + RSS memory enforcement]
     A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
     A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
+    A --> H[RouteEngine<br/>dynamic HTTP routes from plugin manifests]
+    A --> I[BackgroundManager<br/>long-running plugin goroutines]
+    A --> J[StateBag<br/>thread-safe persistent plugin state]
 ```
 
 ## Quick Start
@@ -134,8 +144,82 @@ handler();
 | `$limits` | `{ max_timeout_ms, max_memory_bytes }` | Effective resource limits for this execution |
 | `$infra` | `{ get(name): Component }` | Access to infrastructure components |
 | `$done` | `(result) => void` | Must be called to signal completion. Argument: `{ success, data?, error? }` |
+| `$state` | `{ get, set, delete, clear, keys }` | Persistent state bag — values survive across executions |
+| `$ws` | `{ send, close }` | WebSocket globals — only available in WS route handlers |
+| `$background` | `{ sleep }` | Background execution — only in `background: true` plugins |
 
 Type declarations are available at `pkg/plugin/sdk/plugin.d.ts`.
+
+### Route Handlers
+
+Plugins with `routes:` in their manifest register HTTP endpoints that call a named handler function. The request context is passed as `$args.request`.
+
+```yaml
+# plugin.yaml
+routes:
+  - path: /monitor/status
+    method: GET
+    handler: handleStatus
+    public: true
+  - path: /monitor/ws
+    method: WS
+    handler: handleWS
+  - path: /monitor/ui/*filepath
+    method: GET
+    static_dir: dashboard
+    static_index: index.html
+```
+
+```typescript
+// Route handler — called on every HTTP request
+function handleStatus() {
+    const req = $args.request;
+    $done({
+        success: true,
+        data: {
+            method: req.method,
+            path: req.path,
+            query: req.query,
+        }
+    });
+}
+```
+
+```typescript
+// WebSocket handler — receives messages via $ws globals
+function handleWS(data: any) {
+    $logger.info("Received: " + JSON.stringify(data));
+    $ws.send({ type: "pong", echo: data });
+}
+```
+
+Static files are served from the plugin's `static_dir` directory, with writable overlay support (files can be uploaded at runtime via `PUT /api/v1/plugins/{name}/static/{file}`).
+
+### Background Plugins
+
+Plugins with `background: true` run a persistent goroutine at startup. The `$background.sleep()` global allows cooperative blocking that responds to shutdown signals.
+
+```yaml
+# plugin.yaml
+name: monitor
+background: true
+```
+
+```typescript
+// Background plugin — runs in a dedicated goja VM
+function main() {
+    while (true) {
+        const redis = $infra.get("redis");
+        if (redis) {
+            $state.set("last_status", redis.GetStatus());
+        }
+        $background.sleep(5000);
+    }
+}
+main();
+```
+
+Background plugins are stopped cleanly on app shutdown via `PluginBridge.Close()` → `BackgroundManager.StopAll()`.
 
 ### Upload a new script at runtime
 
@@ -151,8 +235,9 @@ The script is written to the on-disk overlay (`store/plugins/my_plugin/scripts/h
 
 - No `require()`, `import`, or `fetch()` — the goja VM is a pure ES2020 runtime
 - No `setTimeout` or async operations — execute is synchronous
-- No persistent state between calls — each call gets a fresh VM
 - Max resource usage is capped by `limits` in plugin.yaml
+- WebSocket handlers run on the caller's goroutine; the VM is not goroutine-safe for concurrent use
+- Background plugins use a dedicated VM; `$background.setInterval`/`setTimeout` are stubs — use `$background.sleep()` in a loop instead
 
 ## Lua Plugins
 
@@ -566,6 +651,9 @@ plugins:
     max_timeout_ms: 30000          # 30 seconds
     max_memory_bytes: 104857600    # 100 MB
   allowlist: []                    # empty = all plugins allowed
+  background:                      # NEW — background plugin settings
+    enabled: true
+    max_plugins: 10
   overrides:
     inspector:
       max_timeout_ms: 10000
@@ -579,6 +667,8 @@ plugins:
 | `plugins.default_limits.max_timeout_ms` | Default timeout for all plugins |
 | `plugins.default_limits.max_memory_bytes` | Default memory limit |
 | `plugins.allowlist` | Restrict to specific plugins (empty = all allowed) |
+| `plugins.background.enabled` | Enable/disable background plugin execution |
+| `plugins.background.max_plugins` | Maximum concurrent background plugins |
 | `plugins.overrides.{name}.max_timeout_ms` | Per-plugin timeout override |
 | `plugins.overrides.{name}.max_memory_bytes` | Per-plugin memory override |
 
@@ -612,6 +702,7 @@ Directory layout:
 ```
 store/plugins/{name}/
     scripts/      — uploaded/replaced scripts
+    static/       — uploadable static assets (served by route static_dir)
     .cache/       — TS transpilation cache (SHA256 keyed)
     config/       — reserved
     data/         — reserved
@@ -721,7 +812,8 @@ curl -s -X POST http://localhost:8080/api/v1/plugins/lua_transformer/execute \
 
 ### General
 
-- Keep plugins stateless — each `Execute()` should be self-contained. Use Redis or Postgres for persistence.
+- Keep plugins stateless for on-demand execution — each `Execute()` should be self-contained. Use Redis or Postgres for persistence.
+- For stateful workflows, use `$state` — values persist across `Execute()` calls for the same plugin.
 - Handle infrastructure availability — components may not be ready. Check for nil and set `available: false` gracefully.
 - Set appropriate limits — match `max_timeout_ms` and `max_memory_bytes` to the plugin's workload.
 - Use the overlay for iterative development — upload scripts via the API instead of rebuilding the binary.
@@ -757,6 +849,8 @@ curl -s -X POST http://localhost:8080/api/v1/plugins/lua_transformer/execute \
 | No hot-reload | Plugins are loaded at startup. Unload is manual via DELETE API. Re-init requires restart. |
 | TS: No external imports | goja does not support `require` or ES module imports. All logic must be in the handler file. |
 | TS: No async | `$done()` must be called synchronously. No `Promise`, `setTimeout`, or `fetch`. |
+| TS: WS single-goroutine | WebSocket handlers run on the caller's goroutine. goja is not goroutine-safe — never call `$ws.*` concurrently. |
+| TS: Background sleep only | `$background` only provides `sleep()` for cooperative blocking. `setInterval`/`setTimeout` are stubs. |
 | Lua: No file I/O | `io`, `os` (except `os.time`), `loadfile`, `dofile`, and `require` with file paths are disabled for security. |
 | Lua: Numeric precision | Lua uses double-precision floats; integers above 2^53 may lose precision. |
 | Python: Subprocess latency | First call starts the Python host (~200ms). Subsequent calls are fast (reused connection). |

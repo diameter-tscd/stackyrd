@@ -28,6 +28,40 @@ declare function $done(result: {
     error?: string;
 }): void;
 
+/** Persistent state bag — values survive across executions */
+declare const $state: {
+    get(key: string): any;
+    set(key: string, value: any): void;
+    delete(key: string): void;
+    clear(): void;
+    keys(): string[];
+};
+
+/** WebSocket session globals — only available in WS route handlers */
+declare const $ws: {
+    send(data: Record<string, any>): void;
+    close(): void;
+};
+
+/** Background execution globals — only available in background: true plugins */
+declare const $background: {
+    setInterval(ms: number, fn: () => void): string;
+    setTimeout(ms: number, fn: () => void): string;
+    clearInterval(id: string): void;
+    clearTimeout(id: string): void;
+    sleep(ms: number): void;
+};
+
+/** Request context — injected as $args.request for route handler plugins */
+interface RequestContext {
+    method: string;
+    path: string;
+    query: Record<string, string[]>;
+    headers: Record<string, string[]>;
+    body: string;
+    params: Record<string, string>;
+}
+
 // ── Infrastructure component shape ──────────────────────────────────────
 interface InfrastructureComponent {
     /** Human-readable display name */

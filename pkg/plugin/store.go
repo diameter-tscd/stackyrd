@@ -185,6 +185,7 @@ func buildPluginFS(embedded embed.FS, prefix string, storeDir string) afero.Fs {
 func ensureStoreDir(baseDir string) error {
 	dirs := []string{
 		filepath.Join(baseDir, "scripts"),
+		filepath.Join(baseDir, "static"),
 		filepath.Join(baseDir, ".cache"),
 		filepath.Join(baseDir, "config"),
 		filepath.Join(baseDir, "data"),

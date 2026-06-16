@@ -1,4 +1,4 @@
-package testing
+package testutil
 
 import (
 	"bytes"
@@ -106,5 +106,3 @@ func AssertJSON(t *testing.T, rec *httptest.ResponseRecorder, expected map[strin
 		}
 	}
 }
-
-

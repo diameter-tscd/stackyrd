@@ -1,7 +1,6 @@
 package services
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +8,7 @@ import (
 	"stackyrd/internal/services/modules"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
+	"stackyrd/tests/testutil"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -61,11 +61,10 @@ func TestProductsService_GetProducts(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	testutil.AssertStatus(t, w, http.StatusOK)
 
 	var resp response.Response
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
+	testutil.ParseResponse(t, w, &resp)
 	assert.True(t, resp.Success)
 }
 

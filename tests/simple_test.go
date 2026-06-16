@@ -205,7 +205,7 @@ func TestDependencies_MissingKey(t *testing.T) {
 }
 
 // Self-contained mock helpers
-// (avoid relying on pkg/testing to prevent import-name shadow issues)
+// (local to this file to keep test dependencies minimal)
 
 type simpleMockConfig struct {
 	services map[string]bool

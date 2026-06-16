@@ -1,4 +1,4 @@
-package testing
+package testutil
 
 import (
 	"context"
@@ -29,9 +29,7 @@ func (m *MockService) Enabled() bool       { return m.enabled }
 func (m *MockService) Endpoints() []string { return m.endpoints }
 func (m *MockService) Get() interface{}    { return m }
 
-func (m *MockService) RegisterRoutes(g interface{}) {
-	// Mock implementation - does nothing
-}
+func (m *MockService) RegisterRoutes(g interface{}) {}
 
 // MockLogger implements a mock logger for testing
 type MockLogger struct {

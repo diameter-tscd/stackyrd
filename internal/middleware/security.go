@@ -3,8 +3,8 @@ package middleware
 import (
 	"fmt"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,7 +47,6 @@ func Security() gin.HandlerFunc {
 
 // SecurityWithConfig middleware with custom settings
 func SecurityWithConfig(config SecurityConfig) gin.HandlerFunc {
-	hsts := fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge)
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Content-Security-Policy", config.ContentSecurityPolicy)
 		c.Writer.Header().Set("X-Content-Type-Options", config.XContentTypeOptions)
@@ -55,7 +54,8 @@ func SecurityWithConfig(config SecurityConfig) gin.HandlerFunc {
 		c.Writer.Header().Set("X-XSS-Protection", config.XXSSProtection)
 		c.Writer.Header().Set("Referrer-Policy", config.ReferrerPolicy)
 		c.Writer.Header().Set("Permissions-Policy", config.PermissionsPolicy)
-		c.Writer.Header().Set("Strict-Transport-Security", hsts)
+		c.Writer.Header().Set("Strict-Transport-Security",
+			fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge))
 
 		c.Next()
 	}

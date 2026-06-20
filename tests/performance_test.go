@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"stackyrd/pkg/response"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

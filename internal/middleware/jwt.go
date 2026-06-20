@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/response"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -74,16 +74,8 @@ func JWTRequired(secretKey string) gin.HandlerFunc {
 
 // JWT middleware with custom configuration
 func JWT(config JWTConfig) gin.HandlerFunc {
-	secretKeyBytes := []byte(config.SecretKey)
-	lookupParts := strings.SplitN(config.TokenLookup, ":", 2)
-	var tokenSource, tokenKey string
-	if len(lookupParts) == 2 {
-		tokenSource = lookupParts[0]
-		tokenKey = lookupParts[1]
-	}
-
 	return func(c *gin.Context) {
-		token, err := extractToken(c, tokenSource, tokenKey)
+		token, err := extractToken(c, config.TokenLookup)
 		if err != nil {
 			response.Unauthorized(c, "Missing or invalid token")
 			c.Abort()
@@ -91,7 +83,7 @@ func JWT(config JWTConfig) gin.HandlerFunc {
 		}
 
 		parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-			return secretKeyBytes, nil
+			return []byte(config.SecretKey), nil
 		})
 
 		if err != nil || !parsedToken.Valid {
@@ -111,12 +103,15 @@ func JWT(config JWTConfig) gin.HandlerFunc {
 	}
 }
 
-// extractToken extracts token from header, query, or cookie.
-// source and key are pre-parsed at middleware setup time.
-func extractToken(c *gin.Context, source, key string) (string, error) {
-	if source == "" || key == "" {
+// extractToken extracts token from header, query, or cookie
+func extractToken(c *gin.Context, tokenLookup string) (string, error) {
+	parts := strings.Split(tokenLookup, ":")
+	if len(parts) != 2 {
 		return c.GetHeader("Authorization"), nil
 	}
+
+	source := parts[0]
+	key := parts[1]
 
 	switch source {
 	case "header":
@@ -124,6 +119,7 @@ func extractToken(c *gin.Context, source, key string) (string, error) {
 		if authHeader == "" {
 			return "", errors.New("authorization header not found")
 		}
+		// Remove "Bearer " prefix
 		return strings.TrimPrefix(authHeader, "Bearer "), nil
 
 	case "query":
@@ -143,23 +139,15 @@ func extractToken(c *gin.Context, source, key string) (string, error) {
 
 // JWTOptional middleware validates JWT tokens if present, but doesn't require them
 func JWTOptional(secretKey string) gin.HandlerFunc {
-	secretKeyBytes := []byte(secretKey)
-	lookupParts := strings.SplitN(defaultJWTConfig.TokenLookup, ":", 2)
-	var tokenSource, tokenKey string
-	if len(lookupParts) == 2 {
-		tokenSource = lookupParts[0]
-		tokenKey = lookupParts[1]
-	}
-
 	return func(c *gin.Context) {
-		token, err := extractToken(c, tokenSource, tokenKey)
+		token, err := extractToken(c, defaultJWTConfig.TokenLookup)
 		if err != nil {
 			c.Next()
 			return
 		}
 
 		parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-			return secretKeyBytes, nil
+			return []byte(secretKey), nil
 		})
 
 		if err != nil || !parsedToken.Valid {

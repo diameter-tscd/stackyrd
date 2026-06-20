@@ -1,8 +1,8 @@
 package infrastructure
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 )
 
 // InfrastructureComponent defines the interface that all infrastructure managers must implement

@@ -152,10 +152,7 @@ func (hc *HealthChecker) CheckSingle(ctx context.Context, name string) *HealthRe
 	return hc.runCheck(ctx, check)
 }
 
-// runCheck runs a single health check.
-// The check is called directly (respecting the context deadline); no
-// additional goroutine is needed since check.Check already receives a
-// context and should honour cancellation.
+// runCheck runs a single health check
 func (hc *HealthChecker) runCheck(ctx context.Context, check *HealthCheck) *HealthResult {
 	start := time.Now()
 
@@ -168,13 +165,24 @@ func (hc *HealthChecker) runCheck(ctx context.Context, check *HealthCheck) *Heal
 		Critical:  check.Critical,
 	}
 
-	err := check.Check(checkCtx)
-	result.Duration = time.Since(start)
-	if err != nil {
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- check.Check(checkCtx)
+	}()
+
+	select {
+	case err := <-errChan:
+		result.Duration = time.Since(start)
+		if err != nil {
+			result.Status = HealthStatusUnhealthy
+			result.Error = err.Error()
+		} else {
+			result.Status = HealthStatusHealthy
+		}
+	case <-checkCtx.Done():
+		result.Duration = time.Since(start)
 		result.Status = HealthStatusUnhealthy
-		result.Error = err.Error()
-	} else {
-		result.Status = HealthStatusHealthy
+		result.Error = "health check timed out"
 	}
 
 	return result

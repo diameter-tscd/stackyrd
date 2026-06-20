@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -170,12 +170,14 @@ func Logger(l *logger.Logger) gin.HandlerFunc {
 		method := c.Request.Method
 		path := c.Request.URL.Path
 
+		msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
+
 		if status >= 500 {
-			l.Error("API Request", nil, "method", method, "path", path, "status", status, "latency", latency)
+			l.Error(msg, nil)
 		} else if status >= 400 {
-			l.Warn("API Request", "method", method, "path", path, "status", status, "latency", latency)
+			l.Warn(msg)
 		} else {
-			l.Info("API Request", "method", method, "path", path, "status", status, "latency", latency)
+			l.Info(msg)
 		}
 	}
 }

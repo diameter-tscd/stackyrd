@@ -73,10 +73,9 @@ __pycache__/
 store/
 
 # Compiled binaries
-scripts/service/service
-service
+scripts/service/service_generator
 
 # Files
-stackyrd
+stackyrd-nano
 ISSUE_TASK.md
-PERF_ISSUE.md
+PLUGIN.md

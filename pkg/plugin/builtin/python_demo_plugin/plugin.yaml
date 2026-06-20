@@ -1,8 +1,0 @@
-name: python_demo
-version: 1.0.0
-description: "Example Python plugin demonstrating the external gRPC-based plugin runtime. Echos back a greeting with the provided name."
-author: stackyrd
-entrypoint: "ext:scripts/handler.py"
-limits:
-  max_timeout_ms: 15000
-  max_memory_bytes: 33554432

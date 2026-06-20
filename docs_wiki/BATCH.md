@@ -6,29 +6,6 @@ Generic batch processing with worker pools, accumulation flushing, and paginated
 
 The `pkg/batch/` package provides three patterns for processing data in batches:
 
-```mermaid
-flowchart TD
-    subgraph Processor [BatchProcessor]
-        A1[Items] --> A2[Split into batches]
-        A2 --> A3[Worker Pool<br/>concurrent]
-        A3 --> A4[Merge Results<br/>BatchResult]
-    end
-
-    subgraph Writer [BatchWriter]
-        B1[Incoming Stream] --> B2[Accumulate buffer]
-        B2 -->|buffer ≥ BatchSize| B3[Auto-Flush]
-        B2 -->|on Flush() call| B3
-        B3 --> B4[Handler]
-    end
-
-    subgraph Reader [BatchReader]
-        C1[Paginated Source] --> C2[Read next page]
-        C2 --> C3[Append to results]
-        C3 -->|more pages| C2
-        C3 -->|done| C4[Complete Result]
-    end
-```
-
 | Pattern | Struct | Use Case |
 |---------|--------|----------|
 | Processor | `BatchProcessor[T]` | Split items into batches, process with worker pool |
@@ -40,7 +17,7 @@ flowchart TD
 Processes a slice of items in parallel batches.
 
 ```go
-import "stackyrd/pkg/batch"
+import "stackyrd-nano/pkg/batch"
 
 handler := func(ctx context.Context, items []Item) error {
     // Process batch (e.g., bulk insert to DB)
@@ -105,9 +82,7 @@ writer.Flush(ctx)
 ### Use Cases
 
 - **Log aggregation**: buffer log entries, flush to storage
-- **Event streaming**: batch Kafka events before processing
 - **Database writes**: bulk insert accumulated records
-- **Metrics reporting**: batch publish metrics
 
 ## BatchReader
 
@@ -150,4 +125,3 @@ type BatchResult struct {
 - Set `Workers` to `runtime.NumCPU()` or your I/O concurrency limit
 - Use `BatchWriter` for streaming/tail data, `BatchProcessor` for finite slices
 - Always handle `BatchResult.Errors` — partial failures are common
-- Monitor `batch_duration_seconds` metric for performance regressions

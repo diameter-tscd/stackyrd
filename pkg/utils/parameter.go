@@ -24,7 +24,6 @@ type ParsedFlags struct {
 	Port      string // -port flag value
 	Verbose   bool   // -verbose flag value
 	Env       string // -env flag value
-	EnvFile   string // -env-file flag value
 	// Add new flags here as needed
 }
 
@@ -60,16 +59,14 @@ func ParseFlags(flagDefinitions []FlagDefinition) (*ParsedFlags, error) {
 		case *string:
 			value = *ptr
 			switch def.Name {
-		case "c":
-			parsed.ConfigURL = *ptr
-		case "port":
-			parsed.Port = *ptr
-		case "env":
-			parsed.Env = *ptr
-		case "env-file":
-			parsed.EnvFile = *ptr
-		}
-		// Add new string flag assignments here
+			case "c":
+				parsed.ConfigURL = *ptr
+			case "port":
+				parsed.Port = *ptr
+			case "env":
+				parsed.Env = *ptr
+			}
+			// Add new string flag assignments here
 		case *int:
 			value = *ptr
 			// Add new int flag assignments here
@@ -149,6 +146,5 @@ func PrintUsage(flagDefinitions []FlagDefinition, appName string) {
 	fmt.Printf("  ./%s -c http://example.com/config.yaml\n", appName)
 	fmt.Printf("  ./%s -port 9090 -env production\n", appName)
 	fmt.Printf("  ./%s -c https://config.example.com/app.yaml -verbose\n", appName)
-	fmt.Printf("  ./%s --env-file .env.production\n", appName)
 	fmt.Println()
 }

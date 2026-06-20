@@ -1,23 +1,18 @@
 package main_test
 
 import (
-	"context"
 	"io"
-	_ "stackyrd/internal/services/modules" // nolint:blank-imports triggers init() registrations
 	"sync"
 	"testing"
-	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
-	"stackyrd/pkg/response"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
+	"stackyrd-nano/pkg/registry"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
-
-// Config tests
 
 func TestConfig_Defaults(t *testing.T) {
 	cfg, err := config.LoadConfig()
@@ -47,13 +42,12 @@ func TestConfig_ServicesIsEnabled(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	assert.NoError(t, err)
 	assert.True(t, cfg.Services.IsEnabled("any_service"))
-	assert.True(t, cfg.Services.IsEnabled("users_service"))
 }
 
 func TestConfig_ServicesDisabled(t *testing.T) {
 	c := config.ServicesConfig{"users_service": false}
 	assert.False(t, c.IsEnabled("users_service"))
-	assert.True(t, c.IsEnabled("unset_service")) // defaults to true
+	assert.True(t, c.IsEnabled("unset_service"))
 }
 
 func TestConfig_AuthTypeDefault(t *testing.T) {
@@ -72,20 +66,8 @@ func TestConfig_MiddlewareDefaults(t *testing.T) {
 func TestConfig_MiddlewareDisabled(t *testing.T) {
 	c := config.MiddlewareConfig{"ratelimit": false}
 	assert.False(t, c.IsEnabled("ratelimit"))
-	assert.True(t, c.IsEnabled("unset_middleware")) // defaults to true
+	assert.True(t, c.IsEnabled("unset_middleware"))
 }
-
-func TestConfig_InfraDefaults(t *testing.T) {
-	cfg, err := config.LoadConfig()
-	assert.NoError(t, err)
-	assert.False(t, cfg.Redis.Enabled)
-	assert.False(t, cfg.Kafka.Enabled)
-	assert.False(t, cfg.Mongo.Enabled)
-	assert.False(t, cfg.Cron.Enabled)
-}
-
-// PaginationRequest tests
-// PaginationRequest is defined in pkg/response — zero deps, pure value-object.
 
 func TestPaginationRequest_Defaults(t *testing.T) {
 	pr := response.PaginationRequest{}
@@ -124,16 +106,9 @@ func TestPaginationRequest_Offset(t *testing.T) {
 	}
 }
 
-// Registry tests
-
-func TestRegistry_RegisterAndRetrieve(t *testing.T) {
-	l := logger.New(false, nil)
-	cfg, err := config.LoadConfig()
-	assert.NoError(t, err)
-
-	reg := registry.NewServiceRegistry(l)
-	err = reg.RegisterServiceWithDependencies(cfg, l, registry.NewDependencies(), "users_service")
-	assert.NoError(t, err)
+func TestRegistry_EmptyServiceList(t *testing.T) {
+	reg := registry.NewServiceRegistry(logger.New(false, nil))
+	assert.Empty(t, reg.GetServices())
 }
 
 func TestRegistry_RegisterMissingFactory(t *testing.T) {
@@ -145,22 +120,6 @@ func TestRegistry_RegisterMissingFactory(t *testing.T) {
 		registry.NewDependencies(), "nonexistent_service")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "service factory not found")
-}
-
-func TestRegistry_EmptyServiceList(t *testing.T) {
-	reg := registry.NewServiceRegistry(logger.New(false, nil))
-	assert.Empty(t, reg.GetServices())
-}
-
-func TestRegistry_KnownFactoriesExist(t *testing.T) {
-	// AutoDiscoverServices populates factories via init() in the module packages.
-	// getServiceFactories returns the snapshot; it must contain at least the
-	// names auto-registered by the module init() calls above.
-	factories := registry.GetServiceFactories()
-	assert.NotEmpty(t, factories,
-		"service factories should be populated by module init() imports")
-	_, hasUsers := factories["users_service"]
-	assert.True(t, hasUsers, "users_service must be auto-registered via init()")
 }
 
 func TestRegistry_ServiceDiscoveredEmpty(t *testing.T) {
@@ -178,8 +137,6 @@ func TestRegistry_BootEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	assert.NotPanics(t, func() { reg.Boot(gin.New()) })
 }
-
-// Dependencies container tests
 
 func TestDependencies_SetGet(t *testing.T) {
 	deps := registry.NewDependencies()
@@ -203,9 +160,6 @@ func TestDependencies_MissingKey(t *testing.T) {
 	_, ok := registry.NewDependencies().Get("missing")
 	assert.False(t, ok)
 }
-
-// Self-contained mock helpers
-// (local to this file to keep test dependencies minimal)
 
 type simpleMockConfig struct {
 	services map[string]bool
@@ -268,88 +222,6 @@ func (m *simpleMockLogger) GetLogs() []mockLogEntry {
 }
 func (m *simpleMockLogger) Clear() { m.mu.Lock(); m.logs = m.logs[:0]; m.mu.Unlock() }
 
-type simpleMockRedisManager struct {
-	mu      sync.RWMutex
-	storage map[string]interface{}
-}
-
-func (m *simpleMockRedisManager) Set(_ context.Context, key string, value interface{}, _ time.Duration) error {
-	m.mu.Lock()
-	if m.storage == nil {
-		m.storage = make(map[string]interface{})
-	}
-	m.storage[key] = value
-	m.mu.Unlock()
-	return nil
-}
-func (m *simpleMockRedisManager) Get(_ context.Context, key string) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if v, ok := m.storage[key]; ok {
-		if s, ok := v.(string); ok {
-			return s, nil
-		}
-	}
-	return "", nil
-}
-func (m *simpleMockRedisManager) Delete(_ context.Context, key string) error {
-	m.mu.Lock()
-	if m.storage != nil {
-		delete(m.storage, key)
-	}
-	m.mu.Unlock()
-	return nil
-}
-func (*simpleMockRedisManager) Close() error { return nil }
-
-type simpleMockKafkaManager struct {
-	mu       sync.RWMutex
-	messages []mockKafkaMessage
-}
-type mockKafkaMessage struct {
-	Topic string
-	Value []byte
-}
-
-func (m *simpleMockKafkaManager) Publish(topic string, value []byte) error {
-	m.mu.Lock()
-	m.messages = append(m.messages, mockKafkaMessage{topic, value})
-	m.mu.Unlock()
-	return nil
-}
-func (m *simpleMockKafkaManager) GetMessages() []mockKafkaMessage {
-	m.mu.RLock()
-	out := make([]mockKafkaMessage, len(m.messages))
-	copy(out, m.messages)
-	m.mu.RUnlock()
-	return out
-}
-func (*simpleMockKafkaManager) Close() error { return nil }
-
-type simpleMockCronManager struct {
-	mu   sync.RWMutex
-	jobs map[string]func()
-}
-
-func (m *simpleMockCronManager) AddJob(name string, _ string, cmd func()) error {
-	m.mu.Lock()
-	if m.jobs == nil {
-		m.jobs = make(map[string]func())
-	}
-	m.jobs[name] = cmd
-	m.mu.Unlock()
-	return nil
-}
-func (m *simpleMockCronManager) RemoveJob(name string) error {
-	m.mu.Lock()
-	if m.jobs != nil {
-		delete(m.jobs, name)
-	}
-	m.mu.Unlock()
-	return nil
-}
-func (*simpleMockCronManager) Close() error { return nil }
-
 type simpleMockFileReader struct {
 	mu    sync.RWMutex
 	files map[string][]byte
@@ -376,17 +248,9 @@ func (m *simpleMockFileReader) AddFile(path string, content []byte) {
 	m.files[path] = d
 }
 
-// Twig mocks
-
 type simpleMockPostgresManager struct{}
 
 func (*simpleMockPostgresManager) Close() error { return nil }
-
-type simpleMockMongoManager struct{}
-
-func (*simpleMockMongoManager) Close() error { return nil }
-
-// Assertions against self-contained mocks
 
 func TestMockConfig_Defaults(t *testing.T) {
 	mc := &simpleMockConfig{}
@@ -424,32 +288,6 @@ func TestMockLogger_Clear(t *testing.T) {
 	assert.Empty(t, ml.GetLogs())
 }
 
-func TestMockRedisManager_SetGetDelete(t *testing.T) {
-	rm := &simpleMockRedisManager{}
-	assert.NoError(t, rm.Set(t.Context(), "k1", "v1", 0))
-	v, err := rm.Get(t.Context(), "k1")
-	assert.NoError(t, err)
-	assert.Equal(t, "v1", v)
-	assert.NoError(t, rm.Delete(t.Context(), "k1"))
-	v, _ = rm.Get(t.Context(), "k1")
-	assert.Empty(t, v)
-}
-
-func TestMockKafkaManager_PublishGetMessages(t *testing.T) {
-	km := &simpleMockKafkaManager{}
-	assert.NoError(t, km.Publish("topic1", []byte("hello")))
-	msgs := km.GetMessages()
-	assert.Len(t, msgs, 1)
-	assert.Equal(t, "topic1", msgs[0].Topic)
-	assert.Equal(t, []byte("hello"), msgs[0].Value)
-}
-
-func TestMockCronManager_AddRemoveJob(t *testing.T) {
-	cm := &simpleMockCronManager{}
-	assert.NoError(t, cm.AddJob("j", "* * * * *", func() {}))
-	assert.NoError(t, cm.RemoveJob("j"))
-}
-
 func TestMockFileReader_ReadAddFile(t *testing.T) {
 	fr := &simpleMockFileReader{}
 	_, err := fr.Read("missing.txt")
@@ -462,8 +300,4 @@ func TestMockFileReader_ReadAddFile(t *testing.T) {
 
 func TestMockPostgresManager_Close(t *testing.T) {
 	assert.NoError(t, (&simpleMockPostgresManager{}).Close())
-}
-
-func TestMockMongoManager_Close(t *testing.T) {
-	assert.NoError(t, (&simpleMockMongoManager{}).Close())
 }

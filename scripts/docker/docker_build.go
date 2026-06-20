@@ -15,7 +15,7 @@ import (
 
 // Configuration constants
 const (
-	DEFAULT_APP_NAME   = "stackyrd"
+	DEFAULT_APP_NAME   = "stackyrd-nano"
 	DEFAULT_IMAGE_NAME = "myapp"
 	DEFAULT_TARGET     = "all"
 )

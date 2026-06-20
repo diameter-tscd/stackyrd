@@ -8,26 +8,23 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ulikunitz/xz"
-	"golang.org/x/term"
 )
 
 // Configuration variables
 var (
 	DIST_DIR   = "dist"
-	APP_NAME   = "stackyrd"
+	APP_NAME   = "stackyrd-nano"
 	MAIN_PATH  = "./cmd/app"
 	CONFIG_YML = "config.yaml"
 	BANNER_TXT = "banner.txt"
@@ -995,13 +992,10 @@ func isTerminal() bool {
 // runTUIBuild runs the build with the bubbletea TUI
 func runTUIBuild(ctx *BuildContext, logger *Logger) {
 	_, err := RunBuildTUI(ctx, logger)
-	ClearScreen()
 	if err != nil {
-		fmt.Printf("Build failed: %v\n", err)
+		fmt.Printf("\nBuild failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("%s\u2713%s Build ready at: %s%s%s\n",
-		B_GREEN, RESET, B_WHITE, ctx.DistPath, RESET)
 }
 
 // runCLIBuild runs the build with plain CLI output
@@ -1044,49 +1038,6 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}
 
 	printSuccess(ctx.DistPath)
-}
-
-// ─── Terminal Safety Guard ──────────────────────────────────────────────────────
-
-type ttyGuard struct {
-	fd       int
-	oldState *term.State
-}
-
-func (g *ttyGuard) Save() error {
-	g.fd = int(os.Stdin.Fd())
-	oldState, err := term.GetState(g.fd)
-	if err != nil {
-		return fmt.Errorf("term.GetState: %w", err)
-	}
-	g.oldState = oldState
-	return nil
-}
-
-func (g *ttyGuard) Restore() {
-	if g.oldState == nil {
-		return
-	}
-	_ = term.Restore(g.fd, g.oldState)
-	g.oldState = nil
-	fmt.Fprint(os.Stderr, "\033[?1049l")
-}
-
-func setupTUISignalHandler(guard *ttyGuard) chan struct{} {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() {
-		select {
-		case sig := <-sigCh:
-			guard.Restore()
-			fmt.Fprintf(os.Stderr, "\r\nReceived %v\n", sig)
-			os.Exit(128 + int(sig.(syscall.Signal)))
-		case <-done:
-			signal.Stop(sigCh)
-		}
-	}()
-	return done
 }
 
 // ─── Bubble Tea TUI ──────────────────────────────────────────────────────────
@@ -1259,7 +1210,7 @@ func divider(width int) string {
 func readBanner(projectDir string) string {
 	data, err := os.ReadFile(filepath.Join(projectDir, "pkg", "assets", "banner.txt"))
 	if err != nil {
-		return "  stackyrd"
+		return "  stackyrd-nano"
 	}
 	return string(data)
 }
@@ -1563,7 +1514,7 @@ func (m BuildTuiModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(buildBannerStyle.Render("  stackyrd Builder"))
+	b.WriteString(buildBannerStyle.Render("  stackyrd-nano Builder"))
 	b.WriteString("\n")
 	b.WriteString(buildSubStyle.Render("  by diameter-tscd"))
 	b.WriteString("\n")
@@ -1695,22 +1646,7 @@ func (m BuildTuiModel) View() string {
 	return container.Render(b.String())
 }
 
-func RunBuildTUI(ctx *BuildContext, logger *Logger) (retCtx *BuildContext, retErr error) {
-	var guard ttyGuard
-	if err := guard.Save(); err != nil {
-		logger.Warn("Failed to save terminal state: %v", err)
-	}
-	defer guard.Restore()
-	sigDone := setupTUISignalHandler(&guard)
-	defer close(sigDone)
-
-	defer func() {
-		if r := recover(); r != nil {
-			guard.Restore()
-			panic(r)
-		}
-	}()
-
+func RunBuildTUI(ctx *BuildContext, logger *Logger) (*BuildContext, error) {
 	m := NewBuildTuiModel(ctx, logger)
 
 	logR, logW, err := os.Pipe()

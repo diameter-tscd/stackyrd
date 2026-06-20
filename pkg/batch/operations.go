@@ -62,6 +62,7 @@ func (bp *BatchProcessor[T]) Process(ctx context.Context, items []T) (*BatchResu
 
 	// Process batches with workers
 	resultChan := make(chan *BatchResult, len(batches))
+	errorChan := make(chan error, len(batches))
 
 	// Create worker pool
 	workerCtx, cancel := context.WithTimeout(ctx, bp.config.Timeout)
@@ -87,6 +88,7 @@ func (bp *BatchProcessor[T]) Process(ctx context.Context, items []T) (*BatchResu
 	go func() {
 		wg.Wait()
 		close(resultChan)
+		close(errorChan)
 	}()
 
 	// Collect results
@@ -121,13 +123,6 @@ func (bp *BatchProcessor[T]) processBatch(ctx context.Context, items []T) *Batch
 	result := &BatchResult{}
 
 	for _, item := range items {
-		select {
-		case <-ctx.Done():
-			result.Errors = append(result.Errors, ctx.Err())
-			return result
-		default:
-		}
-
 		err := bp.processItemWithRetry(ctx, item)
 		if err != nil {
 			result.Failed++
@@ -144,16 +139,12 @@ func (bp *BatchProcessor[T]) processBatch(ctx context.Context, items []T) *Batch
 func (bp *BatchProcessor[T]) processItemWithRetry(ctx context.Context, item T) error {
 	var lastErr error
 
-	timer := time.NewTimer(bp.config.RetryDelay)
-	defer timer.Stop()
-
 	for attempt := 0; attempt <= bp.config.RetryAttempts; attempt++ {
 		if attempt > 0 {
-			timer.Reset(bp.config.RetryDelay)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-timer.C:
+			case <-time.After(bp.config.RetryDelay):
 			}
 		}
 
@@ -206,8 +197,9 @@ func (bw *BatchWriter[T]) Flush(ctx context.Context) error {
 		return nil
 	}
 
-	items := bw.items
-	bw.items = make([]T, 0, bw.config.BatchSize)
+	items := make([]T, len(bw.items))
+	copy(items, bw.items)
+	bw.items = bw.items[:0]
 	bw.mu.Unlock()
 
 	return bw.writer(ctx, items)

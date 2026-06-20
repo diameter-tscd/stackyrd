@@ -1,11 +1,11 @@
 package modules
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/interfaces"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/registry"
-	"stackyrd/pkg/response"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/interfaces"
+	"stackyrd-nano/pkg/logger"
+	"stackyrd-nano/pkg/registry"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/labstack/echo/v4"
 {{IMPORTS}}

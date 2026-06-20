@@ -2,10 +2,9 @@ package infrastructure
 
 import (
 	"fmt"
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -13,16 +12,15 @@ import (
 // After boot the component and factory maps are write-once, so a
 // regular map protected by sync.RWMutex is cheaper than sync.Map for
 // the hot read path (no interface boxing/type assertions on every access).
-// GetAll uses atomic.Value for lock-free read of the cached snapshot.
 type ComponentRegistry struct {
 	components     map[string]InfrastructureComponent // write-once after boot
 	factories      map[string]ComponentFactory        // write-once at init
 	componentsMu   sync.RWMutex                       // guards components map
 	factoriesMu    sync.Mutex                         // guards factories map (init phase only)
-	snapshot       atomic.Value                       // cached map[string]InfrastructureComponent; nil when stale
+	cachedSnapshot map[string]InfrastructureComponent // TTL-cached GetAll copy; nil = stale
+	cacheExpiry    time.Time
+	cacheMu        sync.Mutex
 	cacheTTL       time.Duration
-	lastSnapshot   time.Time
-	snapshotMu     sync.Mutex
 }
 
 // Global registry instance
@@ -35,7 +33,7 @@ var (
 func GetGlobalRegistry() *ComponentRegistry {
 	registryOnce.Do(func() {
 		globalRegistry = &ComponentRegistry{
-			cacheTTL: 2 * time.Second,
+			cacheTTL: 2 * time.Second, // reduced copy frequency 4x from 500ms default
 		}
 	})
 	return globalRegistry
@@ -89,7 +87,10 @@ func (r *ComponentRegistry) SetComponent(name string, component InfrastructureCo
 	}
 	r.components[name] = component
 	// Invalidate snapshot cache
-	r.snapshot.Store(map[string]InfrastructureComponent(nil))
+	r.cacheMu.Lock()
+	r.cachedSnapshot = nil
+	r.cacheExpiry = time.Time{}
+	r.cacheMu.Unlock()
 }
 
 // Get retrieves a component by name — RLock read path, no interface boxing.
@@ -101,22 +102,27 @@ func (r *ComponentRegistry) Get(name string) (InfrastructureComponent, bool) {
 }
 
 // GetAll returns a TTL-cached read-only snapshot of all components.
-// The cached snapshot is served lock-free via atomic.Value.
 // Callers that only need component names should use maps.Keys on the result
 // instead of requesting a full key+value copy.
 func (r *ComponentRegistry) GetAll() map[string]InfrastructureComponent {
-	// Fast path — atomic load, no lock
-	if snap, ok := r.snapshot.Load().(map[string]InfrastructureComponent); ok && snap != nil {
-		r.snapshotMu.Lock()
-		ok = time.Now().Before(r.lastSnapshot.Add(r.cacheTTL))
-		r.snapshotMu.Unlock()
-		if ok {
-			return snap
-		}
+	// Fast path — cached snapshot still valid
+	r.cacheMu.Lock()
+	if time.Now().Before(r.cacheExpiry) && r.cachedSnapshot != nil {
+		result := r.cachedSnapshot
+		r.cacheMu.Unlock()
+		return result
 	}
+	r.cacheMu.Unlock()
 
 	// Slow path — rebuild snapshot.
-	// Read components under lock, components map is write-once after boot.
+	// Always re-take cacheMu as writer so the store+expiry update is atomic.
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+	if time.Now().Before(r.cacheExpiry) && r.cachedSnapshot != nil {
+		return r.cachedSnapshot
+	}
+
+	// Read lock-free: components map is write-once after boot (no concurrent writers).
 	r.componentsMu.RLock()
 	result := make(map[string]InfrastructureComponent, len(r.components))
 	for k, v := range r.components {
@@ -124,11 +130,8 @@ func (r *ComponentRegistry) GetAll() map[string]InfrastructureComponent {
 	}
 	r.componentsMu.RUnlock()
 
-	r.snapshotMu.Lock()
-	r.snapshot.Store(result)
-	r.lastSnapshot = time.Now()
-	r.snapshotMu.Unlock()
-
+	r.cachedSnapshot = result
+	r.cacheExpiry = time.Now().Add(r.cacheTTL)
 	return result
 }
 

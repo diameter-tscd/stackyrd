@@ -1,6 +1,6 @@
 # Development Guide
 
-Learn to add services, middleware, infrastructure components, and plugins to stackyrd.
+Learn to add services, middleware, infrastructure components, and plugins to stackyrd-nano.
 
 ## Adding a Service
 
@@ -20,11 +20,11 @@ Create `internal/services/modules/your_service.go`:
 package modules
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/interfaces"
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/registry"
-    "stackyrd/pkg/response"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/interfaces"
+    "stackyrd-nano/pkg/logger"
+    "stackyrd-nano/pkg/registry"
+    "stackyrd-nano/pkg/response"
     "github.com/gin-gonic/gin"
 )
 
@@ -89,8 +89,8 @@ Create `internal/middleware/your_middleware.go`:
 package middleware
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/logger"
     "github.com/gin-gonic/gin"
 )
 
@@ -119,8 +119,8 @@ Create `pkg/infrastructure/your_component.go`:
 package infrastructure
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/logger"
 )
 
 type YourComponent struct {
@@ -292,7 +292,7 @@ result, err := page.First(10)
 ## Resilience Patterns
 
 ```go
-import "stackyrd/pkg/resilience"
+import "stackyrd-nano/pkg/resilience"
 
 // Circuit breaker
 cb := resilience.NewCircuitBreaker("my-service", 5, time.Minute)
@@ -309,7 +309,7 @@ ctx, cancel := resilience.WithTimeout(context.Background(), 5*time.Second)
 ## Testing
 
 ```go
-import "stackyrd/pkg/testing"
+import "stackyrd-nano/pkg/testing"
 
 func TestHandler(t *testing.T) {
     c, w := testing.NewTestContext("GET", "/api/v1/users", nil)

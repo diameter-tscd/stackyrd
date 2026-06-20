@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/response"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -95,14 +95,34 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) isAllowed(ip string) bool {
 	now := time.Now()
 
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
+	rl.mu.RLock()
 	v, exists := rl.visitors[ip]
+	// Fast path: existing visitor, still within the window → upgrade to write
+	// lock to increment count.  We must verify `exists` before ever touching
+	// `v` (a nil dereference here causes a hard panic).
 	if exists && now.Sub(v.lastSeen) <= rl.window {
+		rl.mu.RUnlock()
+
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
 		if v.count >= rl.rate {
 			return false
 		}
+		v.count++
+		v.lastSeen = now
+		return true
+	}
+	// Slow path: new visitor or window expired — create/reset entry under
+	// write lock.  v may be nil here (first visit); only dereference `v`
+	// after the Lock/Exists re-check below.
+	rl.mu.RUnlock()
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	// Double-check after acquiring write lock — another goroutine may have
+	// raced in and created the entry already.
+	if v, exists = rl.visitors[ip]; exists && now.Sub(v.lastSeen) <= rl.window {
 		v.count++
 		v.lastSeen = now
 		return true

@@ -163,7 +163,7 @@ func GetRuntimeStats() runtime.MemStats {
 	return *p
 }
 
-// GetMemSelf gathers stackyrd memory usage.
+// GetMemSelf gathers stackyrd-nano memory usage.
 func GetMemSelf() uint64 {
 	_ = GetRuntimeStats() // ensure background stats goroutine is running
 

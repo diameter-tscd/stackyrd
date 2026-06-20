@@ -1,75 +1,5 @@
 # API Documentation
 
-Documentation generated automatically from code annotations using swaggo/swag via the project's own script.
-
-## Quick Start
-
-```bash
-# Generate docs (auto-installs swag CLI if missing)
-go run scripts/swagger/swagger.go
-
-# Dry-run (analyze only, no generation)
-go run scripts/swagger/swagger.go -dry-run
-```
-
-The script scans `internal/services/modules/`, analyzes annotations, and generates `docs.go`, `swagger.json`, and `swagger.yaml` into `docs/`.
-
-Swagger UI is served when `swagger.enabled: true` in `config.yaml`:
-```yaml
-swagger:
-  enabled: true
-  base_path: "/swagger"
-```
-
-Access at: `http://localhost:8080/swagger/index.html`
-
-## Annotations
-
-Add annotations directly above handler functions:
-
-```go
-// @Summary List users
-// @Description Get paginated list of users
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param limit query int false "Items per page" default(20)
-// @Success 200 {object} response.Response{data=[]User} "Success"
-// @Failure 400 {object} response.Response "Bad request"
-// @Router /users [get]
-func (s *UsersService) ListUsers(c *gin.Context) {
-    // handler
-}
-```
-
-## Common Annotations
-
-| Annotation | Description | Example |
-|------------|-------------|---------|
-| `@Summary` | Brief title | `@Summary List users` |
-| `@Description` | Detailed explanation | `@Description Get users with pagination` |
-| `@Tags` | Group endpoints | `@Tags users` |
-| `@Param` | Request params | `@Param page query int false "Page"` |
-| `@Success` | Success response | `@Success 200 {object} response.Response` |
-| `@Failure` | Error response | `@Failure 404 {object} response.Response` |
-| `@Router` | Path + method | `@Router /users [get]` |
-
-## Global Annotations
-
-Defined in `cmd/app/main.go`:
-
-```go
-// @title stackyrd API
-// @version 1.0
-// @description stackyrd API Documentation - A modular Go API framework
-// @host localhost:8080
-// @BasePath /api/v1
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name Authorization
-```
-
 ## API Response Format
 
 All responses follow the `response.Response` structure:
@@ -132,26 +62,24 @@ Error response:
 | `response.ServiceUnavailable(c)` | 503 | Service unavailable |
 | `response.Error(c, code, errCode, msg)` | custom | Custom error |
 
-## Struct Documentation
+## Request Binding
 
 ```go
-// User represents a user in the system
-type User struct {
-    ID       string `json:"id" example:"usr_123" description:"User ID"`
-    Username string `json:"username" example:"john" description:"Username"`
-    Email    string `json:"email" example:"john@test.com" description:"Email"`
+type CreateUserRequest struct {
+    Username string `json:"username" validate:"required,min=3,max=20"`
+    Email    string `json:"email" validate:"required,email"`
 }
-```
 
-## Generation
-
-```bash
-# Using project script (recommended)
-go run scripts/swagger/swagger.go
-
-# Direct swag CLI (alternative)
-swag init -g cmd/app/main.go -o docs --outputTypes go,json,yaml
-
-# Verify
-ls docs/  # docs.go, swagger.json, swagger.yaml
+func (s *YourService) create(c *gin.Context) {
+    var req CreateUserRequest
+    if err := request.Bind(c, &req); err != nil {
+        if validationErr, ok := err.(*request.ValidationError); ok {
+            response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+            return
+        }
+        response.BadRequest(c, err.Error())
+        return
+    }
+    response.Created(c, req)
+}
 ```

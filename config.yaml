@@ -1,58 +1,32 @@
 app:
-  name: "stackyrd"
-  version: "1.0.3-clover"
+  name: "stackyrd-nano"
+  version: "1.0.3n-clover"
   debug: true
   env: "development"
   banner_path: "banner.txt"
-  startup_delay: 3                # seconds to display boot screen (0 to skip)
-  quiet_startup: true             # suppress console logs (TUI only, logs still go to monitoring)
-  enable_tui: true                # enable fancy TUI mode (false = traditional console logging)
+  startup_delay: 3
+  quiet_startup: true
+  enable_tui: true
 
-server:   
+server:
   port: "8080"
-  services_endpoint: /api/v1      # endpoint service path
+  services_endpoint: /api/v1
 
-services:
-  users_service: true
-  broadcast_service: false
-  cache_service: true
-  encryption_service: false
-  grafana_service: false
-  mongodb_service: true
-  multi_tenant_service: true
-  products_service: true
-  tasks_service: true
-
-# Middleware configuration - enable/disable middlewares (defaults to true if not specified)
 middleware:
   request_id: true
   logger: true
   permission_check: true
   cors: true
-  jwt: false          # Set to true if using JWT authentication
+  jwt: false
   ratelimit: true
   security: true
   audit: true
-  encryption: false    # Controlled by encryption.enabled config
+  encryption: false
   gzip: true
-  swagger: true       # Controlled by swagger.enabled config
 
 auth:
   type: "apikey"
   secret: "super-secret-key"
-
-redis:
-  enabled: false
-  address: "localhost:6379"
-  password: ""
-  db: 0
-
-kafka:
-  enabled: false
-  brokers: 
-    - "localhost:9092"
-  topic: "my-topic"
-  group_id: "my-group"
 
 postgres:
   enabled: true
@@ -66,59 +40,9 @@ postgres:
       dbname: "postgres"
       sslmode: "disable"
 
-    - name: "secondary"
-      enabled: true
-      host: "localhost"
-      port: 5433
-      user: "postgres"
-      password: "Mypostgres01"
-      dbname: "postgres"
-      sslmode: "disable"
-
-mongo:
-  enabled: true
-  connections:
-    - name: "primary"
-      enabled: true
-      uri: "mongodb://localhost:27017"
-      database: "primary_db"
-
-    - name: "secondary"
-      enabled: true
-      uri: "mongodb://localhost:27018"
-      database: "secondary_db"
-
-grafana:
-  enabled: true
-  url: "http://localhost:3000"
-  api_key: "your-grafana-api-key"
-  username: "admin"
-  password: "admin"
-  
-minio:
-  enabled: true
-  endpoint: "localhost:9003"
-  access_key_id: "minioadmin"
-  secret_access_key: "minioadmin"
-  use_ssl: false
-  bucket_name: "main"
-
-cron:
-  enabled: true
-  jobs:
-    log_cleanup: "0 0 * * *"
-    health_check: "*/10 * * * * *" # Every 10 seconds
-
 encryption:
   enabled: false
   algorithm: "aes-256-gcm"
   key: ""
   rotate_keys: false
   key_rotation_interval: "24h"
-
-plugins:
-  enabled: true
-  default_limits:
-    max_timeout_ms: 30000
-    max_memory_bytes: 104857600
-  # allowlist: []

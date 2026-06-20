@@ -3,22 +3,12 @@ package resilience
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 )
 
 var (
 	ErrTimeout = errors.New("operation timed out")
-
-	// Channel pools to reduce allocation in the hot timeout path.
-	errChanPool    = sync.Pool{New: func() interface{} { return make(chan error, 1) }}
-	resultChanPool = sync.Pool{New: func() interface{} { return make(chan resultWrapper, 1) }}
 )
-
-type resultWrapper struct {
-	result interface{}
-	err    error
-}
 
 // TimeoutConfig holds timeout configuration
 type TimeoutConfig struct {
@@ -40,10 +30,9 @@ func WithTimeout(fn func() error, timeout time.Duration) error {
 	return WithContext(ctx, fn)
 }
 
-// WithContext executes a function with a context.
-// Channels are recycled via sync.Pool to reduce per-call allocation.
+// WithContext executes a function with a context
 func WithContext(ctx context.Context, fn func() error) error {
-	errChan := errChanPool.Get().(chan error)
+	errChan := make(chan error, 1)
 
 	go func() {
 		errChan <- fn()
@@ -51,10 +40,8 @@ func WithContext(ctx context.Context, fn func() error) error {
 
 	select {
 	case err := <-errChan:
-		errChanPool.Put(errChan)
 		return err
 	case <-ctx.Done():
-		errChanPool.Put(errChan)
 		if ctx.Err() == context.DeadlineExceeded {
 			return ErrTimeout
 		}
@@ -70,22 +57,25 @@ func WithTimeoutResult[T any](fn func() (T, error), timeout time.Duration) (T, e
 	return WithContextResult(ctx, fn)
 }
 
-// WithContextResult executes a function with a context and returns a result.
-// Channels are recycled via sync.Pool to reduce per-call allocation.
+// WithContextResult executes a function with a context and returns a result
 func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, error) {
-	rch := resultChanPool.Get().(chan resultWrapper)
+	resultChan := make(chan struct {
+		result T
+		err    error
+	}, 1)
 
 	go func() {
 		result, err := fn()
-		rch <- resultWrapper{result: result, err: err}
+		resultChan <- struct {
+			result T
+			err    error
+		}{result, err}
 	}()
 
 	select {
-	case res := <-rch:
-		resultChanPool.Put(rch)
-		return res.result.(T), res.err
+	case res := <-resultChan:
+		return res.result, res.err
 	case <-ctx.Done():
-		resultChanPool.Put(rch)
 		var zero T
 		if ctx.Err() == context.DeadlineExceeded {
 			return zero, ErrTimeout

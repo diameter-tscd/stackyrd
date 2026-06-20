@@ -1,8 +1,0 @@
-name: lua_transformer
-version: 1.0.0
-description: "Transforms data payloads with field mapping, filtering, sorting, and formatting. Modes: map (default), filter, sort, flatten, format."
-author: stackyrd
-entrypoint: "lua:scripts/handler.lua"
-limits:
-  max_timeout_ms: 15000
-  max_memory_bytes: 33554432

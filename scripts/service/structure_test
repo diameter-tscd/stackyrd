@@ -3,7 +3,7 @@ package services_test
 import (
 	"testing"
 
-	"stackyrd/internal/services/modules"
+	"stackyrd-nano/internal/services/modules"
 )
 
 func TestNew{{SERVICE_NAME}}(t *testing.T) {

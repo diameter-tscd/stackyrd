@@ -1,27 +1,10 @@
 # Security Guide
 
-Security configuration, middleware, and best practices for stackyrd.
+Security configuration, middleware, and best practices for stackyrd-nano.
 
 ## Security Middleware
 
 Enable/disable in `config.yaml` under `middleware:`.
-
-```mermaid
-flowchart LR
-    A[Incoming Request] --> B[Security Headers<br/>CSP, HSTS, X-Frame-Options]
-    B --> C[CORS<br/>cross-origin check]
-    C --> D{JWT or API Key?}
-    D -->|JWT| E[JWT Validation<br/>Bearer token]
-    D -->|API Key| F[API Key Check<br/>X-API-Key header]
-    D -->|None| G[Pass-through]
-    E --> H[Rate Limiter]
-    F --> H
-    G --> H
-    H --> I[Permission Check<br/>block DELETE by default]
-    I --> J[Audit Log]
-    J --> K[Encryption<br/>optional payload decrypt]
-    K --> L[Handler]
-```
 
 ### Security Headers
 
@@ -178,31 +161,6 @@ func (s *UserService) create(c *gin.Context) {
 }
 ```
 
-## Plugin System Security
-
-### Sandbox Protections
-
-| Plugin Type | Protection |
-|-------------|------------|
-| TypeScript | goja sandbox (no require, no imports, no fetch) |
-| Lua | Restricted libraries (no io, os, debug) |
-| Python | OS-level process isolation |
-| Go | Same process (trusted only) |
-
-### Plugin Limits
-
-```yaml
-plugins:
-  default_limits:
-    max_timeout_ms: 30000      # 30 second timeout
-    max_memory_bytes: 104857600 # 100 MB memory cap
-  allowlist: ["inspector"]     # restrict to specific plugins
-```
-
-- `default_limits` act as a hard cap (plugin manifests cannot exceed)
-- `allowlist` restricts which plugins load at startup
-- External (Python) plugins run as separate processes
-
 ## Production Checklist
 
 - [ ] Set `auth.type` to `jwt` or `apikey` (not `none`)
@@ -213,6 +171,5 @@ plugins:
 - [ ] Set CORS to specific origins (not `*`)
 - [ ] Enable `permission_check` middleware
 - [ ] Enable `audit` middleware for request logging
-- [ ] Set restrictive plugin `allowlist`
 - [ ] Use HTTPS in production (reverse proxy or TLS)
 - [ ] Run as non-root user in Docker

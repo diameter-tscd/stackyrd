@@ -24,7 +24,7 @@ flowchart TD
 ### Starting the Hub
 
 ```go
-import "stackyrd/pkg/websocket"
+import "stackyrd-nano/pkg/websocket"
 
 hub := websocket.NewHub()
 go hub.Run() // event loop (blocking)
@@ -34,10 +34,7 @@ go hub.Run() // event loop (blocking)
 
 ```go
 engine := gin.Default()
-engine.GET("/ws", func(c *gin.Context) {
-    // Convert gin to http.ResponseWriter + *http.Request
-    websocket.HandleWebSocket(hub)(c.Writer, c.Request)
-})
+engine.GET("/ws", websocket.HandleWebSocket(hub))
 ```
 
 ### Broadcasting Messages
@@ -63,10 +60,12 @@ hub.SendToClient("client-abc-123", []byte(`{"type":"private"}`))
 
 ```go
 type Hub struct {
-    clients    map[string]*Client
-    register   chan *Client
-    unregister chan *Client
-    broadcast  chan []byte
+    clients    map[*Client]bool
+    clientsByID map[string]*Client
+    broadcast   chan []byte
+    register    chan *Client
+    unregister  chan *Client
+    mu          sync.RWMutex
 }
 
 // Start the event loop
@@ -98,9 +97,9 @@ type Message struct {
 msg := websocket.Message{
     Type:    "order.update",
     Payload: orderData,
-    Room:    "room-orders",
 }
-hub.Broadcast(msg) // auto-marshaled
+data, _ := json.Marshal(msg)
+hub.Broadcast(data)
 ```
 
 ## Client Lifecycle
@@ -113,7 +112,6 @@ flowchart TD
     B --> C[Hub adds to clients map]
     C --> D[readPump<br/>read messages]
     C --> E[writePump<br/>send messages]
-    C --> F[heartbeat<br/>ping/pong]
     G[Client disconnected] --> H[unregister channel]
     H --> I[Hub removes from clients map]
 ```
@@ -154,16 +152,14 @@ func (s *BroadcastService) handleEvent(c *gin.Context) {
 ```go
 // In RegisterRoutes:
 func (s *WebSocketService) RegisterRoutes(g *gin.RouterGroup) {
-    g.GET("/ws", func(c *gin.Context) {
-        websocket.HandleWebSocket(s.hub)(c.Writer, c.Request)
-    })
+    g.GET("/ws", websocket.HandleWebSocket(s.hub))
     g.POST("/ws/broadcast", s.handleBroadcast)
 }
 ```
 
 ## Connection Management
 
-- **Client ID**: Auto-generated UUID per connection
+- **Client ID**: Query parameter `client_id` or client IP as fallback
 - **Read pump**: Goroutine reading messages from the WS connection
 - **Write pump**: Goroutine draining buffered messages to the WS connection
 - **Cleanup**: Deferred `Close()` on both read and write pumps

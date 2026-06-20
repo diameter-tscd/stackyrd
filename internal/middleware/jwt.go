@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-	"stackyrd/pkg/response"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
+	"stackyrd-nano/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

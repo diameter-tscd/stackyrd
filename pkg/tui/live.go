@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"os"
-	"stackyrd/pkg/tui/template"
-	"stackyrd/pkg/utils"
+	"stackyrd-nano/pkg/tui/template"
+	"stackyrd-nano/pkg/utils"
 	"strings"
 	"sync"
 	"time"

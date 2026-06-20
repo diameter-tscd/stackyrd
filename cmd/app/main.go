@@ -5,45 +5,23 @@ import (
 	"net/url"
 	"os"
 
-	"stackyrd/pkg/utils"
+	"stackyrd-nano/pkg/utils"
 )
 
-// @title stackyrd API
-// @version 1.0
-// @description stackyrd API Documentation - A modular service framework for Go.
-// @termsOfService http://swagger.io/terms/
-
-// @license.name Apache 2.0
-// @license.url https://github.com/diameter-tscd/stackyrd/blob/master/LICENSE
-
-// @host localhost:8080
-// @BasePath /api/v1
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name Authorization
-
-// main is the entry point of the application
 func main() {
-	// Parse command line flags
 	flags := parseFlags()
 
-	// Create configuration manager
 	configManager := NewConfigManager(flags.ConfigURL)
 
-	// Create application with dependency injection
 	app := NewApplication(configManager)
 
-	// Run application with error handling
 	if err := app.Run(); err != nil {
 		fmt.Printf("Fatal error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// parseFlags parses command line flags using the parameter utility
 func parseFlags() *utils.ParsedFlags {
-	// Define flag definitions
 	flagDefinitions := []utils.FlagDefinition{
 		{
 			Name:         "c",
@@ -75,7 +53,6 @@ func parseFlags() *utils.ParsedFlags {
 		},
 	}
 
-	// Parse flags using the utility
 	flags, err := utils.ParseFlags(flagDefinitions)
 	if err != nil {
 		fmt.Printf("Error parsing flags: %v\n", err)

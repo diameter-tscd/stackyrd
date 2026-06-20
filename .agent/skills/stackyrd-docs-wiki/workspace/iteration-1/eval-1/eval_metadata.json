@@ -24,7 +24,7 @@
       "name": "best-practices-section"
     },
     {
-      "text": "Uses the project's module path (stackyrd) in all Go import paths",
+      "text": "Uses the project's module path (stackyrd-nano) in all Go import paths",
       "name": "correct-import-path"
     },
     {

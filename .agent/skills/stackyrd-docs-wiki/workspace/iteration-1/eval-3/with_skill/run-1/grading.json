@@ -6,9 +6,9 @@
       "evidence": "Added '## Using the Cache' section immediately after the 'Using Plugins from Services' section at line 218. However, the section appears TWICE (lines 218-261 and lines 263-313) due to a duplicate insertion bug."
     },
     {
-      "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
+      "text": "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
       "passed": true,
-      "evidence": "Code examples import from 'stackyrd/pkg/caching' with import path in the init() and runtime code"
+      "evidence": "Code examples import from 'stackyrd-nano/pkg/caching' with import path in the init() and runtime code"
     },
     {
       "text": "Code example shows getting the CachingManager from deps.Get",

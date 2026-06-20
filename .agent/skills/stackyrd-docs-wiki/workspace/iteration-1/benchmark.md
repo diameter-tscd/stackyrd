@@ -1,4 +1,4 @@
-# Skill Benchmark: stackyrd-docs-wiki
+# Skill Benchmark: stackyrd-nano-docs-wiki
 
 **Model**: <model-name>
 **Date**: 2026-06-13T08:49:07Z

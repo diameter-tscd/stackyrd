@@ -1,6 +1,6 @@
 # Technical Reference
 
-Comprehensive reference for **stackyrd** — Go 1.25.3, module path `stackyrd`.
+Comprehensive reference for **stackyrd-nano** — Go 1.25.3, module path `stackyrd-nano`.
 
 ## Configuration Reference
 
@@ -8,7 +8,7 @@ Full `config.yaml` structure:
 
 ```yaml
 app:
-  name: "stackyrd"
+  name: "stackyrd-nano"
   version: "1.0.1"
   debug: false
   env: "development"
@@ -328,5 +328,5 @@ go run cmd/app/main.go -port 9090
 
 # Production build
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -ldflags="-s -w -buildid=" -trimpath -o dist/stackyrd ./cmd/app
+  go build -ldflags="-s -w -buildid=" -trimpath -o dist/stackyrd-nano ./cmd/app
 ```

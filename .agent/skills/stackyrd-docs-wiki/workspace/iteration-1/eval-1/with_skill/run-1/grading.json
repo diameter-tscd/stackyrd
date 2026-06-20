@@ -26,9 +26,9 @@
       "evidence": "Lines 237-245: '## Best Practices' with 7 numbered items"
     },
     {
-      "text": "Uses the project's module path (stackyrd) in all Go import paths",
+      "text": "Uses the project's module path (stackyrd-nano) in all Go import paths",
       "passed": true,
-      "evidence": "All imports use 'stackyrd/pkg/caching'"
+      "evidence": "All imports use 'stackyrd-nano/pkg/caching'"
     },
     {
       "text": "Does not contain emojis in either file",

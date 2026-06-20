@@ -21,7 +21,7 @@ stateDiagram-v2
 ### Basic Usage
 
 ```go
-import "stackyrd/pkg/resilience"
+import "stackyrd-nano/pkg/resilience"
 
 // Simple circuit breaker
 cb := resilience.NewCircuitBreaker(
@@ -210,7 +210,7 @@ if hc.IsCriticalHealthy(ctx) {
 
 ### Integration with Health Endpoints
 
-stackyrd exposes health endpoints at runtime:
+stackyrd-nano exposes health endpoints at runtime:
 
 | Endpoint | Description |
 |----------|-------------|

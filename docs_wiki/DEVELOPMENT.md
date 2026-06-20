@@ -1,6 +1,6 @@
 # Development Guide
 
-Learn to add services, middleware, infrastructure components, and plugins to stackyrd.
+Learn to add services, middleware, infrastructure components to stackyrd-nano.
 
 ## Adding a Service
 
@@ -20,11 +20,11 @@ Create `internal/services/modules/your_service.go`:
 package modules
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/interfaces"
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/registry"
-    "stackyrd/pkg/response"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/interfaces"
+    "stackyrd-nano/pkg/logger"
+    "stackyrd-nano/pkg/registry"
+    "stackyrd-nano/pkg/response"
     "github.com/gin-gonic/gin"
 )
 
@@ -89,8 +89,8 @@ Create `internal/middleware/your_middleware.go`:
 package middleware
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/logger"
     "github.com/gin-gonic/gin"
 )
 
@@ -119,8 +119,8 @@ Create `pkg/infrastructure/your_component.go`:
 package infrastructure
 
 import (
-    "stackyrd/config"
-    "stackyrd/pkg/logger"
+    "stackyrd-nano/config"
+    "stackyrd-nano/pkg/logger"
 )
 
 type YourComponent struct {
@@ -171,7 +171,6 @@ Services receive infrastructure components via the `Dependencies` container:
 type YourService struct {
     enabled bool
     db      *infrastructure.PostgresConnectionManager
-    cache   *infrastructure.RedisManager
 }
 
 func init() {
@@ -183,133 +182,32 @@ func init() {
         if d, ok := deps.Get("postgres"); ok {
             db = d.(*infrastructure.PostgresConnectionManager)
         }
-        var cache *infrastructure.RedisManager
-        if r, ok := deps.Get("redis"); ok {
-            cache = r.(*infrastructure.RedisManager)
-        }
-        return &YourService{enabled: true, db: db, cache: cache}
+        return &YourService{enabled: true, db: db}
     })
 }
 ```
 
-## Using Plugins from Services
+## Using the In-Memory Cache
 
-The `PluginBridge` is available in `deps["plugins"]`:
+The `pkg/cache/` package provides a generic in-memory cache:
 
 ```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var bridge *plugin.PluginBridge
-        if b, ok := deps.Get("plugins"); ok {
-            bridge = b.(*plugin.PluginBridge)
-        }
-        return NewMyService(true, log, bridge)
-    })
-}
+import "stackyrd-nano/pkg/cache"
 
-// At runtime:
-if s.bridge != nil && s.bridge.HasPlugin("inspector") {
-    result, err := s.bridge.Execute("inspector", map[string]interface{}{
-        "mode": "ping",
-    })
-}
-```
+// Create a cache with default TTL
+c := cache.NewCache[string, User](5 * time.Minute)
 
-## Using the Cache
+// Set a value
+c.Set("user:123", userData)
 
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. Enable it via `caching: true` under `services:` in `config.yaml`.
+// Get a value
+user, ok := c.Get("user:123")
 
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("my_service") {
-            return nil
-        }
-        var cm *caching.CachingManager
-        if c, ok := deps.Get("caching"); ok {
-            cm = c.(*caching.CachingManager)
-        }
-        return NewMyService(true, log, cm)
-    })
-}
+// Delete
+c.Delete("user:123")
 
-// Cache-aside pattern at runtime:
-func (s *MyService) getUser(ctx context.Context, id string) (*User, error) {
-    key := "user:" + id
-    var user User
-    found, err := s.cache.Get(ctx, key, &user)
-    if err != nil {
-        return nil, err
-    }
-    if found {
-        return &user, nil
-    }
-    // Miss — load from database
-    user, err := s.db.FindUser(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    // Populate cache with TTL
-    if err := s.cache.Set(ctx, key, &user, 5*time.Minute); err != nil {
-        log.Warn().Err(err).Msg("failed to cache user")
-    }
-    return &user, nil
-}
-
-// Batch invalidation:
-s.cache.Invalidate(ctx, "user:1", "user:2", "user:3")
-```
-
-## Using the Cache
-
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a
-cache-aside pattern, TTL support, and batch invalidation. It is injected via
-Dependencies under the `"caching"` key.
-
-Enable in `config.yaml`:
-```yaml
-services:
-  caching: true
-```
-
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("my_service") {
-            return nil
-        }
-        var cm *caching.CachingManager
-        if c, ok := deps.Get("caching"); ok {
-            cm = c.(*caching.CachingManager)
-        }
-        return NewMyService(true, log, cm)
-    })
-}
-
-// Cache-aside pattern at runtime:
-func (s *MyService) getUser(ctx context.Context, id string) (*User, error) {
-    key := "user:" + id
-    var user User
-    found, err := s.cache.Get(ctx, key, &user)
-    if err != nil {
-        return nil, err
-    }
-    if found {
-        return &user, nil
-    }
-    // Miss — load from database
-    user, err := s.db.FindUser(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    if err := s.cache.Set(ctx, key, &user, 5*time.Minute); err != nil {
-        return nil, err
-    }
-    return &user, nil
-}
-
-// Batch invalidation:
-s.cache.Invalidate(ctx, "user:1", "user:2", "user:3")
+// Clear all entries
+c.Clear()
 ```
 
 ## Response Helpers
@@ -344,7 +242,7 @@ result, err := page.First(10)
 ## Resilience Patterns
 
 ```go
-import "stackyrd/pkg/resilience"
+import "stackyrd-nano/pkg/resilience"
 
 // Circuit breaker
 cb := resilience.NewCircuitBreaker("my-service", 5, time.Minute)
@@ -361,7 +259,7 @@ ctx, cancel := resilience.WithTimeout(context.Background(), 5*time.Second)
 ## Testing
 
 ```go
-import "stackyrd/pkg/testing"
+import "stackyrd-nano/pkg/testing"
 
 func TestHandler(t *testing.T) {
     c, w := testing.NewTestContext("GET", "/api/v1/users", nil)
@@ -389,5 +287,4 @@ FLags: `-c` (config URL), `-port`, `-verbose`, `-env`.
 | Build | `go run scripts/build/build.go [-garble] [-upx]` |
 | Docker | `go run scripts/docker/docker_build.go` |
 | Service Gen | `go run scripts/service/service.go` |
-| Swagger Gen | `go run scripts/swagger/swagger.go [-dry-run]` |
-| Package Mgr | `go run scripts/pkg/pkg.go install\|list\|remove\|upgrade` |
+| Package Mgr | `go run scripts/pkg/pkg.go install|list|remove|upgrade` |

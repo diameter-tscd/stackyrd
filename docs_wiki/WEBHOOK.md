@@ -16,7 +16,7 @@ cfg.Timeout = 30 * time.Second
 cfg.MaxRetries = 3
 cfg.RetryDelay = 1 * time.Second
 cfg.Headers = map[string]string{
-    "X-Source": "stackyrd",
+    "X-Source": "stackyrd-nano",
 }
 ```
 
@@ -68,7 +68,9 @@ mgr.Register("order.updated", func(event webhook.WebhookEvent) {
 ```go
 handler := webhook.NewWebhookHandler(mgr)
 
-http.HandleFunc("/webhook", handler.Handle)
+r.POST("/webhook", func(c *gin.Context) {
+    handler.Handle(c.Writer, c.Request)
+})
 ```
 
 The handler:
@@ -133,13 +135,6 @@ stats := mgr.GetStats()
 // Returns: url, enabled, timeout, max_retries
 ```
 
-Metrics via `pkg/metrics`:
-
-```go
-m := metrics.GetMetrics()
-m.RecordWebhookEvent("order.created", "success", time.Since(start))
-```
-
 ## Best Practices
 
 - Always set a `Secret` for signature verification
@@ -147,5 +142,4 @@ m.RecordWebhookEvent("order.created", "success", time.Since(start))
 - Set `MaxRetries` to 3 for transient failures
 - Register local handlers for critical events (don't rely solely on external delivery)
 - Keep webhook payloads small and focused
-- Monitor webhook delivery metrics via Prometheus
 - Use a shared secret (not API keys) for HMAC signing

@@ -76,6 +76,6 @@ store/
 scripts/service/service_generator
 
 # Files
-stackyrd
+stackyrd-nano
 ISSUE_TASK.md
 PLUGIN.md

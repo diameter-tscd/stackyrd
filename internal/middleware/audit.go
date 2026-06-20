@@ -3,8 +3,8 @@ package middleware
 import (
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"stackyrd/pkg/resilience"
+	"stackyrd-nano/pkg/resilience"
 
 	"github.com/gin-gonic/gin"
 )

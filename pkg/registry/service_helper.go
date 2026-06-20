@@ -1,8 +1,8 @@
 package registry
 
 import (
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
+	"stackyrd-nano/config"
+	"stackyrd-nano/pkg/logger"
 )
 
 // ServiceHelper helps services with dependency validation

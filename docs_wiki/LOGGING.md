@@ -4,7 +4,7 @@ Structured JSON logging with sampling, rotation, and context enrichment.
 
 ## Overview
 
-stackyrd provides two logging subsystems:
+stackyrd-nano provides two logging subsystems:
 
 | Package | Purpose |
 |---------|---------|
@@ -16,7 +16,7 @@ stackyrd provides two logging subsystems:
 The primary logger used throughout services and middleware:
 
 ```go
-import "stackyrd/pkg/logger"
+import "stackyrd-nano/pkg/logger"
 
 log := logger.NewLogger(cfg)
 log.Info().Msg("service started")
@@ -52,11 +52,11 @@ For applications needing log rotation, sampling, and richer structured output:
 ### Basic Setup
 
 ```go
-import "stackyrd/pkg/logging"
+import "stackyrd-nano/pkg/logging"
 
 // With rotation
 writer, err := logging.NewRotatingWriter(
-    "/var/log/stackyrd/app.log",
+    "/var/log/stackyrd-nano/app.log",
     logging.DefaultRotationConfig(),
 )
 logger := logging.NewStructuredLogger(
@@ -176,8 +176,8 @@ adaptive := logging.NewAdaptiveSampler(
 
 ```go
 import (
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/logging"
+    "stackyrd-nano/pkg/logger"
+    "stackyrd-nano/pkg/logging"
 )
 
 // In your middleware:

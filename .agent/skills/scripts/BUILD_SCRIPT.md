@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scripts/build/build.go` is the **stackyrd build manager** — a standalone Go CLI tool for building the project binary with optional obfuscation (garble), compression (UPX), version info embedding (goversioninfo), backup archiving, and asset copying.
+`scripts/build/build.go` is the **stackyrd-nano build manager** — a standalone Go CLI tool for building the project binary with optional obfuscation (garble), compression (UPX), version info embedding (goversioninfo), backup archiving, and asset copying.
 
 The script handles the full build pipeline: process management, backup, compilation, compression, and asset deployment — all with color-coded output and interactive prompts with timeout.
 
@@ -50,7 +50,7 @@ The script executes these steps in order:
 1. checkPath          → Verify project root (find go.mod, chdir, create dist/)
 2. checkRequiredTools → Check/install goversioninfo and garble
 3. askUserAboutGarble → Prompt (or skip via -garble) for garble obfuscation
-4. stopRunningProcess → Kill any running stackyrd instance (via pgrep)
+4. stopRunningProcess → Kill any running stackyrd-nano instance (via pgrep)
 5. createBackup       → Timestamped copy of dist/ files to dist/backups/
 6. archiveBackup      → ZIP the backup directory, remove uncompressed copy
 7. compilePlugins     → Compile Python plugin scripts (.py → .pyc) via py_compile
@@ -79,11 +79,11 @@ Prompts the user: "Use garble build for obfuscation? (y/N)". Waits for input or 
 
 ### 4. Process Killer (`stopRunningProcess`)
 
-Uses `pgrep -x stackyrd` (or `tasklist` on Windows) to find running instances and kills them with `process.Kill()`. Waits 1 second after killing.
+Uses `pgrep -x stackyrd-nano` (or `tasklist` on Windows) to find running instances and kills them with `process.Kill()`. Waits 1 second after killing.
 
 ### 5. Backup (`createBackup`)
 
-Copies existing `dist/` files (`stackyrd`, `stackyrd.exe`, `config.yaml`) to `dist/backups/{timestamp}/`. Skips non-existent files.
+Copies existing `dist/` files (`stackyrd-nano`, `stackyrd-nano.exe`, `config.yaml`) to `dist/backups/{timestamp}/`. Skips non-existent files.
 
 ### 6. Backup Archiving (`archiveBackup`)
 
@@ -106,10 +106,10 @@ Build command and flags:
 
 | Mode | Command |
 |------|---------|
-| Regular | `go build -ldflags=-s -w -buildid= -trimpath -o dist/stackyrd ./cmd/app` |
-| Garble | `garble build -ldflags=-s -w -buildid= -trimpath -o dist/stackyrd ./cmd/app` |
+| Regular | `go build -ldflags=-s -w -buildid= -trimpath -o dist/stackyrd-nano ./cmd/app` |
+| Garble | `garble build -ldflags=-s -w -buildid= -trimpath -o dist/stackyrd-nano ./cmd/app` |
 
-If `goversioninfo` is available, runs `goversioninfo -platform-specific` before the build. Output goes to `dist/stackyrd` (or `dist/stackyrd.exe` on Windows).
+If `goversioninfo` is available, runs `goversioninfo -platform-specific` before the build. Output goes to `dist/stackyrd-nano` (or `dist/stackyrd-nano.exe` on Windows).
 
 ### 9. UPX Prompt (`askUserAboutUPX`)
 
@@ -135,7 +135,7 @@ Copies `config.yaml` from project root to `dist/`. Missing file is skipped.
 
 ```
 dist/
-├── stackyrd              # Compiled binary
+├── stackyrd-nano              # Compiled binary
 ├── config.yaml           # Copied from project root
 └── backups/
     └── 20260528_143020.zip  # Timestamped backup archive
@@ -196,7 +196,7 @@ type BuildContext struct {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DIST_DIR` | `dist` | Output directory |
-| `APP_NAME` | `stackyrd` | Binary name |
+| `APP_NAME` | `stackyrd-nano` | Binary name |
 | `MAIN_PATH` | `./cmd/app` | Main package path |
 | `CONFIG_YML` | `config.yaml` | Config file to copy |
 | ~~`BANNER_TXT`~~ | ~~`banner.txt`~~ | ~~Banner file to copy~~ *(retained for backward compat, no longer used in copy)* |

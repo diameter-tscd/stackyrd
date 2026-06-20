@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
 )
 
-var _ = &Hub{} // suppress unused lint; imported by other packages
+var _ = &Hub{}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -18,7 +18,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Client represents a WebSocket client
 type Client struct {
 	ID   string
 	Conn *websocket.Conn
@@ -26,7 +25,6 @@ type Client struct {
 	Hub  *Hub
 }
 
-// Hub manages WebSocket connections
 type Hub struct {
 	clients     map[*Client]bool
 	clientsByID map[string]*Client
@@ -36,14 +34,12 @@ type Hub struct {
 	mu          sync.RWMutex
 }
 
-// Message represents a WebSocket message
 type Message struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 	Room    string      `json:"room,omitempty"`
 }
 
-// NewHub creates a new WebSocket hub
 func NewHub() *Hub {
 	return &Hub{
 		clients:     make(map[*Client]bool),
@@ -54,7 +50,6 @@ func NewHub() *Hub {
 	}
 }
 
-// Run starts the hub
 func (h *Hub) Run() {
 	for {
 		select {
@@ -90,12 +85,10 @@ func (h *Hub) Run() {
 	}
 }
 
-// Broadcast sends a message to all clients
 func (h *Hub) Broadcast(message []byte) {
 	h.broadcast <- message
 }
 
-// SendToClient sends a message to a specific client
 func (h *Hub) SendToClient(clientID string, message []byte) {
 	h.mu.RLock()
 	client, ok := h.clientsByID[clientID]
@@ -114,25 +107,23 @@ func (h *Hub) SendToClient(clientID string, message []byte) {
 	}
 }
 
-// GetConnectedClients returns the number of connected clients
 func (h *Hub) GetConnectedClients() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
 }
 
-// HandleWebSocket handles WebSocket connections
-func HandleWebSocket(hub *Hub) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+func HandleWebSocket(hub *Hub) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("WebSocket upgrade error: %v", err)
-			return err
+			return
 		}
 
-		clientID := c.QueryParam("client_id")
+		clientID := c.Query("client_id")
 		if clientID == "" {
-			clientID = c.RealIP()
+			clientID = c.ClientIP()
 		}
 
 		client := &Client{
@@ -146,12 +137,9 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 
 		go client.writePump()
 		go client.readPump()
-
-		return nil
 	}
 }
 
-// readPump reads messages from the WebSocket connection
 func (c *Client) readPump() {
 	defer func() {
 		c.Hub.unregister <- c
@@ -177,7 +165,6 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump writes messages to the WebSocket connection
 func (c *Client) writePump() {
 	defer func() { _ = c.Conn.Close() }()
 
@@ -189,7 +176,6 @@ func (c *Client) writePump() {
 	}
 }
 
-// handleMessage handles incoming messages
 func (c *Client) handleMessage(msg Message) {
 	switch msg.Type {
 	case "ping":
@@ -209,7 +195,6 @@ func (c *Client) handleMessage(msg Message) {
 	}
 }
 
-// BroadcastMessage broadcasts a message to all connected clients
 func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
 	msg := Message{
 		Type:    messageType,
@@ -223,7 +208,6 @@ func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
 	hub.Broadcast(data)
 }
 
-// GetHubStats returns hub statistics
 func GetHubStats(hub *Hub) map[string]interface{} {
 	return map[string]interface{}{
 		"connected_clients": hub.GetConnectedClients(),

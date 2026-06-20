@@ -4,64 +4,47 @@ import (
 	"time"
 )
 
-// Forward declarations to avoid circular imports
 type Config struct{}
 type Logger struct{}
 type LogBroadcaster struct{}
 
-// Application constants
 const (
-	AppName        = "stackyrd"
+	AppName        = "stackyrd-nano"
 	DefaultAppName = ""
 	DefaultVersion = "1.0.0"
 	DefaultEnv     = "development"
 
-	// Default configuration values
 	DefaultServerPort   = "8080"
-	DefaultStartupDelay = 15 // seconds
+	DefaultStartupDelay = 15
 	DefaultBannerPath   = "banner.txt"
 
-	// File paths
 	WebFolderPath = "web"
 
-	// Service names for logging and initialization
 	ServiceConfigName     = "Configuration"
 	ServiceMiddlewareName = "Middleware"
 	ServiceMonitoringName = "Monitoring"
-	ServiceGrafanaName    = "Grafana"
-	ServiceMinIOName      = "MinIO"
-	ServiceRedisCacheName = "Redis Cache"
-	ServiceKafkaName      = "Kafka Messaging"
 	ServicePostgreSQLName = "PostgreSQL"
-	ServiceMongoDBName    = "MongoDB"
-	ServiceCronName       = "Cron Scheduler"
-	ServiceExternalName   = "External Services"
 
-	// Color codes for TUI output
-	ColorPrimary = "\033[38;2;141;174;165m" // #8daea5 — TUI primary accent
+	ColorPrimary = "\033[38;2;141;174;165m"
 	ColorReset   = "\033[0m"
 	ColorYellow  = "\033[33m"
 
-	// Error messages
 	ErrInvalidConfigURLFormat = "invalid config URL format"
 	ErrPortError              = "port error"
 	ErrStepFailed             = "step failed"
 )
 
-// ServiceInit represents a service in the initialization queue
 type ServiceInit struct {
 	Name     string
 	Enabled  bool
 	InitFunc func() error
 }
 
-// ServiceConfig represents a service with its name and enabled status
 type ServiceConfig struct {
 	Name    string
 	Enabled bool
 }
 
-// AppContext holds the application state throughout initialization
 type AppContext struct {
 	Config      *Config
 	Logger      *Logger
@@ -71,13 +54,11 @@ type AppContext struct {
 	ConfigURL   string
 }
 
-// AppStep represents a single step in the application initialization process
 type AppStep struct {
 	Name string
 	Fn   func(*AppContext) error
 }
 
-// OutputMode represents the output mode for the application
 type OutputMode int
 
 const (
@@ -85,7 +66,6 @@ const (
 	OutputModeConsole
 )
 
-// String returns the string representation of the output mode
 func (m OutputMode) String() string {
 	switch m {
 	case OutputModeTUI:
@@ -97,7 +77,6 @@ func (m OutputMode) String() string {
 	}
 }
 
-// ServiceStatus represents the status of a service
 type ServiceStatus int
 
 const (
@@ -106,7 +85,6 @@ const (
 	ServiceStatusSkipped
 )
 
-// String returns the string representation of the service status
 func (s ServiceStatus) String() string {
 	switch s {
 	case ServiceStatusEnabled:
@@ -120,7 +98,6 @@ func (s ServiceStatus) String() string {
 	}
 }
 
-// Duration constants for timeouts and delays
 const (
 	StartupDelay            = 500 * time.Millisecond
 	ShutdownDelay           = 100 * time.Millisecond
@@ -128,7 +105,6 @@ const (
 	GracefulShutdownTimeout = 30 * time.Second
 )
 
-// Log levels for structured logging
 const (
 	LogLevelDebug = "debug"
 	LogLevelInfo  = "info"
@@ -137,17 +113,15 @@ const (
 	LogLevelFatal = "fatal"
 )
 
-// Service types for categorization
 const (
 	ServiceTypeInfrastructure = "infrastructure"
 	ServiceTypeApplication    = "application"
 	ServiceTypeMonitoring     = "monitoring"
 )
 
-// Configuration validation constants
 const (
 	MinStartupDelay    = 0
-	MaxStartupDelay    = 300 // 5 minutes
+	MaxStartupDelay    = 300
 	MinPortNumber      = 1
 	MaxPortNumber      = 65535
 	MaxPhotoSizeMB     = 10

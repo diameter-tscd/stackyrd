@@ -2,9 +2,9 @@ package registry
 
 import (
 	"fmt"
-	"stackyrd-nano/config"
-	"stackyrd-nano/pkg/interfaces"
-	"stackyrd-nano/pkg/logger"
+	"stackyrd/config"
+	"stackyrd/pkg/interfaces"
+	"stackyrd/pkg/logger"
 	"sync"
 
 	"github.com/gin-gonic/gin"

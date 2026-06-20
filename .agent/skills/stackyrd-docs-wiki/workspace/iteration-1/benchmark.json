@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "skill_name": "stackyrd-nano-docs-wiki",
+    "skill_name": "stackyrd-docs-wiki",
     "skill_path": "<path/to/skill>",
     "executor_model": "<model-name>",
     "analyzer_model": "<model-name>",
@@ -54,9 +54,9 @@
           "evidence": "Lines 237-245: '## Best Practices' with 7 numbered items"
         },
         {
-          "text": "Uses the project's module path (stackyrd-nano) in all Go import paths",
+          "text": "Uses the project's module path (stackyrd) in all Go import paths",
           "passed": true,
-          "evidence": "All imports use 'stackyrd-nano/pkg/caching'"
+          "evidence": "All imports use 'stackyrd/pkg/caching'"
         },
         {
           "text": "Does not contain emojis in either file",
@@ -130,9 +130,9 @@
           "evidence": "Added '## Using the Cache' section immediately after the 'Using Plugins from Services' section at line 218. However, the section appears TWICE (lines 218-261 and lines 263-313) due to a duplicate insertion bug."
         },
         {
-          "text": "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
+          "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
           "passed": true,
-          "evidence": "Code examples import from 'stackyrd-nano/pkg/caching' with import path in the init() and runtime code"
+          "evidence": "Code examples import from 'stackyrd/pkg/caching' with import path in the init() and runtime code"
         },
         {
           "text": "Code example shows getting the CachingManager from deps.Get",
@@ -193,9 +193,9 @@
           "evidence": "Lines 167-174: '## Best Practices' with 7 items"
         },
         {
-          "text": "Uses the project's module path (stackyrd-nano) in all Go import paths",
+          "text": "Uses the project's module path (stackyrd) in all Go import paths",
           "passed": true,
-          "evidence": "All imports use 'stackyrd-nano/pkg/caching'"
+          "evidence": "All imports use 'stackyrd/pkg/caching'"
         },
         {
           "text": "Does not contain emojis in either file",
@@ -269,9 +269,9 @@
           "evidence": "Added '## Using the Cache' section at line 218 immediately after 'Using Plugins from Services'"
         },
         {
-          "text": "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
+          "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
           "passed": true,
-          "evidence": "Code examples use 'stackyrd-nano/pkg/caching' import path"
+          "evidence": "Code examples use 'stackyrd/pkg/caching' import path"
         },
         {
           "text": "Code example shows getting the CachingManager from deps.Get",

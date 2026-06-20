@@ -1,0 +1,1106 @@
+basePath: /api/v1
+definitions:
+  infrastructure.GrafanaAnnotation:
+    properties:
+      dashboardId:
+        type: integer
+      data:
+        additionalProperties: true
+        type: object
+      id:
+        type: integer
+      panelId:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      text:
+        type: string
+      time:
+        type: integer
+      timeEnd:
+        type: integer
+    type: object
+  infrastructure.GrafanaAnnotations:
+    properties:
+      list:
+        items: {}
+        type: array
+    type: object
+  infrastructure.GrafanaDashboard:
+    properties:
+      annotations:
+        $ref: '#/definitions/infrastructure.GrafanaAnnotations'
+      id:
+        type: integer
+      links:
+        items: {}
+        type: array
+      panels:
+        items:
+          $ref: '#/definitions/infrastructure.GrafanaPanel'
+        type: array
+      refresh:
+        type: string
+      schemaVersion:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      templating:
+        $ref: '#/definitions/infrastructure.GrafanaTemplating'
+      time:
+        $ref: '#/definitions/infrastructure.GrafanaTimeRange'
+      timepicker:
+        $ref: '#/definitions/infrastructure.GrafanaTimePicker'
+      timezone:
+        type: string
+      title:
+        type: string
+      uid:
+        type: string
+      version:
+        type: integer
+    type: object
+  infrastructure.GrafanaDataSource:
+    properties:
+      access:
+        type: string
+      basicAuth:
+        type: boolean
+      basicAuthPassword:
+        type: string
+      basicAuthUser:
+        type: string
+      database:
+        type: string
+      id:
+        type: integer
+      jsonData:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      password:
+        type: string
+      readOnly:
+        type: boolean
+      secureJsonData:
+        additionalProperties: true
+        type: object
+      type:
+        type: string
+      uid:
+        type: string
+      url:
+        type: string
+      user:
+        type: string
+    type: object
+  infrastructure.GrafanaDatasource:
+    properties:
+      type:
+        type: string
+      uid:
+        type: string
+    type: object
+  infrastructure.GrafanaFieldConfig:
+    properties:
+      defaults:
+        $ref: '#/definitions/infrastructure.GrafanaFieldDefaults'
+      overrides:
+        items: {}
+        type: array
+    type: object
+  infrastructure.GrafanaFieldDefaults:
+    properties:
+      custom:
+        additionalProperties: true
+        type: object
+      decimals:
+        type: integer
+      unit:
+        type: string
+    type: object
+  infrastructure.GrafanaGridPos:
+    properties:
+      h:
+        type: integer
+      w:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
+    type: object
+  infrastructure.GrafanaPanel:
+    properties:
+      fieldConfig:
+        $ref: '#/definitions/infrastructure.GrafanaFieldConfig'
+      gridPos:
+        $ref: '#/definitions/infrastructure.GrafanaGridPos'
+      id:
+        type: integer
+      options:
+        additionalProperties: true
+        type: object
+      pluginVersion:
+        type: string
+      targets:
+        items:
+          $ref: '#/definitions/infrastructure.GrafanaTarget'
+        type: array
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  infrastructure.GrafanaTarget:
+    properties:
+      datasource:
+        $ref: '#/definitions/infrastructure.GrafanaDatasource'
+      expr:
+        type: string
+      legendFormat:
+        type: string
+      refId:
+        type: string
+    type: object
+  infrastructure.GrafanaTemplateVar:
+    properties:
+      datasource: {}
+      label:
+        type: string
+      name:
+        type: string
+      query:
+        type: string
+      type:
+        type: string
+    type: object
+  infrastructure.GrafanaTemplating:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/infrastructure.GrafanaTemplateVar'
+        type: array
+    type: object
+  infrastructure.GrafanaTimePicker:
+    properties:
+      refresh_intervals:
+        items:
+          type: string
+        type: array
+    type: object
+  infrastructure.GrafanaTimeRange:
+    properties:
+      from:
+        type: string
+      to:
+        type: string
+    type: object
+  modules.CacheRequest:
+    properties:
+      ttl_seconds:
+        description: Optional
+        type: integer
+      value:
+        type: string
+    type: object
+  modules.MultiTenantOrder:
+    type: object
+  modules.Product:
+    properties:
+      category:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      in_stock:
+        type: boolean
+      name:
+        type: string
+      price:
+        type: number
+      quantity:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+    type: object
+  modules.Task:
+    type: object
+  response.ErrorDetail:
+    properties:
+      code:
+        type: string
+      details:
+        additionalProperties: true
+        type: object
+      message:
+        type: string
+    type: object
+  response.Meta:
+    properties:
+      extra:
+        additionalProperties: true
+        type: object
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  response.Response:
+    properties:
+      correlation_id:
+        description: Request ID for tracking
+        type: string
+      data: {}
+      datetime:
+        description: ISO8601 Datetime
+        type: string
+      error:
+        $ref: '#/definitions/response.ErrorDetail'
+      message:
+        type: string
+      meta:
+        $ref: '#/definitions/response.Meta'
+      status:
+        description: HTTP Status Code
+        type: integer
+      success:
+        type: boolean
+      timestamp:
+        description: Unix Timestamp
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: admin@stackyrd.com
+    name: API Support
+  description: stackyrd API Documentation - A modular Go API framework
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: stackyrd API
+  version: "1.0"
+paths:
+  /cache/{key}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a cached value by its key
+      parameters:
+      - description: Cache key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Key not found or expired
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get cached value by key
+      tags:
+      - cache
+    post:
+      consumes:
+      - application/json
+      description: Store a value in the cache with optional TTL
+      parameters:
+      - description: Cache key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Cache request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.CacheRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cached successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid body
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Set cached value
+      tags:
+      - cache
+  /grafana/annotations:
+    post:
+      consumes:
+      - application/json
+      description: Create a new Grafana annotation
+      parameters:
+      - description: Annotation data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/infrastructure.GrafanaAnnotation'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Annotation created successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid annotation data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to create annotation
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create Grafana annotation
+      tags:
+      - grafana
+  /grafana/dashboards:
+    get:
+      consumes:
+      - application/json
+      description: List all Grafana dashboards with pagination
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 50
+        description: Items per page
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dashboards retrieved successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to list dashboards
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: List Grafana dashboards
+      tags:
+      - grafana
+    post:
+      consumes:
+      - application/json
+      description: Create a new Grafana dashboard
+      parameters:
+      - description: Dashboard configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/infrastructure.GrafanaDashboard'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Dashboard created successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid dashboard data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to create dashboard
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create Grafana dashboard
+      tags:
+      - grafana
+  /grafana/dashboards/{uid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a Grafana dashboard by UID
+      parameters:
+      - description: Dashboard UID
+        in: path
+        name: uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dashboard deleted successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Dashboard UID is required
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to delete dashboard
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Delete Grafana dashboard
+      tags:
+      - grafana
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a Grafana dashboard by UID
+      parameters:
+      - description: Dashboard UID
+        in: path
+        name: uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dashboard retrieved successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Dashboard UID is required
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Dashboard not found
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get Grafana dashboard
+      tags:
+      - grafana
+    put:
+      consumes:
+      - application/json
+      description: Update an existing Grafana dashboard
+      parameters:
+      - description: Dashboard UID
+        in: path
+        name: uid
+        required: true
+        type: string
+      - description: Dashboard configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/infrastructure.GrafanaDashboard'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Dashboard updated successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid dashboard data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to update dashboard
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Update Grafana dashboard
+      tags:
+      - grafana
+  /grafana/datasources:
+    post:
+      consumes:
+      - application/json
+      description: Create a new Grafana data source
+      parameters:
+      - description: Data source configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/infrastructure.GrafanaDataSource'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Data source created successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid data source data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to create data source
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create Grafana data source
+      tags:
+      - grafana
+  /grafana/health:
+    get:
+      consumes:
+      - application/json
+      description: Check Grafana service health
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Grafana health check successful
+          schema:
+            $ref: '#/definitions/response.Response'
+        "503":
+          description: Grafana is not available
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get Grafana health status
+      tags:
+      - grafana
+  /orders/{tenant}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all orders from a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Orders retrieved from tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to query tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: List orders by tenant
+      tags:
+      - orders
+    post:
+      consumes:
+      - application/json
+      description: Create a new order in a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Order data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.MultiTenantOrder'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Order created in tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid order data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to create order
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create order in tenant database
+      tags:
+      - orders
+  /orders/{tenant}/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an order from a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Order deleted from tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid order ID
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database or order not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to delete order
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Delete order from tenant database
+      tags:
+      - orders
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific order from a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Order retrieved from tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid order ID
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database or order not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to query tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get order by tenant
+      tags:
+      - orders
+    put:
+      consumes:
+      - application/json
+      description: Update an order in a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Order update data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.MultiTenantOrder'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Order updated in tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid order ID or update data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database or order not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to update order
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Update order in tenant database
+      tags:
+      - orders
+  /products/{tenant}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all products from a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Products retrieved from tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to query tenant database
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: List products by tenant
+      tags:
+      - products
+    post:
+      consumes:
+      - application/json
+      description: Create a new product in a specific tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Product data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.Product'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Product created successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid product data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Tenant database not found
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create a product for tenant
+      tags:
+      - products
+  /products/{tenant}/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a product from a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Product deleted successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid product ID
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Product or tenant not found
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Delete a product for tenant
+      tags:
+      - products
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific product from a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Product retrieved successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid product ID
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Product or tenant not found
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get product by tenant and ID
+      tags:
+      - products
+    put:
+      consumes:
+      - application/json
+      description: Update an existing product in a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated product data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.Product'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Product updated successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Product or tenant not found
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Update a product for tenant
+      tags:
+      - products
+  /products/{tenant}/analytics:
+    get:
+      consumes:
+      - application/json
+      description: Get aggregated product analytics from a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Analytics data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Missing tenant
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get product analytics for tenant
+      tags:
+      - products
+  /products/{tenant}/search:
+    get:
+      consumes:
+      - application/json
+      description: Search products in a tenant's database
+      parameters:
+      - description: Tenant identifier
+        in: path
+        name: tenant
+        required: true
+        type: string
+      - description: Search query
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Search results
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Missing tenant
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Search products for tenant
+      tags:
+      - products
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all tasks from the database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tasks retrieved successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to retrieve tasks
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: List all tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Create a new task in the database
+      parameters:
+      - description: Task to create
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.Task'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Task created successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to create task
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Create a new task
+      tags:
+      - tasks
+  /tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a task by ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task deleted successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to delete task
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Delete a task
+      tags:
+      - tasks
+    put:
+      consumes:
+      - application/json
+      description: Update an existing task by ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Task data to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/modules.Task'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task updated successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Failed to update task
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Update a task
+      tags:
+      - tasks
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

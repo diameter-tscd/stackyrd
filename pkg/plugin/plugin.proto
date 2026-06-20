@@ -1,0 +1,26 @@
+syntax = "proto3";
+package plugin;
+option go_package = "github.com/diameter-tscd/stackyrd/pkg/plugin";
+
+service PluginRuntime {
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+  rpc Ping(Empty) returns (Pong);
+}
+
+message ExecuteRequest {
+  string name = 1;
+  bytes args_json = 2;
+  string script_source = 3;
+}
+
+message ExecuteResponse {
+  bool success = 1;
+  bytes data_json = 2;
+  string error = 3;
+}
+
+message Empty {}
+
+message Pong {
+  string version = 1;
+}

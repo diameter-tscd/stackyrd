@@ -1,13 +1,27 @@
 # Testing Guide
 
-Testing strategy for stackyrd-nano: unit tests, integration tests, mocking, and test helpers.
+Testing strategy for stackyrd: unit tests, integration tests, mocking, and test helpers.
+
+## Test Structure
+
+```mermaid
+flowchart TD
+    A[tests/]
+    A --> B[services/<br/>Service integration tests]
+    B --> B1[users_service_test.go]
+    B --> B2[products_service_test.go]
+    A --> C[infrastructure/<br/>Infrastructure unit tests]
+    C --> C1[redis_test.go]
+```
+
+Tests mirror source structure under a flat `tests/` directory.
 
 ## Test Helpers
 
 `pkg/testing/helpers.go` provides utilities for writing HTTP handler tests:
 
 ```go
-import "stackyrd-nano/pkg/testing"
+import "stackyrd/pkg/testing"
 
 // Create a test Gin context + response recorder
 c, w := testing.NewTestContext("GET", "/api/v1/users", nil)
@@ -87,31 +101,52 @@ func TestCORSMiddleware(t *testing.T) {
 }
 ```
 
+## Writing Infrastructure Tests
+
+```go
+func TestRedisConnection(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping integration test")
+    }
+
+    cfg := &config.Config{}
+    viper.Set("redis.enabled", true)
+    viper.Set("redis.address", "localhost:6379")
+
+    mgr, err := NewRedisManager(cfg)
+    require.NoError(t, err)
+    defer mgr.Close()
+
+    status := mgr.GetStatus()
+    assert.True(t, status["connected"].(bool))
+}
+```
+
 ## Mocking Dependencies
 
 For service tests that depend on infrastructure, use the `testify/mock` pattern:
 
 ```go
-type MockPostgresManager struct {
+type MockRedisManager struct {
     mock.Mock
 }
 
-func (m *MockPostgresManager) Name() string {
-    return "postgres"
+func (m *MockRedisManager) Name() string {
+    return "redis"
 }
 
-func (m *MockPostgresManager) Ping() error {
-    args := m.Called()
-    return args.Error(0)
+func (m *MockRedisManager) Get(key string) (string, error) {
+    args := m.Called(key)
+    return args.String(0), args.Error(1)
 }
 
-func TestServiceWithPostgres(t *testing.T) {
-    mockDB := new(MockPostgresManager)
-    mockDB.On("Ping").Return(nil)
+func TestServiceWithRedis(t *testing.T) {
+    mockRedis := new(MockRedisManager)
+    mockRedis.On("Get", "user:123").Return("{\"name\":\"Alice\"}", nil)
 
-    svc := NewMyService(true, logger, mockDB)
+    svc := NewMyService(true, logger, mockRedis)
     // test handler
-    mockDB.AssertExpectations(t)
+    mockRedis.AssertExpectations(t)
 }
 ```
 
@@ -135,7 +170,7 @@ go tool cover -html=coverage.out
 go test -short ./...
 
 # Run specific test
-go test -v -run TestCreateUser
+go test -v -run TestCreateUser ./tests/services/
 ```
 
 ## Test Patterns
@@ -193,6 +228,30 @@ func TestUserHandlers(t *testing.T) {
         svc.handleGet(c)
         testing.AssertStatus(t, w, 404)
     })
+}
+```
+
+### Integration Test with Dependencies
+
+```go
+func TestServiceWithDependencies(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping integration test")
+    }
+
+    deps := registry.NewDependencies()
+    deps.Set("redis", testRedisManager)
+    deps.Set("postgres", testPostgresManager)
+
+    cfg := config.LoadConfig()
+    logger := logger.NewLogger(cfg)
+
+    svc := NewMyService(true, logger, deps)
+    c, w := testing.NewTestContext("GET", "/api/v1/my-endpoint", nil)
+    svc.RegisterRoutes(gin.New().Group("/api/v1"))
+
+    // Verify routes are registered
+    assert.NotEmpty(t, svc.Endpoints())
 }
 ```
 

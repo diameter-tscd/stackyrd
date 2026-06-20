@@ -2,8 +2,8 @@ package infrastructure
 
 import (
 	"context"
-	"stackyrd-nano/config"
-	"stackyrd-nano/pkg/logger"
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
 	"sync"
 	"time"
 )

@@ -24,7 +24,7 @@ import (
 // Configuration variables
 var (
 	DIST_DIR   = "dist"
-	APP_NAME   = "stackyrd-nano"
+	APP_NAME   = "stackyrd"
 	MAIN_PATH  = "./cmd/app"
 	CONFIG_YML = "config.yaml"
 	BANNER_TXT = "banner.txt"
@@ -1210,7 +1210,7 @@ func divider(width int) string {
 func readBanner(projectDir string) string {
 	data, err := os.ReadFile(filepath.Join(projectDir, "pkg", "assets", "banner.txt"))
 	if err != nil {
-		return "  stackyrd-nano"
+		return "  stackyrd"
 	}
 	return string(data)
 }
@@ -1514,7 +1514,7 @@ func (m BuildTuiModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(buildBannerStyle.Render("  stackyrd-nano Builder"))
+	b.WriteString(buildBannerStyle.Render("  stackyrd Builder"))
 	b.WriteString("\n")
 	b.WriteString(buildSubStyle.Render("  by diameter-tscd"))
 	b.WriteString("\n")

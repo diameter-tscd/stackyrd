@@ -1,0 +1,8 @@
+name: inspector
+version: 1.0.0
+description: "Queries all active infrastructure components and returns aggregated health, connection pools, and diagnostics. Accepts a 'mode' arg: status (default) or ping."
+author: stackyrd
+entrypoint: "ts:scripts/handler.ts"
+limits:
+  max_timeout_ms: 15000
+  max_memory_bytes: 33554432

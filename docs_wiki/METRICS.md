@@ -2,24 +2,6 @@
 
 Prometheus metrics for HTTP requests, cache, circuit breakers, webhooks, WebSocket, batch operations, and logging.
 
-## Data Flow
-
-```mermaid
-flowchart LR
-    A[Application Code] --> B[metrics.GetMetrics<br/>singleton]
-    B --> C[/metrics HTTP endpoint]
-    C --> D[Prometheus<br/>scrape /metrics]
-    D --> E[Grafana<br/>dashboards]
-    B --> F[pkg/prometheus/<br/>counter, gauge, histogram]
-    F --> C
-    G[Circuit Breaker] -->|state changes| B
-    H[Cache] -->|hit/miss| B
-    I[WebSocket] -->|connections| B
-    J[Batch] -->|operations| B
-    K[Webhook] -->|events| B
-    L[Logging] -->|entries, errors| B
-```
-
 ## Quick Start
 
 Metrics are auto-collected via the singleton `metrics.GetMetrics()`. Register the `/metrics` endpoint to expose them:

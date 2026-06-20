@@ -1,12 +1,12 @@
 package main
 
-import "stackyrd-nano/pkg/assets"
+import (
+	"stackyrd/pkg/assets"
+	"stackyrd/pkg/infrastructure"
+)
 
 func init() {
-	data, err := assets.FS.ReadFile("banner.txt")
-	if err == nil {
-		embeddedBanner = string(data)
-	}
+	infrastructure.Init(assets.FS, map[string]string{
+		"banner": "banner.txt",
+	}, true)
 }
-
-var embeddedBanner string

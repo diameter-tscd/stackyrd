@@ -8,14 +8,14 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/app/main.go",
             "cwd": "${workspaceFolder}",
-            "output": "${workspaceFolder}/dist/stackyrd-nano"
+            "output": "${workspaceFolder}/dist/stackyrd"
         },
         {
             "name": "Launch App (debug dist)",
             "type": "go",
             "request": "launch",
             "mode": "exec",
-            "program": "${workspaceFolder}/dist/stackyrd-nano",
+            "program": "${workspaceFolder}/dist/stackyrd",
             "cwd": "${workspaceFolder}/dist",
             "preLaunchTask": "Build App"
         }

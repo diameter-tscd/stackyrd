@@ -1,5 +1,5 @@
 {
-  "skill_name": "stackyrd-nano-docs-wiki",
+  "skill_name": "stackyrd-docs-wiki",
   "evals": [
     {
       "id": 1,
@@ -11,7 +11,7 @@
         "Follows the package deep-dive pattern (sub-features, usage examples, best practices)",
         "Adds a row to the Package Deep Dives table in README.md with package path pkg/caching/",
         "Includes a Best Practices section",
-        "Uses the project's module path (stackyrd-nano) in imports",
+        "Uses the project's module path (stackyrd) in imports",
         "Does not contain emojis"
       ]
     },
@@ -33,7 +33,7 @@
       "expected_output": "Updated docs_wiki/DEVELOPMENT.md with new 'Using the Cache' section",
       "expectations": [
         "Adds a new '## Using the Cache' section after the 'Using Plugins from Services' section",
-        "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
+        "Includes a Go code example using the module path stackyrd/pkg/caching",
         "Code example shows getting the CachingManager from deps (deps.Get)",
         "Shows the cache-aside pattern (check cache, miss, load from DB, store in cache)",
         "Mentions the config toggle services.caching in config.yaml",

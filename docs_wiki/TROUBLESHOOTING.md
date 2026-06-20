@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues, debugging techniques, and solutions for stackyrd-nano.
+Common issues, debugging techniques, and solutions for stackyrd.
 
 ## Application Won't Start
 
@@ -22,7 +22,7 @@ server:
 **Kill existing process:**
 
 ```bash
-pgrep -x stackyrd-nano | xargs kill
+pgrep -x stackyrd | xargs kill
 # or
 go run scripts/build/build.go  # includes process kill step
 ```
@@ -113,6 +113,40 @@ Error: failed to connect to postgres: dial tcp 127.0.0.1:5432: connect: connecti
         dbname: "mydb"
   ```
 
+### Redis
+
+```
+Error: redis: dial tcp 127.0.0.1:6379: connect: connection refused
+```
+
+**Check:**
+- Redis running: `docker ps | grep redis`
+- Config enabled:
+  ```yaml
+  redis:
+    enabled: true
+    address: "localhost:6379"
+  ```
+
+## Plugin Issues
+
+See the [Plugin System Guide](../PLUGIN_GUIDE.md#troubleshooting) for detailed plugin troubleshooting.
+
+### Quick Plugin Checks
+
+```bash
+# List all plugins
+curl -s http://localhost:8080/api/v1/plugins | jq
+
+# Check a specific plugin
+curl -s http://localhost:8080/api/v1/plugins/inspector | jq
+
+# Execute a simple ping
+curl -s -X POST http://localhost:8080/api/v1/plugins/inspector/execute \
+  -H 'Content-Type: application/json' \
+  -d '{"args": {"mode": "ping"}}' | jq
+```
+
 ## TUI Issues
 
 ### TUI Not Displaying
@@ -142,7 +176,7 @@ Press `Ctrl+R` to refresh the TUI display.
 
 ### Slow Response Times
 
-1. Check health endpoints for degraded components
+1. Check Prometheus metrics at `/metrics`
 2. Look for slow database queries
 3. Check circuit breaker states
 4. Verify middleware overhead (disable non-essential middleware)
@@ -199,3 +233,4 @@ Log the loaded config at startup via `-verbose`.
 
 - Check `/health/infrastructure` for component status
 - Enable `-verbose` for detailed startup logs
+- Review the Plugin troubleshooting section for plugin-specific issues

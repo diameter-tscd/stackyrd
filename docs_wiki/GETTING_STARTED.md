@@ -1,26 +1,26 @@
 # Getting Started
 
-Quick setup guide for **stackyrd-nano** — a lightweight modular Go service framework built on **Gin**.
+Quick setup guide for **stackyrd** — an enterprise-grade modular Go service framework built on **Gin**.
 
 ## Prerequisites
 
 - **Go 1.25.3+**
 - **Git**
-- **Docker** (optional, for PostgreSQL dev environment)
+- **Docker + Docker Compose** (for full dev environment with databases)
 
 ## Installation
 
 ```bash
-git clone https://github.com/diameter-tscd/stackyrd-nano.git
-cd stackyrd-nano
+git clone https://github.com/diameter-tscd/stackyrd.git
+cd stackyrd
 go mod download
 go run cmd/app/main.go
 ```
 
-With PostgreSQL:
+With full infrastructure (Redis, PostgreSQL, Kafka, MongoDB, Grafana, MinIO):
 
 ```bash
-docker run -d --name postgres -e POSTGRES_PASSWORD=pass -p 5432:5432 postgres:16
+docker-compose up -d
 go run cmd/app/main.go
 ```
 
@@ -38,6 +38,10 @@ server:
   port: "8080"
   services_endpoint: /api/v1
 
+services:
+  users_service: true
+  products_service: true
+
 middleware:
   cors: true
   logger: true
@@ -51,11 +55,11 @@ Create `internal/services/modules/hello_service.go`:
 package modules
 
 import (
-    "stackyrd-nano/config"
-    "stackyrd-nano/pkg/interfaces"
-    "stackyrd-nano/pkg/logger"
-    "stackyrd-nano/pkg/registry"
-    "stackyrd-nano/pkg/response"
+    "stackyrd/config"
+    "stackyrd/pkg/interfaces"
+    "stackyrd/pkg/logger"
+    "stackyrd/pkg/registry"
+    "stackyrd/pkg/response"
     "github.com/gin-gonic/gin"
 )
 
@@ -112,12 +116,19 @@ The project includes several CLI scripts:
 | Build | `go run scripts/build/build.go` | Build binary (garble, UPX, backup) |
 | Docker | `go run scripts/docker/docker_build.go` | Multi-stage Docker image builder |
 | Service | `go run scripts/service/service.go` | Scaffold new service modules |
+| Swagger | `go run scripts/swagger/swagger.go` | Generate OpenAPI docs |
 | Package | `go run scripts/pkg/pkg.go` | Install infrastructure packages |
 
 ## Database (Optional)
 
 ```bash
+# Full dev environment
+docker-compose up -d
+
+# Or individual services:
 docker run -d --name postgres -e POSTGRES_PASSWORD=pass -p 5432:5432 postgres:16
+docker run -d --name redis -p 6379:6379 redis:7
+docker run -d --name mongo -p 27017:27017 mongo:7
 ```
 
 Configure in `config.yaml`:

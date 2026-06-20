@@ -1,0 +1,23 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 1,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 1,
+      "Minor": 0,
+      "Patch": 0,
+      "Build": 0
+    }
+  },
+  "StringFileInfo": {
+    "CompanyName": "John Doe Company",
+    "FileDescription": "stackyrd Project",
+    "ProductName": "stackyrd",
+    "InternalName": "stackyrd",
+    "OriginalFilename": "stackyrd.exe"
+  }
+}

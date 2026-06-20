@@ -21,7 +21,7 @@ var templatesFS embed.FS
 // Configuration variables
 var (
 	SERVICES_DIR = "internal/services/modules"
-	MODULE_NAME  = "stackyrd-nano"
+	MODULE_NAME  = "stackyrd"
 	TESTS_DIR    = "tests/services"
 )
 
@@ -926,7 +926,7 @@ func setupSignalHandler(cancel context.CancelFunc) {
 func printBanner() {
 	fmt.Println("")
 	fmt.Println("   " + P_PURPLE + " /\\ " + RESET)
-	fmt.Println("   " + P_PURPLE + "(  )" + RESET + "   " + B_PURPLE + "Service Generator" + RESET + " " + GRAY + "for" + RESET + " " + B_WHITE + "stackyrd-nano" + RESET)
+	fmt.Println("   " + P_PURPLE + "(  )" + RESET + "   " + B_PURPLE + "Service Generator" + RESET + " " + GRAY + "for" + RESET + " " + B_WHITE + "stackyrd" + RESET)
 	fmt.Println("   " + P_PURPLE + " \\/ " + RESET)
 	fmt.Println(GRAY + "----------------------------------------------------------------------" + RESET)
 }

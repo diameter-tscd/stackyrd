@@ -1,0 +1,54 @@
+{
+  "skill_name": "stackyrd-origin-merge",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Hey, I notice our development branch is way behind upstream. Can you help me sync with the latest from the original stackyrd repo? I want to pull in their latest changes but keep our lightweight nano setup — no plugins, no kafka/mongo/redis infra, no pre-built services. Push the result to our development branch.",
+      "expected_output": "Runs the merge script, creates development branch from upstream/development, strips heavy components, applies nano patches, commits",
+      "files": [],
+      "expectations": [
+        "Fetches upstream repository",
+        "Creates 'development' branch from upstream/development",
+        "Removes all plugin system files (pkg/plugin/)",
+        "Removes all heavy infrastructure (kafka, mongo, minio, grafana, redis, cron, afero from pkg/infrastructure/)",
+        "Removes all pre-built services (internal/services/modules/)",
+        "Removes swagger docs and middleware",
+        "Removes metrics (pkg/metrics/)",
+        "Runs go mod tidy to clean up dependencies",
+        "Verifies the build compiles (go build ./cmd/app)",
+        "Commits the merge and shows next steps"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "The upstream stackyrd just pushed a new Grafana dashboard service and a Redis pub/sub feature to their development branch. I want those features but adapted for our lightweight nano fork without the kafka/mongo infra dependencies. Can you pull the latest upstream and merge it while keeping our fork lean?",
+      "expected_output": "Merges latest upstream/development into nano, strips kafka/mongo infra but keeps relevant Grafana config adapted for nano",
+      "files": [],
+      "expectations": [
+        "Fetches upstream and identifies new commits",
+        "Creates merge branch from upstream/development",
+        "Strips all heavy infrastructure (kafka, mongo, minio, grafana heavy, redis) from pkg/infrastructure/",
+        "Strips any new plugin files from pkg/plugin/",
+        "Strips any new pre-built services from internal/services/modules/",
+        "Applies existing nano modifications to non-deleted files",
+        "Runs go mod tidy",
+        "Verifies build compiles",
+        "Shows summary of what was merged and what was stripped"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want to try the dry-run first before doing the actual merge. Can you check what upstream has and show me what files would be deleted and which ones would be patched from our nano branch? Don't make any actual changes yet.",
+      "expected_output": "Dry-run output showing all file changes without modifying the working tree",
+      "files": [],
+      "expectations": [
+        "Uses the dry-run flag to preview changes",
+        "Shows which directories would be deleted (plugins, heavy infra, services)",
+        "Shows which files would be patched from nano branch",
+        "Shows which new upstream files would be stripped",
+        "Does NOT make any actual git changes or commits",
+        "Does NOT check out any branches"
+      ]
+    }
+  ]
+}

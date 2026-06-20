@@ -26,7 +26,7 @@ The `CachingManager` is the primary entry point. It wraps go-redis and provides 
 ### Creating a Manager
 
 ```go
-import "stackyrd-nano/pkg/caching"
+import "stackyrd/pkg/caching"
 
 // CachingManager wraps go-redis and uses the infrastructure RedisManager.
 // Create via the factory with a config section.
@@ -177,7 +177,7 @@ The `caching` section in `config.yaml` controls caching behavior:
 caching:
   enabled: true
   default_ttl: 5m          # Default TTL when none specified
-  key_prefix: "stackyrd-nano:"  # Prefix for all cache keys
+  key_prefix: "stackyrd:"  # Prefix for all cache keys
   namespace: ""             # Optional isolation namespace
 ```
 

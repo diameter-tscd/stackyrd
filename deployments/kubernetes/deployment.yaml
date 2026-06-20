@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stackyrd
+  namespace: default
+  labels:
+    app: stackyrd
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stackyrd
+  template:
+    metadata:
+      labels:
+        app: stackyrd
+        version: "1.0.0"
+    spec:
+      containers:
+        - name: stackyrd
+          image: stackyrd:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: monitoring
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: APP_PORT
+              value: "8080"
+            - name: MONITORING_PORT
+              value: "9090"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: stackyrd-config

@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scripts/swagger/swagger.go` is the **stackyrd-nano Swagger documentation generator** — a standalone Go CLI tool for generating OpenAPI/Swagger documentation from service annotations.
+`scripts/swagger/swagger.go` is the **stackyrd Swagger documentation generator** — a standalone Go CLI tool for generating OpenAPI/Swagger documentation from service annotations.
 
 The script scans all service files in `internal/services/modules/` for Swagger annotations, analyzes API endpoints and structs, generates `docs.go`, `swagger.json`, and `swagger.yaml` via the `swag` CLI, and verifies the output.
 

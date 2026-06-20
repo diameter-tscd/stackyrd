@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd-nano/config"
-	"stackyrd-nano/pkg/logger"
-	"stackyrd-nano/pkg/response"
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

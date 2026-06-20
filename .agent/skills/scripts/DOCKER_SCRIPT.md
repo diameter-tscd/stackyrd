@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scripts/docker/docker_build.go` is the **stackyrd-nano Docker builder** — a standalone Go CLI tool for building multi-stage Docker images with target selection (test, dev, prod, slim, minimal, ultra variants).
+`scripts/docker/docker_build.go` is the **stackyrd Docker builder** — a standalone Go CLI tool for building multi-stage Docker images with target selection (test, dev, prod, slim, minimal, ultra variants).
 
 The script presents an interactive menu for target selection, validates the Docker environment, builds the appropriate stages, and cleans up dangling images.
 
@@ -41,7 +41,7 @@ The script presents an interactive numbered menu:
 ```
 1. Print banner
 2. Select build target (1-10)
-3. Enter app name  [stackyrd-nano]
+3. Enter app name  [stackyrd]
 4. Enter image name [myapp]
 5. Enable verbose logging? (y/N)
 6. Validate target

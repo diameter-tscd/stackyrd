@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**stackyrd-nano** is a lightweight modular Go framework built on **Gin** with auto-discovery patterns, async infrastructure initialization, TUI dashboard, and Postgres infrastructure.
+**stackyrd** is an enterprise-grade modular Go framework built on **Gin** with auto-discovery patterns, async infrastructure initialization, a plugin system (TS/Go/Python/Lua), TUI dashboard, and Prometheus metrics.
 
 ## Key Concepts
 
@@ -10,6 +10,7 @@ Components register themselves via `init()` functions at import time:
 - **Services**: Business logic in `internal/services/modules/`
 - **Middleware**: HTTP middleware in `internal/middleware/`
 - **Infrastructure**: Database/clients in `pkg/infrastructure/`
+- **Plugins**: TypeScript/Go/Lua/Python scripts in `pkg/plugin/builtin/`
 
 ### Boot Sequence
 
@@ -28,9 +29,11 @@ flowchart TD
     I -->|Console mode| L[direct logs]
     L --> M[server.New]
     M --> N[async infra init<br/>all components in parallel]
-    M --> O[middleware auto-discovery]
-    M --> P[service auto-discovery]
-    M --> Q[route registration<br/>/api/v1]
+    M --> O[plugin init<br/>bridge → deps.plugins]
+    M --> P[middleware auto-discovery]
+    M --> Q[service auto-discovery]
+    M --> R[route registration<br/>/api/v1]
+    M --> S[Swagger UI<br/>if enabled]
 ```
 
 ### Request Flow
@@ -40,7 +43,9 @@ flowchart LR
     A[Client] --> B[Middleware Chain]
     B --> C[Service Handler]
     C --> D[Response]
-    C --> E[Infrastructure<br/>PostgreSQL]
+    B -.-> E[Plugin Bridge<br/>optional]
+    E --> F[Infrastructure<br/>DB, Cache, Kafka, MinIO]
+    C --> F
 ```
 
 ### TUI vs Console Mode
@@ -51,35 +56,43 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[stackyrd-nano/]
+    A[stackyrd/]
     A --> B[cmd/app/<br/>Entry point, CLI, bootstrap]
     A --> C[config/<br/>Viper YAML config loading]
     A --> D[config.yaml]
     A --> E[internal/]
     E --> F[middleware/<br/>Auto-registered HTTP middleware]
     E --> G[server/<br/>Gin setup, health endpoints]
-    A --> H[pkg/]
-    H --> I[assets/<br/>Embedded application assets (banner.txt)]
-    H --> J[interfaces/<br/>Service interface]
-    H --> K[registry/<br/>Service registry + DI]
-    H --> L[infrastructure/<br/>DB/clients async-managed]
-    H --> M[response/<br/>API response helpers]
-    H --> N[request/<br/>Binding + validation]
-    H --> O[logger/<br/>Zerolog structured logger]
-    H --> P[tui/<br/>Bubbletea terminal UI]
-    H --> Q[cache/<br/>In-memory generic cache]
-    H --> R[pagination/<br/>Cursor-based pagination]
-    H --> S[batch/<br/>Batch processing]
-    H --> T[resilience/<br/>Circuit breaker, health, retry]
-    H --> U[webhook/<br/>Webhook handler]
-    H --> V[websocket/<br/>WebSocket handler]
-    H --> W[logging/<br/>Log rotation, sampling]
-    H --> X[testing/<br/>Test helpers + mocks]
-    H --> Y[utils/<br/>General utilities]
-    A --> Z[scripts/<br/>CLI tools]
-    A --> AA[tests/<br/>Integration tests]
-    A --> AB[docs_wiki/<br/>Hand-written documentation]
-    A --> AC[.github/workflows/<br/>CI]
+    A --> H[internal/services/modules/<br/>Auto-discovered business services]
+    A --> I[pkg/]
+    I --> J[assets/<br/>Embedded application assets (banner.txt)]
+    I --> K[interfaces/<br/>Service interface]
+    I --> L[plugin/<br/>Plugin system]
+    L --> M[builtin/<br/>Plugin manifests]
+    L --> N[sdk/<br/>TS type declarations]
+    L --> O[python/<br/>Python host runtime]
+    I --> P[registry/<br/>Service registry + DI]
+    I --> Q[infrastructure/<br/>DB/clients async-managed]
+    I --> R[response/<br/>API response helpers]
+    I --> S[request/<br/>Binding + validation]
+    I --> T[logger/<br/>Zerolog structured logger]
+    I --> U[tui/<br/>Bubbletea terminal UI]
+    I --> V[metrics/<br/>Prometheus metrics]
+    I --> W[pagination/<br/>Cursor-based pagination]
+    I --> X[batch/<br/>Batch processing]
+    I --> Y[resilience/<br/>Circuit breaker, health, retry]
+    I --> Z[webhook/<br/>Webhook handler]
+    I --> AA[websocket/<br/>WebSocket handler]
+    I --> AB[logging/<br/>Log rotation, sampling]
+    I --> AC[testing/<br/>Test helpers + mocks]
+    I --> AD[utils/<br/>General utilities]
+    A --> AE[scripts/<br/>CLI tools]
+    A --> AF[tests/<br/>Integration tests]
+    A --> AG[docs/<br/>Auto-generated Swagger docs]
+    A --> AH[docs_wiki/<br/>Hand-written documentation]
+    A --> AI[deployments/kubernetes/<br/>K8s manifests]
+    A --> AJ[.github/workflows/<br/>CI]
+    A --> AK[docker-compose.yaml]
 ```
 
 ## Service Pattern
@@ -117,13 +130,26 @@ type ComponentFactory func(cfg *config.Config, logger *logger.Logger) (Infrastru
 
 // Auto-registration
 func init() {
-    infrastructure.RegisterComponent("postgres", func(cfg *config.Config, log *logger.Logger) (infrastructure.InfrastructureComponent, error) {
-        return NewPostgresManager(cfg)
+    infrastructure.RegisterComponent("redis", func(cfg *config.Config, log *logger.Logger) (infrastructure.InfrastructureComponent, error) {
+        return NewRedisManager(cfg)
     })
 }
 ```
 
 Components are initialized **asynchronously** by `InfraInitManager` with per-component health polling.
+
+## Plugin System
+
+```mermaid
+flowchart TD
+    A[PluginRegistry<br/>singleton]
+    A --> B[RuntimeRegistry<br/>prefix-based: ts: → goja, ext: → gRPC, go: → native]
+    A --> C[PluginBridge<br/>InfrastructureComponent → deps.plugins]
+    A --> D[Transpiler<br/>esbuild TS→JS + SHA256 cache]
+    A --> E[Sandbox<br/>timeout + RSS memory enforcement]
+    A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
+    A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
+```
 
 ## Middleware Pattern
 ```go
@@ -139,8 +165,10 @@ func init() {
 ## Key Features
 - **Dependency Injection**: Dynamic `Dependencies` container with TTL-cached GetAll()
 - **Async Initialization**: All infrastructure components init in parallel
-- **PostgreSQL**: Multi-connection Postgres manager with GORM
+- **Multi-connection DB**: Postgres + MongoDB with named connection managers
+- **Plugin System**: TypeScript (goja), Python/external (gRPC), Lua, Go
 - **TUI Dashboard**: Bubbletea boot sequence + live monitoring dashboard
+- **Prometheus Metrics**: HTTP, DB, cache, circuit breaker, webhook, batch, WebSocket
 - **Resilience**: Circuit breaker, retry with backoff, health checks, timeouts
 - **Pagination**: Cursor-based with base64-encoded cursors
-- **Scripts**: Build, Docker, code generation, package management tools
+- **Scripts**: Build, Docker, code generation, Swagger, package management tools

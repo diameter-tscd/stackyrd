@@ -1,0 +1,8 @@
+name: lua_demo
+version: 1.0.0
+description: "Example Lua plugin demonstrating the embedded Lua runtime. Echos back a greeting with the provided name."
+author: stackyrd
+entrypoint: "lua:scripts/handler.lua"
+limits:
+  max_timeout_ms: 5000
+  max_memory_bytes: 16777216

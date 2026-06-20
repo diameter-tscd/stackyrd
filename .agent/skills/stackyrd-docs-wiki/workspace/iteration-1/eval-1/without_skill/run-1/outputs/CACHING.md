@@ -39,7 +39,7 @@ The `CachingManager` wraps go-redis and is initialized with the `redis` infrastr
 ### Initialization
 
 ```go
-import "stackyrd-nano/pkg/caching"
+import "stackyrd/pkg/caching"
 
 manager, err := caching.NewCachingManager(
     redisClient,         // *redis.Client from the redis infra component

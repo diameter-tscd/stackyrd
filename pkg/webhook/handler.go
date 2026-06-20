@@ -149,7 +149,7 @@ func (wm *WebhookManager) doRequest(ctx context.Context, payload []byte) (*Webho
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "stackyrd-nano-Webhook/1.0")
+	req.Header.Set("User-Agent", "stackyrd-Webhook/1.0")
 
 	for key, value := range wm.config.Headers {
 		req.Header.Set(key, value)

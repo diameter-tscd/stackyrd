@@ -23,6 +23,10 @@ In production, load all secrets via environment variables or a secrets manager.
 |---|---|
 | `auth.secret` | Full auth bypass |
 | `postgres.connections[].password` | Database access |
+| `mongo.connections[].uri` | DB access |
+| `redis.password` | Cache / session access |
+| `grafana.password` | Observability access |
+| `minio.secret_access_key` | Object storage access |
 | `encryption.key` | Data decryption |
 
 ### Production Checklist
@@ -32,11 +36,13 @@ In production, load all secrets via environment variables or a secrets manager.
 - Rate limiting and audit logging **on**
 - CORS locked to known origins (no `*`)
 - `sslmode: require` or `verify-full` on Postgres
+- TLS/SCRAM on MongoDB, Redis, Kafka
+- `use_ssl: true` on MinIO
 - HSTS headers on (provided by `security` middleware)
 
 ## Reporting Vulnerabilities
 
 Do **not** open a public issue.
 
-- Open a **private advisory**: <https://github.com/diameter-tscd/stackyrd-nano/security/advisories/new>
+- Open a **private advisory**: <https://github.com/diameter-tscd/stackyard/security/advisories/new>
 - We aim to acknowledge within **7 business days** and patch within **90 days** for high/critical issues.

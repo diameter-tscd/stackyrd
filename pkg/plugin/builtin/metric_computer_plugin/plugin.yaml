@@ -1,0 +1,8 @@
+name: metric_computer
+version: 1.0.0
+description: "Computes aggregation metrics, percentiles, sliding windows, and derived metrics from time-series data. Modes: compute (default), percentile, window, derive."
+author: stackyrd
+entrypoint: "ext:scripts/handler.py"
+limits:
+  max_timeout_ms: 30000
+  max_memory_bytes: 67108864

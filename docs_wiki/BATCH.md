@@ -17,7 +17,7 @@ The `pkg/batch/` package provides three patterns for processing data in batches:
 Processes a slice of items in parallel batches.
 
 ```go
-import "stackyrd-nano/pkg/batch"
+import "stackyrd/pkg/batch"
 
 handler := func(ctx context.Context, items []Item) error {
     // Process batch (e.g., bulk insert to DB)
@@ -82,7 +82,9 @@ writer.Flush(ctx)
 ### Use Cases
 
 - **Log aggregation**: buffer log entries, flush to storage
+- **Event streaming**: batch Kafka events before processing
 - **Database writes**: bulk insert accumulated records
+- **Metrics reporting**: batch publish metrics
 
 ## BatchReader
 
@@ -125,3 +127,4 @@ type BatchResult struct {
 - Set `Workers` to `runtime.NumCPU()` or your I/O concurrency limit
 - Use `BatchWriter` for streaming/tail data, `BatchProcessor` for finite slices
 - Always handle `BatchResult.Errors` — partial failures are common
+- Monitor `batch_duration_seconds` metric for performance regressions

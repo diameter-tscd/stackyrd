@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scripts/service/service.go` is the **stackyrd-nano service code generator** — a standalone Go CLI tool for scaffolding new service modules with auto-registration, Swagger annotations, GORM models, and test files.
+`scripts/service/service.go` is the **stackyrd service code generator** — a standalone Go CLI tool for scaffolding new service modules with auto-registration, Swagger annotations, GORM models, and test files.
 
 The script uses embedded Go templates (`//go:embed templates/*.tmpl`) and provides an interactive prompt-driven workflow with 6 service patterns, custom route support, method duplication detection, and configurable test/model generation.
 

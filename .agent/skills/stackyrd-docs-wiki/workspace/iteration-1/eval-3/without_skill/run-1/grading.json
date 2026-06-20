@@ -6,9 +6,9 @@
       "evidence": "Added '## Using the Cache' section at line 218 immediately after 'Using Plugins from Services'"
     },
     {
-      "text": "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
+      "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
       "passed": true,
-      "evidence": "Code examples use 'stackyrd-nano/pkg/caching' import path"
+      "evidence": "Code examples use 'stackyrd/pkg/caching' import path"
     },
     {
       "text": "Code example shows getting the CachingManager from deps.Get",

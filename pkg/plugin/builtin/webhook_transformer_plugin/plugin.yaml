@@ -1,0 +1,8 @@
+name: webhook_transformer
+version: 1.0.0
+description: "Transforms, filters, enriches, and inspects webhook payloads. Modes: transform (default), filter, enrich, inspect."
+author: stackyrd
+entrypoint: "ext:scripts/handler.py"
+limits:
+  max_timeout_ms: 15000
+  max_memory_bytes: 33554432

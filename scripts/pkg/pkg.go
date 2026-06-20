@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	APP_NAME           = "stackyrd-nano-pkg-installer"
-	INDEX_URL          = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-nano-pkg/master/index"
-	BASE_DOWNLOAD_URL  = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-nano-pkg/master"
+	APP_NAME           = "stackyrd-pkg-installer"
+	INDEX_URL          = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master/index"
+	BASE_DOWNLOAD_URL  = "https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master"
 	INSTALL_ROOT       = "pkg/infrastructure"
 	FILE_WHITELIST     = `\.yrd$|\.go$`
 	SCRIPT_BINARY_PATH = "scripts/pkg/"
@@ -464,12 +464,12 @@ func downloadFiles(pkg, version string, files []string, targetDir string, logger
 }
 
 var yrdconvURLs = map[string]map[string]string{
-	"windows": {"amd64": "https://github.com/diameter-tscd/stackyrd-nano-pkg/releases/download/v1.0.0-yrdconv/yrdconv.exe"},
+	"windows": {"amd64": "https://github.com/diameter-tscd/stackyrd-pkg/releases/download/v1.0.0-yrdconv/yrdconv.exe"},
 	"darwin": {
-		"amd64": "https://github.com/diameter-tscd/stackyrd-nano-pkg/releases/download/v1.0.0-yrdconv/yrdconv_darwin_amd64",
-		"arm64": "https://github.com/diameter-tscd/stackyrd-nano-pkg/releases/download/v1.0.0-yrdconv/yrdconv_darwin_arm64",
+		"amd64": "https://github.com/diameter-tscd/stackyrd-pkg/releases/download/v1.0.0-yrdconv/yrdconv_darwin_amd64",
+		"arm64": "https://github.com/diameter-tscd/stackyrd-pkg/releases/download/v1.0.0-yrdconv/yrdconv_darwin_arm64",
 	},
-	"linux": {"amd64": "https://github.com/diameter-tscd/stackyrd-nano-pkg/releases/download/v1.0.0-yrdconv/yrdconv_linux_amd64"},
+	"linux": {"amd64": "https://github.com/diameter-tscd/stackyrd-pkg/releases/download/v1.0.0-yrdconv/yrdconv_linux_amd64"},
 }
 
 func ensureYrdconv(ctx *InstallContext, logger *Logger) (string, error) {
@@ -612,7 +612,7 @@ func installIndexed(ctx *InstallContext, pkgName, version string, files []string
 	if fPaths, ok := filePaths[version]; ok {
 		for _, fullPath := range fPaths {
 			if strings.HasSuffix(fullPath, "README.md") {
-				readmeURL = fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-nano-pkg/blob/master/%s", fullPath)
+				readmeURL = fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-pkg/blob/master/%s", fullPath)
 				break
 			}
 		}
@@ -1313,7 +1313,7 @@ func main() {
 	if fPaths, ok := selectedPkg.FilePaths[selectedVersion]; ok {
 		for _, fullPath := range fPaths {
 			if strings.HasSuffix(fullPath, "README.md") {
-				readmeURL = fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-nano-pkg/blob/master/%s", fullPath)
+				readmeURL = fmt.Sprintf("https://github.com/diameter-tscd/stackyrd-pkg/blob/master/%s", fullPath)
 				break
 			}
 		}

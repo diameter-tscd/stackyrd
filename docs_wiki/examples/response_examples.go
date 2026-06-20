@@ -1,8 +1,8 @@
 package examples
 
 import (
-	"stackyrd-nano/pkg/request"
-	"stackyrd-nano/pkg/response"
+	"stackyrd/pkg/request"
+	"stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

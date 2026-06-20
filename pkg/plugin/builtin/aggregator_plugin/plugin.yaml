@@ -1,0 +1,8 @@
+name: aggregator
+version: 1.1.0
+description: "Aggregates infrastructure diagnostics, runs data transformations, and queries components. Modes: dashboard (default), query, transform, echo."
+author: stackyrd
+entrypoint: "ts:scripts/handler.ts"
+limits:
+  max_timeout_ms: 20000
+  max_memory_bytes: 67108864

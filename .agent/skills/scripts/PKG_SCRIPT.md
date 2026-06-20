@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scripts/pkg/pkg.go` is the **stackyrd-nano package manager** — a standalone Go CLI tool for installing, tracking, and managing infrastructure packages from the [stackyrd-nano-pkg](https://github.com/diameter-tscd/stackyrd-nano-pkg) repository.
+`scripts/pkg/pkg.go` is the **stackyrd package manager** — a standalone Go CLI tool for installing, tracking, and managing infrastructure packages from the [stackyrd-pkg](https://github.com/diameter-tscd/stackyrd-pkg) repository.
 
 Packages are Go/yrd source files installed into `pkg/infrastructure/`. The script handles downloading, converting (`.yrd` → `.go`), and metadata tracking via a YAML manifest.
 
@@ -262,7 +262,7 @@ The manifest at the project root tracks all installed packages. It is written at
 ```yaml
 meta:
   last_updated: "2026-05-28T22:07:59+07:00"
-  index_url: "https://raw.githubusercontent.com/diameter-tscd/stackyrd-nano-pkg/master/index"
+  index_url: "https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master/index"
 
 packages:
   cloud/aws/ec2:

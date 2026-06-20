@@ -8,7 +8,7 @@
       "name": "adds-cache-section"
     },
     {
-      "text": "Includes a Go code example using the module path stackyrd-nano/pkg/caching",
+      "text": "Includes a Go code example using the module path stackyrd/pkg/caching",
       "name": "correct-import-path"
     },
     {

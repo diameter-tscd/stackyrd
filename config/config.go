@@ -6,21 +6,31 @@ import (
 	"github.com/spf13/viper"
 )
 
+// setupViperDefaults configures viper with default values
 func setupViperDefaults() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
+	// Defaults
 	viper.SetDefault("app.name", "Golang App")
 	viper.SetDefault("app.env", "development")
 	viper.SetDefault("app.banner_path", "banner.txt")
-	viper.SetDefault("app.startup_delay", 15)
-	viper.SetDefault("app.quiet_startup", true)
-	viper.SetDefault("app.enable_tui", false)
+	viper.SetDefault("app.startup_delay", 15)   // 15 seconds default
+	viper.SetDefault("app.quiet_startup", true) // clean console by default
+	viper.SetDefault("app.enable_tui", false)   // TUI enabled by default
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.services_endpoint", "/api/v1")
 	viper.SetDefault("auth.type", "none")
+	// Services config uses a dynamic map - no hardcoded defaults needed
+	// Services default to enabled if not specified (see ServicesConfig.IsEnabled)
+
+	viper.SetDefault("redis.enabled", false)
+	viper.SetDefault("kafka.enabled", false)
 	viper.SetDefault("postgres.enabled", false)
-	viper.SetDefault("app.debug", false)
+	viper.SetDefault("mongo.enabled", false)
+	viper.SetDefault("swagger.enabled", false) // enable explicitly in config
+	viper.SetDefault("app.debug", false)       // sanitise-by-default
+	viper.SetDefault("swagger.base_path", "/swagger")
 }
 
 type Config struct {
@@ -29,18 +39,37 @@ type Config struct {
 	Services            ServicesConfig      `mapstructure:"services"`
 	Middleware          MiddlewareConfig    `mapstructure:"middleware"`
 	Auth                AuthConfig          `mapstructure:"auth"`
+	Swagger             SwaggerConfig       `mapstructure:"swagger"`
+	Redis               RedisConfig         `mapstructure:"redis"`
+	Kafka               KafkaConfig         `mapstructure:"kafka"`
 	Postgres            PostgresConfig      `mapstructure:"postgres"`
 	PostgresMultiConfig PostgresMultiConfig `mapstructure:"postgres"`
+	Mongo               MongoConfig         `mapstructure:"mongo"`
+	MongoMultiConfig    MongoMultiConfig    `mapstructure:"mongo"`
+	Grafana             GrafanaConfig       `mapstructure:"grafana"`
+	Cron                CronConfig          `mapstructure:"cron"`
+	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
 }
 
+// MiddlewareConfig is a dynamic map of middleware names to their enabled status.
 type MiddlewareConfig map[string]bool
 
+// IsEnabled checks if a middleware is enabled. Returns true by default if not specified.
 func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
 	if enabled, exists := m[middlewareName]; exists {
 		return enabled
 	}
-	return true
+	return true // Default to enabled if not specified
+}
+
+type MinIOConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	Endpoint        string `mapstructure:"endpoint"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	UseSSL          bool   `mapstructure:"use_ssl"`
+	BucketName      string `mapstructure:"bucket_name"`
 }
 
 type ExternalConfig struct {
@@ -52,6 +81,11 @@ type ExternalService struct {
 	URL  string `mapstructure:"url"`
 }
 
+type CronConfig struct {
+	Enabled bool              `mapstructure:"enabled"`
+	Jobs    map[string]string `mapstructure:"jobs"`
+}
+
 type EncryptionConfig struct {
 	Enabled             bool   `mapstructure:"enabled"`
 	Algorithm           string `mapstructure:"algorithm"`
@@ -60,15 +94,20 @@ type EncryptionConfig struct {
 	KeyRotationInterval string `mapstructure:"key_rotation_interval"`
 }
 
+type SwaggerConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	BasePath string `mapstructure:"base_path"`
+}
+
 type AppConfig struct {
 	Name         string `mapstructure:"name"`
 	Version      string `mapstructure:"version"`
 	Debug        bool   `mapstructure:"debug"`
 	Env          string `mapstructure:"env"`
 	BannerPath   string `mapstructure:"banner_path"`
-	StartupDelay int    `mapstructure:"startup_delay"`
-	QuietStartup bool   `mapstructure:"quiet_startup"`
-	EnableTUI    bool   `mapstructure:"enable_tui"`
+	StartupDelay int    `mapstructure:"startup_delay"` // seconds to show TUI boot screen (0 to skip)
+	QuietStartup bool   `mapstructure:"quiet_startup"` // suppress console logs at startup (TUI only)
+	EnableTUI    bool   `mapstructure:"enable_tui"`    // enable fancy TUI mode (false = traditional console)
 }
 
 type ServerConfig struct {
@@ -76,18 +115,34 @@ type ServerConfig struct {
 	ServicesEndpoint string `mapstructure:"services_endpoint"`
 }
 
+// ServicesConfig is a dynamic map of service names to their enabled status.
 type ServicesConfig map[string]bool
 
+// IsEnabled checks if a service is enabled. Returns true by default if not specified.
 func (s ServicesConfig) IsEnabled(serviceName string) bool {
 	if enabled, exists := s[serviceName]; exists {
 		return enabled
 	}
-	return true
+	return true // Default to enabled if not specified
 }
 
 type AuthConfig struct {
-	Type   string `mapstructure:"type"`
+	Type   string `mapstructure:"type"` // e.g., "jwt", "apikey", "none"
 	Secret string `mapstructure:"secret"`
+}
+
+type RedisConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Address  string `mapstructure:"address"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+}
+
+type KafkaConfig struct {
+	Enabled bool     `mapstructure:"enabled"`
+	Brokers []string `mapstructure:"brokers"`
+	Topic   string   `mapstructure:"topic"`
+	GroupID string   `mapstructure:"group_id"`
 }
 
 type PostgresConfig struct {
@@ -116,24 +171,56 @@ type PostgresMultiConfig struct {
 	Connections []PostgresConnectionConfig `mapstructure:"connections"`
 }
 
+type MongoConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	URI      string `mapstructure:"uri"`
+	Database string `mapstructure:"database"`
+}
+
+type MongoConnectionConfig struct {
+	Name     string `mapstructure:"name"`
+	Enabled  bool   `mapstructure:"enabled"`
+	URI      string `mapstructure:"uri"`
+	Database string `mapstructure:"database"`
+}
+
+type MongoMultiConfig struct {
+	Enabled     bool                    `mapstructure:"enabled"`
+	Connections []MongoConnectionConfig `mapstructure:"connections"`
+}
+
+type GrafanaConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	URL      string `mapstructure:"url"`
+	APIKey   string `mapstructure:"api_key"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
+// LoadConfig loads configuration from local file or URL
 func LoadConfig() (*Config, error) {
 	return LoadConfigWithURL("")
 }
 
+// LoadConfigWithURL loads configuration from URL (if provided) or local file
 func LoadConfigWithURL(configURL string) (*Config, error) {
 	setupViperDefaults()
 
 	if configURL != "" {
+		// Load from URL - viper should already have the config loaded from URL
+		// by the parameter parsing in main.go
 	} else {
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-		viper.AddConfigPath(".")
+		// Standard local file loading
+		viper.SetConfigName("config") // name of config file (without extension)
+		viper.SetConfigType("yaml")   // REQUIRED if the config file does not have the extension in the name
+		viper.AddConfigPath(".")      // optionally look for config in the working directory
 		viper.AddConfigPath("./config")
 
 		if err := viper.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 				return nil, err
 			}
+			// Config file not found; ignore error if desired or return
 		}
 	}
 
@@ -142,9 +229,13 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 		return nil, err
 	}
 
+	// Handle PostgreSQL configuration - both single and multi-connection
+	// Check if multi-connection format is provided (has connections array)
 	if len(cfg.PostgresMultiConfig.Connections) > 0 {
+		// Multi-connection format is provided, use it
 		cfg.PostgresMultiConfig.Enabled = true
 	} else if cfg.Postgres.Enabled {
+		// Single connection format provided, convert to multi-connection format
 		cfg.PostgresMultiConfig = PostgresMultiConfig{
 			Enabled: true,
 			Connections: []PostgresConnectionConfig{
@@ -157,6 +248,26 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 					Password: cfg.Postgres.Password,
 					DBName:   cfg.Postgres.DBName,
 					SSLMode:  cfg.Postgres.SSLMode,
+				},
+			},
+		}
+	}
+
+	// Handle MongoDB configuration - both single and multi-connection
+	// Check if multi-connection format is provided (has connections array)
+	if len(cfg.MongoMultiConfig.Connections) > 0 {
+		// Multi-connection format is provided, use it
+		cfg.MongoMultiConfig.Enabled = true
+	} else if cfg.Mongo.Enabled {
+		// Single connection format provided, convert to multi-connection format
+		cfg.MongoMultiConfig = MongoMultiConfig{
+			Enabled: true,
+			Connections: []MongoConnectionConfig{
+				{
+					Name:     "default",
+					Enabled:  true,
+					URI:      cfg.Mongo.URI,
+					Database: cfg.Mongo.Database,
 				},
 			},
 		}

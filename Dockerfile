@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
     -ldflags="-s -w -buildid=" \
     -trimpath \
-    -o stackyrd-nano ./cmd/app
+    -o stackyrd ./cmd/app
 
 # Test stage
 FROM builder AS test
@@ -40,7 +40,7 @@ RUN apk --no-cache add ca-certificates python3 py3-pip && \
 WORKDIR /root/
 
 # Copy the binary from builder stage
-COPY --from=builder /app/stackyrd-nano .
+COPY --from=builder /app/stackyrd .
 
 # Copy config
 COPY --from=builder /app/config.yaml .
@@ -59,7 +59,7 @@ ENV APP_ENABLE_TUI=false
 EXPOSE 8080
 
 # Run the application
-CMD ["./stackyrd-nano", "-env", "production"]
+CMD ["./stackyrd", "-env", "production"]
 
 # Slim production stage (Ubuntu minimal - ~40MB, Python plugin support)
 FROM ubuntu:24.04 AS prod-slim
@@ -76,7 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder stage
-COPY --from=builder /app/stackyrd-nano .
+COPY --from=builder /app/stackyrd .
 
 # Copy config
 COPY --from=builder /app/config.yaml .
@@ -95,7 +95,7 @@ ENV APP_ENABLE_TUI=false
 EXPOSE 8080
 
 # Run the application
-CMD ["./stackyrd-nano", "-env", "production"]
+CMD ["./stackyrd", "-env", "production"]
 
 # Minimal production stage (Distroless - ultra-minimal, TS/Go plugins only)
 # NOTE: Python/external (ext:) plugins are not supported in this stage
@@ -106,7 +106,7 @@ FROM gcr.io/distroless/static:nonroot AS prod-distroless
 WORKDIR /
 
 # Copy the binary from builder stage
-COPY --from=builder /app/stackyrd-nano /stackyrd-nano
+COPY --from=builder /app/stackyrd /stackyrd
 
 # Copy config
 COPY --from=builder /app/config.yaml .
@@ -122,7 +122,7 @@ ENV APP_ENABLE_TUI=false
 EXPOSE 8080
 
 # Run the application
-CMD ["/stackyrd-nano", "-env", "production"]
+CMD ["/stackyrd", "-env", "production"]
 
 # Development stage (full toolchain + Python plugin support)
 FROM golang:1.25.5-alpine3.23 AS dev
@@ -143,7 +143,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN go build -o stackyrd-nano ./cmd/app
+RUN go build -o stackyrd ./cmd/app
 
 # Create plugin store directory
 RUN mkdir -p store/plugins
@@ -156,4 +156,4 @@ ENV APP_ENABLE_TUI=false
 EXPOSE 8080
 
 # Run the application
-CMD ["./stackyrd-nano", "-env", "development"]
+CMD ["./stackyrd", "-env", "development"]

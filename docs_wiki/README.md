@@ -16,7 +16,6 @@
 | Document | Package | Description |
 |----------|---------|-------------|
 | [**Resilience**](RESILIENCE.md) | `pkg/resilience/` | Circuit breaker, health checks, retry, timeout patterns |
-| [**WebSocket**](WEBSOCKET.md) | `pkg/websocket/` | Real-time bidirectional communication |
 | [**Metrics**](METRICS.md) | `pkg/metrics/` | Prometheus metrics, custom metrics, dashboards |
 | [**Batch Processing**](BATCH.md) | `pkg/batch/` | Batch processing with worker pools, writers, readers |
 | [**Pagination**](PAGINATION.md) | `pkg/pagination/` | Cursor-based pagination with forward/backward navigation |
@@ -30,6 +29,7 @@
 | Document | Description |
 |----------|-------------|
 | [**Testing Guide**](TESTING.md) | Unit tests, integration tests, mocks, test helpers, CI pipeline |
+| [**Shutdown**](SHUTDOWN.md) | Graceful shutdown sequence, guarantees, best practices |
 | [**Troubleshooting**](TROUBLESHOOTING.md) | Common issues, debugging, health checks, error codes |
 
 ## Examples

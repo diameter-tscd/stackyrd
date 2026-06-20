@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
@@ -28,6 +29,7 @@ type Server struct {
 	logger           *logger.Logger
 	dependencies     *registry.Dependencies
 	infraInitManager *infrastructure.InfraInitManager
+	httpSrv          *http.Server
 }
 
 func New(cfg *config.Config, l *logger.Logger) *Server {
@@ -143,7 +145,16 @@ func (s *Server) Start() error {
 	s.logger.Info("HTTP server starting immediately", "port", port, "env", s.config.App.Env)
 	s.logger.Info("Infrastructure components initializing in background...")
 
-	return s.gin.Run(":" + port)
+	s.httpSrv = &http.Server{
+		Addr:    ":" + port,
+		Handler: s.gin,
+	}
+	go func() {
+		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("HTTP server error", err)
+		}
+	}()
+	return nil
 }
 
 func (s *Server) setConnectionDefaults() {
@@ -213,7 +224,22 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 		logger.Info("Stopping async infrastructure initialization manager...")
 	}
 
-	var shutdownErrors []error
+	// Graceful shutdown of HTTP server — drain in-flight requests first
+	if s.httpSrv != nil {
+		logger.Info("Shutting down HTTP server...")
+		shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := s.httpSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("HTTP server shutdown error", err)
+		} else {
+			logger.Info("HTTP server shut down successfully")
+		}
+		cancel()
+	}
+
+	var (
+		shutdownErrors []error
+		shutdownMu     sync.Mutex
+	)
 
 	shutdownComponent := func(name string, closer interface{}) {
 		if closer == nil {
@@ -223,21 +249,24 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 		logger.Info("Shutting down " + name + "...")
 		if c, ok := closer.(interface{ Close() error }); ok {
 			done := make(chan struct{}, 1)
-			go func() {
+			go func(n string) {
 				err := c.Close()
 				if err != nil {
-					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
-					logger.Error("Error shutting down "+name, err)
+					shutdownMu.Lock()
+					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", n, err))
+					shutdownMu.Unlock()
+					logger.Error("Error shutting down "+n, err)
 				} else {
-					logger.Info(name + " shut down successfully")
+					logger.Info(n + " shut down successfully")
 				}
 				done <- struct{}{}
-			}()
+			}(name)
 			select {
 			case <-done:
-				// completed normally
 			case <-time.After(10 * time.Second):
+				shutdownMu.Lock()
 				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s: forced shutdown (timeout)", name))
+				shutdownMu.Unlock()
 				logger.Warn(name + " shutdown timed out after 10s, continuing")
 			}
 		}

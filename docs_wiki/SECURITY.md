@@ -6,6 +6,23 @@ Security configuration, middleware, and best practices for stackyrd.
 
 Enable/disable in `config.yaml` under `middleware:`.
 
+```mermaid
+flowchart LR
+    A[Incoming Request] --> B[Security Headers<br/>CSP, HSTS, X-Frame-Options]
+    B --> C[CORS<br/>cross-origin check]
+    C --> D{JWT or API Key?}
+    D -->|JWT| E[JWT Validation<br/>Bearer token]
+    D -->|API Key| F[API Key Check<br/>X-API-Key header]
+    D -->|None| G[Pass-through]
+    E --> H[Rate Limiter]
+    F --> H
+    G --> H
+    H --> I[Permission Check<br/>block DELETE by default]
+    I --> J[Audit Log]
+    J --> K[Encryption<br/>optional payload decrypt]
+    K --> L[Handler]
+```
+
 ### Security Headers
 
 Adds HTTP security headers to all responses:

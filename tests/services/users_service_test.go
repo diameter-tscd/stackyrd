@@ -10,6 +10,7 @@ import (
 	"stackyrd/internal/services/modules"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
+	"stackyrd/tests/testutil"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -65,11 +66,10 @@ func TestUsersService_ListUsers(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	testutil.AssertStatus(t, w, http.StatusOK)
 
 	var resp response.Response
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
+	testutil.ParseResponse(t, w, &resp)
 	assert.True(t, resp.Success)
 }
 
@@ -82,11 +82,10 @@ func TestUsersService_ListUsersWithPagination(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	testutil.AssertStatus(t, w, http.StatusOK)
 
 	var resp response.Response
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
+	testutil.ParseResponse(t, w, &resp)
 	assert.True(t, resp.Success)
 }
 
@@ -99,11 +98,10 @@ func TestUsersService_GetUser(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	testutil.AssertStatus(t, w, http.StatusOK)
 
 	var resp response.Response
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
+	testutil.ParseResponse(t, w, &resp)
 	assert.True(t, resp.Success)
 }
 
@@ -116,7 +114,7 @@ func TestUsersService_GetUserNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	testutil.AssertStatus(t, w, http.StatusNotFound)
 }
 
 func TestUsersService_CreateUser(t *testing.T) {
@@ -138,11 +136,10 @@ func TestUsersService_CreateUser(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusCreated, w.Code)
+	testutil.AssertStatus(t, w, http.StatusCreated)
 
 	var resp response.Response
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
+	testutil.ParseResponse(t, w, &resp)
 	assert.True(t, resp.Success)
 }
 
@@ -162,7 +159,7 @@ func TestUsersService_CreateUserValidation(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	testutil.AssertStatus(t, w, http.StatusUnprocessableEntity)
 }
 
 func TestUsersService_UpdateUser(t *testing.T) {
@@ -184,7 +181,7 @@ func TestUsersService_UpdateUser(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	testutil.AssertStatus(t, w, http.StatusOK)
 }
 
 func TestUsersService_UpdateUserNotFound(t *testing.T) {
@@ -207,7 +204,7 @@ func TestUsersService_UpdateUserNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	testutil.AssertStatus(t, w, http.StatusNotFound)
 }
 
 func TestUsersService_DeleteUserBlocked(t *testing.T) {
@@ -220,7 +217,7 @@ func TestUsersService_DeleteUserBlocked(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	// DELETE should return 404 because it's not registered
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	testutil.AssertStatus(t, w, http.StatusNotFound)
 }
 
 func TestUsersService_DisabledService(t *testing.T) {

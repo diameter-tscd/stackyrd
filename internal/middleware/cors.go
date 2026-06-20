@@ -50,6 +50,10 @@ func CORSWithConfig(allowOrigins []string) gin.HandlerFunc {
 
 // CORS enables CORS with full configuration
 func CORS(config CORSConfig) gin.HandlerFunc {
+	allowMethods := strings.Join(config.AllowMethods, ", ")
+	allowHeaders := strings.Join(config.AllowHeaders, ", ")
+	maxAge := strconv.Itoa(config.MaxAge)
+
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 
@@ -75,11 +79,11 @@ func CORS(config CORSConfig) gin.HandlerFunc {
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowMethods, ", "))
-		c.Writer.Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowHeaders, ", "))
+		c.Writer.Header().Set("Access-Control-Allow-Methods", allowMethods)
+		c.Writer.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 
 		if config.MaxAge > 0 {
-			c.Writer.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+			c.Writer.Header().Set("Access-Control-Max-Age", maxAge)
 		}
 
 		// Handle preflight request

@@ -1,12 +1,17 @@
 package pagination
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"sync"
 	"time"
 )
+
+var cursorBufPool = sync.Pool{
+	New: func() interface{} { return new(bytes.Buffer) },
+}
 
 // Cursor represents a pagination cursor
 type Cursor struct {
@@ -87,7 +92,15 @@ func EncodeCursor(cursor *Cursor) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(data), nil
+	buf := cursorBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	enc := base64.NewEncoder(base64.StdEncoding, buf)
+	enc.Write(data)
+	enc.Close()
+	result := buf.String()
+	buf.Reset()
+	cursorBufPool.Put(buf)
+	return result, nil
 }
 
 // DecodeCursor decodes a base64 cursor string
@@ -216,12 +229,4 @@ func (p *CursorPagination) GetBeforeTimestamp() time.Time {
 	return time.Time{}
 }
 
-// StringToInt converts a string to int
-func StringToInt(s string) (int, error) {
-	return strconv.Atoi(s)
-}
 
-// IntToString converts an int to string
-func IntToString(i int) string {
-	return strconv.Itoa(i)
-}

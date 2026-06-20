@@ -13,6 +13,19 @@ description: "What this plugin does"
 entrypoint: "ts:scripts/handler.ts"   # or lua:, ext:, go:
 author: "developer"
 enabled: true
+routes:                               # optional HTTP routes (all runtimes)
+  - path: /monitor/status
+    method: GET
+    handler: handleStatus
+    public: true
+  - path: /monitor/ws
+    method: WS                        # WebSocket upgrade
+    handler: handleWS
+  - path: /monitor/ui/*filepath       # static file serving
+    method: GET
+    static_dir: dashboard
+    static_index: index.html
+background: false                     # set true for long-running plugins
 ```
 
 The entrypoint prefix determines the runtime:
@@ -20,6 +33,10 @@ The entrypoint prefix determines the runtime:
 - `lua:` → Lua (executed in gopher-lua)
 - `ext:` → External (gRPC subprocess, e.g., Python)
 - `go:` → Native Go (compiled into the binary)
+
+Config keys for background plugins:
+- `plugins.background.enabled` — enable/disable background plugin execution (default: true)
+- `plugins.background.max_plugins` — maximum concurrent background plugins (default: 10)
 
 ## TypeScript Plugins
 
@@ -65,6 +82,59 @@ main();
 | `$infra` | `{ get(name): any }` | Access registered infrastructure components by name |
 | `$done` | `(result?: any) => void` | Must be called to complete execution and return result |
 | `$limits` | `{ timeout_ms, max_memory_bytes }` | Resource limits from config + per-plugin overrides |
+| `$state` | `{ get, set, delete, clear, keys }` | **New** Persistent state bag across executions |
+| `$ws` | `{ send, close }` | **New** WebSocket globals — only in WS route handlers |
+| `$background` | `{ sleep }` | **New** Background execution — only in `background: true` plugins |
+
+### Route Plugins
+
+Plugins with `routes:` in their manifest automatically register HTTP endpoints. Each route creates a Gin handler that calls the plugin's handler function with the request context as `$args.request`.
+
+```typescript
+// TS route handler example (manifest: routes: [{path: "/hello", method: "GET", handler: "handleHello"}])
+function handleHello() {
+    const req = $args.request;
+    const name = req.query.name?.[0] || "world";
+    $done({
+        success: true,
+        data: { message: `Hello, ${name}!` }
+    });
+}
+```
+
+For WebSocket routes (`method: WS`), the `$ws.send()` and `$ws.close()` globals are available:
+
+```typescript
+// TS WebSocket handler example (manifest: routes: [{path: "/ws", method: "WS", handler: "handleWS"}])
+function handleWS(data: any) {
+    $logger.info("Received: " + JSON.stringify(data));
+    $ws.send({ type: "pong", echo: data });
+}
+```
+
+### Background Plugins
+
+Plugins with `background: true` run a persistent goroutine at startup. The `$background.sleep()` global allows cooperative blocking:
+
+```typescript
+// Background plugin that monitors infrastructure every 5 seconds
+function main() {
+    while (true) {
+        const redis = $infra.get("redis");
+        if (redis) {
+            const status = redis.GetStatus();
+            $state.set("last_redis_status", status);
+        }
+        $background.sleep(5000);
+    }
+}
+main();
+```
+
+Key constraints:
+- Background plugins get a **dedicated goja VM** (not from the pool) that lasts the plugin's lifetime
+- `$background.sleep(ms)` responds to `vm.Interrupt("shutdown")` for clean shutdown
+- `Stop()` is called on app shutdown via `PluginBridge.Close()`
 
 ### SDK reference
 
@@ -159,6 +229,42 @@ func (p *MyGoPlugin) Execute(ctx *plugin.Context) *plugin.Result {
 Manifest entrypoint: `"go:MyGoPlugin"`
 
 ## Interacting with Plugins
+
+### Route Plugin Interface (Go plugins)
+
+Go plugins implement `RouteRegistrarPlugin` to register HTTP routes:
+
+```go
+func (p *MyGoPlugin) PluginRoutes() []plugin.RouteDefinition {
+    return []plugin.RouteDefinition{
+        {Path: "/hello", Method: plugin.RouteGET, Handler: "handleHello"},
+    }
+}
+```
+
+### Background Plugin Interface (Go plugins)
+
+Go plugins implement `BackgroundPlugin` for persistent execution:
+
+```go
+func (p *MyGoPlugin) Start(ctx plugin.Context) error {
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                return
+            default:
+                // do work
+                time.Sleep(5 * time.Second)
+            }
+        }
+    }()
+    return nil
+}
+
+func (p *MyGoPlugin) Stop() error { return nil }
+func (p *MyGoPlugin) IsRunning() bool { return true }
+```
 
 ### From a Service (via PluginBridge in Dependencies)
 

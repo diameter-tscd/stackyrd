@@ -12,18 +12,25 @@ import (
 
 // ConfigManager handles all configuration loading and validation
 type ConfigManager struct {
-	configURL string
+	configURL   string
+	envFilePath string
 }
 
 // NewConfigManager creates a new configuration manager
-func NewConfigManager(configURL string) *ConfigManager {
+func NewConfigManager(configURL, envFilePath string) *ConfigManager {
 	return &ConfigManager{
-		configURL: configURL,
+		configURL:   configURL,
+		envFilePath: envFilePath,
 	}
 }
 
 // LoadConfig loads configuration from local file or URL
 func (cm *ConfigManager) LoadConfig() (*config.Config, error) {
+	// Load .env file first so viper's AutomaticEnv picks up the vars
+	if err := config.LoadDotEnv(cm.envFilePath); err != nil {
+		return nil, fmt.Errorf("failed to load .env file: %w", err)
+	}
+
 	if cm.configURL != "" {
 		return cm.loadConfigFromURL(cm.configURL)
 	}

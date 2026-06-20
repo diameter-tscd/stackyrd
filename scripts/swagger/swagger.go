@@ -440,7 +440,7 @@ func printSuccess(docsDir string) {
 	fmt.Println("   • docs/swagger.yaml")
 	fmt.Println("")
 	fmt.Println(" " + P_CYAN + "Next steps:" + RESET)
-	fmt.Println("   1. Add echo-swagger middleware to your server")
+	fmt.Println("   1. Add gin-swagger middleware to your server")
 	fmt.Println("   2. Access Swagger UI at /swagger/index.html")
 	fmt.Println("")
 }

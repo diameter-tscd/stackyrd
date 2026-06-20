@@ -129,21 +129,25 @@ func (m *MinIOManager) DeleteObjectAsync(ctx context.Context, objectName string)
 	})
 }
 
-// ListObjectsAsync asynchronously lists objects in the bucket.
-func (m *MinIOManager) ListObjectsAsync(ctx context.Context, prefix string, recursive bool) *AsyncResult[[]minio.ObjectInfo] {
+// ListObjectsAsync asynchronously lists objects in the bucket with a maximum
+// number of results. Use maxKeys <= 0 for no limit (caution: buckets with
+// millions of objects cause OOM).
+func (m *MinIOManager) ListObjectsAsync(ctx context.Context, prefix string, recursive bool, maxKeys int) *AsyncResult[[]minio.ObjectInfo] {
 	return ExecuteAsync(ctx, func(ctx context.Context) ([]minio.ObjectInfo, error) {
-		var objects []minio.ObjectInfo
-
 		objectCh := m.Client.ListObjects(ctx, m.BucketName, minio.ListObjectsOptions{
 			Prefix:    prefix,
 			Recursive: recursive,
 		})
 
+		objects := make([]minio.ObjectInfo, 0, maxKeys)
 		for object := range objectCh {
 			if object.Err != nil {
 				return nil, object.Err
 			}
 			objects = append(objects, object)
+			if maxKeys > 0 && len(objects) >= maxKeys {
+				break
+			}
 		}
 
 		return objects, nil

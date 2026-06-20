@@ -160,14 +160,17 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// RecordHTTPRequest records HTTP request metrics
-func (m *Metrics) RecordHTTPRequest(method, path string, status int, duration time.Duration, requestSize, responseSize int64) {
+// RecordHTTPRequest records HTTP request metrics.
+// The route parameter MUST be a sanitized route pattern (e.g. "/users/:id"),
+// NOT a raw request path (e.g. "/users/abc123"). Raw paths cause unbounded
+// Prometheus label cardinality and OOM.
+func (m *Metrics) RecordHTTPRequest(method, route string, status int, duration time.Duration, requestSize, responseSize int64) {
 	statusStr := strconv.Itoa(status)
 
-	m.HTTPRequestsTotal.WithLabelValues(method, path, statusStr).Inc()
-	m.HTTPRequestDuration.WithLabelValues(method, path, statusStr).Observe(duration.Seconds())
-	m.HTTPRequestSize.WithLabelValues(method, path).Observe(float64(requestSize))
-	m.HTTPResponseSize.WithLabelValues(method, path).Observe(float64(responseSize))
+	m.HTTPRequestsTotal.WithLabelValues(method, route, statusStr).Inc()
+	m.HTTPRequestDuration.WithLabelValues(method, route, statusStr).Observe(duration.Seconds())
+	m.HTTPRequestSize.WithLabelValues(method, route).Observe(float64(requestSize))
+	m.HTTPResponseSize.WithLabelValues(method, route).Observe(float64(responseSize))
 }
 
 // RecordCacheHit records a cache hit

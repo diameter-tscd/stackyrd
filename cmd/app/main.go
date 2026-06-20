@@ -29,7 +29,7 @@ func main() {
 	flags := parseFlags()
 
 	// Create configuration manager
-	configManager := NewConfigManager(flags.ConfigURL)
+	configManager := NewConfigManager(flags.ConfigURL, flags.EnvFile)
 
 	// Create application with dependency injection
 	app := NewApplication(configManager)
@@ -72,6 +72,11 @@ func parseFlags() *utils.ParsedFlags {
 			Name:         "env",
 			DefaultValue: "",
 			Description:  "Environment (development/staging/production)",
+		},
+		{
+			Name:         "env-file",
+			DefaultValue: "",
+			Description:  "Path to .env file (default: .env in current directory)",
 		},
 	}
 

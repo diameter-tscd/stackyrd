@@ -24,12 +24,16 @@ func (r *externalRuntime) Prefix() string { return "ext:" }
 
 func (r *externalRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) {
 	modulePath := meta.Entrypoint[4:]
-	return &ExternalPlugin{
+	p := &ExternalPlugin{
 		name:       meta.Name,
 		meta:       meta,
 		fs:         fs,
 		modulePath: modulePath,
-	}, nil
+	}
+	if len(meta.Routes) > 0 {
+		return &scriptRoutePlugin{Plugin: p, routes: meta.Routes}, nil
+	}
+	return p, nil
 }
 
 func init() { RegisterRuntime(&externalRuntime{}) }
@@ -86,6 +90,10 @@ func (p *ExternalPlugin) Execute(ctx Context, args map[string]interface{}) (*Res
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal args: %w", err)
+	}
+	const maxArgsSize = 10 << 20 // 10 MB
+	if len(argsJSON) > maxArgsSize {
+		return nil, fmt.Errorf("plugin args too large: %d bytes exceeds %d byte limit", len(argsJSON), maxArgsSize)
 	}
 
 	scriptBytes, err := afero.ReadFile(p.fs, p.modulePath)

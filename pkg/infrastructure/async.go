@@ -64,15 +64,13 @@ func (r *AsyncResult[T]) IsDone() bool {
 // AsyncOperation represents an operation that can be executed asynchronously
 type AsyncOperation[T any] func(ctx context.Context) (T, error)
 
-var asyncSemaphore = make(chan struct{}, 1000) // global cap on concurrent async goroutines
-
-// ExecuteAsync executes an operation asynchronously and returns an AsyncResult
+// ExecuteAsync executes an operation asynchronously and returns an AsyncResult.
+// Concurrency is managed by the caller; no global cap is enforced to avoid
+// giving a false sense of safety (batch and worker-pool paths bypass it).
 func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *AsyncResult[T] {
 	result := NewAsyncResult[T]()
 
-	asyncSemaphore <- struct{}{}
 	go func() {
-		defer func() { <-asyncSemaphore }()
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic in async operation
@@ -221,10 +219,14 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 }
 
-// Submit submits a job to the worker pool.  Blocks if the queue is full;
-// call SubmitOrDrop for a non-blocking variant.
+// Submit submits a job to the worker pool.  If the queue is full the job
+// runs in a new goroutine rather than blocking the caller.
 func (wp *WorkerPool) Submit(job func()) {
-	wp.jobQueue <- job
+	select {
+	case wp.jobQueue <- job:
+	default:
+		go job()
+	}
 }
 
 // SubmitOrDrop attempts to submit a job without blocking.  Returns false
@@ -256,8 +258,9 @@ func (wp *WorkerPool) worker() {
 	}
 }
 
-// Close closes the worker pool
+// Close closes the worker pool.  Stop() already drains the job queue and
+// signals workers via stopChan; closing jobQueue is unnecessary and would
+// panic if a concurrent Submit() blocks on a full queue.
 func (wp *WorkerPool) Close() {
 	wp.Stop()
-	close(wp.jobQueue)
 }

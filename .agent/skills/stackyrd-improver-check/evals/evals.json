@@ -1,0 +1,47 @@
+{
+  "skill_name": "stackyrd-improver-check",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our stackyrd service is running in production and users are reporting high latency under load during peak hours. The service uses PostgreSQL, Redis, and MongoDB with about 500 concurrent users. Can you check the codebase for potential performance bottlenecks? I need specific file locations, what the issues are, and actionable fixes. Focus on context leak risks, goroutine patterns, channel sizing, connection pooling, and any timer leaks.",
+      "expected_output": "A structured markdown report listing performance issues with file paths, line numbers, impact analysis, and fix suggestions. Should cover context.Background() usage, time.After() leaks, unbuffered channels, goroutine patterns, connection pool settings, and missing benchmarks.",
+      "files": [],
+      "expectations": [
+        "Report identifies at least 3 specific context.Background() calls in production code with file paths",
+        "Report flags time.After() timer leak pattern with specific locations",
+        "Report comments on connection pool configuration (PostgreSQL, MongoDB, or Redis)",
+        "Report mentions goroutine unbounded spawning risks (plugin execution, WebSocket, or webhook)",
+        "Each finding includes file path, impact, and a concrete fix suggestion",
+        "Report uses the structured format with Critical/Warning/Info severity levels"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I'm doing a pre-release code quality audit of the stackyrd project before we tag v1.0. We've had a few crashes in staging that seem related to error handling. Can you look for code quality issues: error swallowing, type assertion safety, unused imports, config struct issues, resource leaks in defer blocks, and any unsafe goroutine patterns? Give me file locations and specific recommendations.",
+      "expected_output": "A structured markdown report listing code quality issues with file paths, line numbers, and fix recommendations. Should cover error swallowing, config struct tag collisions, two-HTTP-router issue, context hygiene, and test coverage gaps.",
+      "files": [],
+      "expectations": [
+        "Report identifies error swallowing patterns (_ = assignments in defer or production code)",
+        "Report flags the dual HTTP router issue (Gin + Echo) with specific file location",
+        "Report identifies config struct tag collision (PostgresMultiConfig and MongoMultiConfig)",
+        "Report mentions test coverage gaps in infrastructure components",
+        "Report covers at least 6 distinct code quality findings",
+        "Each finding includes file path, impact analysis, and concrete fix suggestion"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We want to deploy stackyrd on ARM64 Linux servers (AWS Graviton). Our CI currently only builds for linux/amd64. Can you audit the codebase and its dependencies for any cross-platform issues? Check for CGO requirements, architecture-specific assembly code, native library dependencies, and any build-time flags that might cause issues on ARM64. Also look at the Dockerfile and CI workflows to see if they need updates.",
+      "expected_output": "A structured markdown report covering native dependency risks, CGO usage, architecture-specific code, cross-compilation concerns, CI matrix gaps, and Docker/build script issues. Should note specific packages like bytedance/sonic and cloudwego that may have platform sensitivity.",
+      "files": [],
+      "expectations": [
+        "Report checks bytedance/sonic and cloudwego packages for platform sensitivity",
+        "Report confirms or denies CGO usage in the codebase (import \"C\", #cgo directives)",
+        "Report checks CI workflows for cross-platform build matrix gaps",
+        "Report reviews Dockerfile for C library dependencies",
+        "Report checks build script (scripts/build/build.go) for CGO_ENABLED configuration",
+        "Each finding includes file path, specific risk, and actionable recommendation"
+      ]
+    }
+  ]
+}

@@ -109,10 +109,17 @@ func (im *InfraInitManager) GetStatus() map[string]*InfraInitStatus {
 	im.mu.RLock()
 	defer im.mu.RUnlock()
 
-	// Create a copy to avoid race conditions
+	// Deep copy to avoid data races on shared pointer fields (Progress, etc.)
 	status := make(map[string]*InfraInitStatus)
 	for k, v := range im.status {
-		status[k] = v
+		status[k] = &InfraInitStatus{
+			Name:        v.Name,
+			Initialized: v.Initialized,
+			Error:       v.Error,
+			StartTime:   v.StartTime,
+			Duration:    v.Duration,
+			Progress:    v.Progress,
+		}
 	}
 
 	return status

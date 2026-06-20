@@ -30,9 +30,11 @@ type TasksService struct {
 
 func NewTasksService(db *infrastructure.PostgresManager, enabled bool, logger *logger.Logger) *TasksService {
 	if enabled && db != nil && db.ORM != nil {
-		if err := db.ORM.AutoMigrate(&Task{}); err != nil {
-			logger.Error("Error migrating Task model", err)
-		}
+		go func() {
+			if err := db.ORM.AutoMigrate(&Task{}); err != nil {
+				logger.Error("Error migrating Task model", err)
+			}
+		}()
 	}
 	return &TasksService{
 		db:      db,

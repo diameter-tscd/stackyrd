@@ -24,6 +24,9 @@ func (r *luaRuntime) CreatePlugin(meta PluginMeta, fs afero.Fs) (Plugin, error) 
 	if err == nil {
 		p.cachedSource = source
 	}
+	if len(meta.Routes) > 0 {
+		return &scriptRoutePlugin{Plugin: p, routes: meta.Routes}, nil
+	}
 	return p, nil
 }
 

@@ -29,7 +29,7 @@ flowchart TD
     I -->|Console mode| L[direct logs]
     L --> M[server.New]
     M --> N[async infra init<br/>all components in parallel]
-    M --> O[plugin init<br/>bridge → deps.plugins]
+    M --> O[plugin init<br/>instantiate → wire routes → bridge → background start]
     M --> P[middleware auto-discovery]
     M --> Q[service auto-discovery]
     M --> R[route registration<br/>/api/v1]
@@ -149,6 +149,9 @@ flowchart TD
     A --> E[Sandbox<br/>timeout + RSS memory enforcement]
     A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
     A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
+    A --> H[RouteEngine<br/>dynamic HTTP routes from plugin manifests]
+    A --> I[BackgroundManager<br/>long-running plugin goroutines]
+    A --> J[StateBag<br/>thread-safe persistent plugin state]
 ```
 
 ## Middleware Pattern
@@ -166,7 +169,7 @@ func init() {
 - **Dependency Injection**: Dynamic `Dependencies` container with TTL-cached GetAll()
 - **Async Initialization**: All infrastructure components init in parallel
 - **Multi-connection DB**: Postgres + MongoDB with named connection managers
-- **Plugin System**: TypeScript (goja), Python/external (gRPC), Lua, Go
+- **Plugin System**: TypeScript (goja), Python/external (gRPC), Lua, Go — with HTTP routes, WebSocket, persistent state, and background execution
 - **TUI Dashboard**: Bubbletea boot sequence + live monitoring dashboard
 - **Prometheus Metrics**: HTTP, DB, cache, circuit breaker, webhook, batch, WebSocket
 - **Resilience**: Circuit breaker, retry with backoff, health checks, timeouts

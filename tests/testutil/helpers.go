@@ -1,4 +1,4 @@
-package testing
+package testutil
 
 import (
 	"bytes"
@@ -7,43 +7,36 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
-// TestContext creates an echo.Context for testing
-type TestContext struct {
-	echo.Context
-	Request  *http.Request
-	Response *httptest.ResponseRecorder
-}
-
-// NewTestEcho creates a new Echo instance for testing
-func NewTestEcho() *echo.Echo {
-	return echo.New()
+// NewTestEngine creates a new Gin engine instance for testing
+func NewTestEngine() *gin.Engine {
+	return gin.New()
 }
 
 // NewTestContext creates a new test context with the given method, path, and body
-func NewTestContext(method, path string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
-	e := echo.New()
-	rec := httptest.NewRecorder()
+func NewTestContext(method, path string, body interface{}) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
 
 	var req *http.Request
 	if body != nil {
 		jsonBody, _ := json.Marshal(body)
 		req = httptest.NewRequest(method, path, bytes.NewBuffer(jsonBody))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		req.Header.Set("Content-Type", "application/json")
 	} else {
 		req = httptest.NewRequest(method, path, nil)
 	}
+	c.Request = req
 
-	c := e.NewContext(req, rec)
-	return c, rec
+	return c, w
 }
 
 // NewTestContextWithQuery creates a test context with query parameters
-func NewTestContextWithQuery(method, path string, queryParams map[string]string) (echo.Context, *httptest.ResponseRecorder) {
-	e := echo.New()
-	rec := httptest.NewRecorder()
+func NewTestContextWithQuery(method, path string, queryParams map[string]string) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
 
 	req := httptest.NewRequest(method, path, nil)
 	q := req.URL.Query()
@@ -51,30 +44,31 @@ func NewTestContextWithQuery(method, path string, queryParams map[string]string)
 		q.Add(k, v)
 	}
 	req.URL.RawQuery = q.Encode()
+	c.Request = req
 
-	c := e.NewContext(req, rec)
-	return c, rec
+	return c, w
 }
 
 // NewTestContextWithParams creates a test context with path parameters
-func NewTestContextWithParams(method, path string, params map[string]string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
-	e := echo.New()
-	rec := httptest.NewRecorder()
+func NewTestContextWithParams(method, path string, params map[string]string, body interface{}) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
 
 	var req *http.Request
 	if body != nil {
 		jsonBody, _ := json.Marshal(body)
 		req = httptest.NewRequest(method, path, bytes.NewBuffer(jsonBody))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		req.Header.Set("Content-Type", "application/json")
 	} else {
 		req = httptest.NewRequest(method, path, nil)
 	}
+	c.Request = req
 
-	c := e.NewContext(req, rec)
-	c.SetParamNames(getKeys(params)...)
-	c.SetParamValues(getValues(params)...)
+	for k, v := range params {
+		c.Params = append(c.Params, gin.Param{Key: k, Value: v})
+	}
 
-	return c, rec
+	return c, w
 }
 
 // ParseResponse parses the response body into the given struct
@@ -111,21 +105,4 @@ func AssertJSON(t *testing.T, rec *httptest.ResponseRecorder, expected map[strin
 			t.Errorf("for key %q: expected %v, got %v", key, expectedValue, actualValue)
 		}
 	}
-}
-
-// Helper functions
-func getKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func getValues(m map[string]string) []string {
-	values := make([]string, 0, len(m))
-	for _, v := range m {
-		values = append(values, v)
-	}
-	return values
 }

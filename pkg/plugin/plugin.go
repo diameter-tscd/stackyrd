@@ -11,6 +11,16 @@ import (
 	"github.com/spf13/afero"
 )
 
+type RouteDefMeta struct {
+	Path         string `yaml:"path"`
+	Method       string `yaml:"method"`
+	Handler      string `yaml:"handler"`
+	Public       bool   `yaml:"public"`
+	StaticDir    string `yaml:"static_dir"`
+	StaticPrefix string `yaml:"static_prefix"`
+	StaticIndex  string `yaml:"static_index"`
+}
+
 type PluginMeta struct {
 	Name        string         `yaml:"name"`
 	Version     string         `yaml:"version"`
@@ -19,6 +29,8 @@ type PluginMeta struct {
 	DependsOn   []string       `yaml:"depends_on"`
 	Entrypoint  string         `yaml:"entrypoint"`
 	Limits      ResourceLimits `yaml:"limits"`
+	Routes      []RouteDefMeta `yaml:"routes"`
+	Background  bool           `yaml:"background"`
 }
 
 type ResourceLimits struct {
@@ -32,6 +44,7 @@ type Context struct {
 	Registry *infrastructure.ComponentRegistry
 	Cancel   context.CancelFunc
 	Limits   ResourceLimits
+	State    StateBag
 }
 
 type Result struct {

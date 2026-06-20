@@ -170,14 +170,12 @@ func Logger(l *logger.Logger) gin.HandlerFunc {
 		method := c.Request.Method
 		path := c.Request.URL.Path
 
-		msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
-
 		if status >= 500 {
-			l.Error(msg, nil)
+			l.Error("API Request", nil, "method", method, "path", path, "status", status, "latency", latency)
 		} else if status >= 400 {
-			l.Warn(msg)
+			l.Warn("API Request", "method", method, "path", path, "status", status, "latency", latency)
 		} else {
-			l.Info(msg)
+			l.Info("API Request", "method", method, "path", path, "status", status, "latency", latency)
 		}
 	}
 }

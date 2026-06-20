@@ -47,13 +47,19 @@ func AuditSkipHealthCheck(l *logger.Logger) gin.HandlerFunc {
 
 // Audit creates audit logging middleware
 func Audit(config AuditConfig, l *logger.Logger) gin.HandlerFunc {
+	skipPathsSet := make(map[string]struct{}, len(config.SkipPaths))
+	for _, p := range config.SkipPaths {
+		skipPathsSet[p] = struct{}{}
+	}
+	sensitiveHeadersSet := make(map[string]struct{}, len(config.SensitiveHeaders))
+	for _, h := range config.SensitiveHeaders {
+		sensitiveHeadersSet[h] = struct{}{}
+	}
+
 	return func(c *gin.Context) {
-		// Skip configured paths
-		for _, path := range config.SkipPaths {
-			if c.Request.URL.Path == path {
-				c.Next()
-				return
-			}
+		if _, skip := skipPathsSet[c.Request.URL.Path]; skip {
+			c.Next()
+			return
 		}
 
 		start := time.Now()
@@ -65,54 +71,37 @@ func Audit(config AuditConfig, l *logger.Logger) gin.HandlerFunc {
 		latency := time.Since(start)
 		statusCode := c.Writer.Status()
 
-		// Build log fields
-		fields := map[string]interface{}{
-			"method":     c.Request.Method,
-			"path":       path,
-			"query":      query,
-			"status":     statusCode,
-			"latency":    latency.String(),
-			"client_ip":  c.ClientIP(),
-			"user_agent": c.Request.UserAgent(),
-			"request_id": c.Writer.Header().Get("X-Request-ID"),
-		}
+		keyvals := make([]interface{}, 0, 20)
+		keyvals = append(keyvals,
+			"method", c.Request.Method,
+			"path", path,
+			"query", query,
+			"status", statusCode,
+			"latency", latency,
+			"client_ip", c.ClientIP(),
+			"user_agent", c.Request.UserAgent(),
+			"request_id", c.Writer.Header().Get("X-Request-ID"),
+		)
 
-		// Add user info if available
 		if userID, exists := c.Get("user_id"); exists {
-			fields["user_id"] = userID
+			keyvals = append(keyvals, "user_id", userID)
 		}
 		if username, exists := c.Get("username"); exists {
-			fields["username"] = username
+			keyvals = append(keyvals, "username", username)
 		}
 
-		// Log headers if configured
 		if config.LogHeaders {
 			headers := make(map[string]string)
 			for name, values := range c.Request.Header {
-				// Skip sensitive headers
-				skip := false
-				for _, sensitive := range config.SensitiveHeaders {
-					if name == sensitive {
-						skip = true
-						break
-					}
-				}
-				if !skip {
+				if _, skip := sensitiveHeadersSet[name]; !skip {
 					for _, v := range values {
 						headers[name] = v
 					}
 				}
 			}
-			fields["headers"] = headers
+			keyvals = append(keyvals, "headers", headers)
 		}
 
-		// Convert fields map to keyvals slice
-		keyvals := make([]interface{}, 0, len(fields)*2)
-		for k, v := range fields {
-			keyvals = append(keyvals, k, v)
-		}
-
-		// Log with appropriate level based on status code
 		if statusCode >= 500 {
 			l.Error("API Request", nil, keyvals...)
 		} else if statusCode >= 400 {

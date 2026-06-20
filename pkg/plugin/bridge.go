@@ -28,6 +28,7 @@ func (b *PluginBridge) Name() string {
 }
 
 func (b *PluginBridge) Close() error {
+	stopBackgroundPlugins()
 	return nil
 }
 

@@ -239,9 +239,13 @@ func (m BootModel) View() string {
 
 	var b strings.Builder
 
-	// Simple title
-	title := fmt.Sprintf(" %s ", m.config.AppName)
-	b.WriteString(bootBannerStyle.Bold(true).Render(title))
+	// Banner (ASCII art) or app name fallback
+	if m.config.Banner != "" {
+		b.WriteString(bootBannerStyle.Render(m.config.Banner))
+	} else {
+		title := fmt.Sprintf(" %s ", m.config.AppName)
+		b.WriteString(bootBannerStyle.Bold(true).Render(title))
+	}
 	b.WriteString("\n")
 
 	// Version and env

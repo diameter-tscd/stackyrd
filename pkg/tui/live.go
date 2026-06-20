@@ -180,7 +180,7 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result := m.queryDialog.GetResult(); result != nil {
 				if result.Confirmed {
 					if result.Value != "" {
-						m.updateQuery(result.Value)
+						return m, tea.Batch(cmd, m.queryCmd(result.Value))
 					}
 				}
 			}
@@ -695,8 +695,14 @@ func (m *LiveModel) updateFilteredLogs() {
 	m.filteredLogs = filtered
 }
 
-func (m *LiveModel) updateQuery(query string) {
-	m.AddLog("info", "Execute query: "+query)
+func (m *LiveModel) queryCmd(query string) tea.Cmd {
+	return func() tea.Msg {
+		return logMsg{
+			Time:    time.Now(),
+			Level:   "info",
+			Message: "Execute query: " + query,
+		}
+	}
 }
 
 // Scroll methods for navigating through logs

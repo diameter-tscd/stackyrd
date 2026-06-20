@@ -66,9 +66,40 @@
                   "LOW"
                 ]
               }
+            },
+            {
+              "id": "CVE-2026-2303",
+              "name": "LanguageSpecificPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2026-2303 affecting package telegraf for versions less than 1.29.4-21"
+              },
+              "fullDescription": {
+                "text": "The mongo-go-driver repository contains CGo bindings for GSSAPI (Kerberos) authentication on Linux and macOS. The C wrapper implementation contains a heap out-of-bounds read vulnerability due to incorrect assumptions about string termination in the GSSAPI standard. Since GSSAPI buffers are not guaranteed to be null-terminated or have extra padding, this results in reading one byte past the allocated heap buffer."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2026-2303",
+              "help": {
+                "text": "Vulnerability CVE-2026-2303\nSeverity: MEDIUM\nPackage: go.mongodb.org/mongo-driver\nFixed Version: 1.17.7\nLink: [CVE-2026-2303](https://avd.aquasec.com/nvd/cve-2026-2303)\nThe mongo-go-driver repository contains CGo bindings for GSSAPI (Kerberos) authentication on Linux and macOS. The C wrapper implementation contains a heap out-of-bounds read vulnerability due to incorrect assumptions about string termination in the GSSAPI standard. Since GSSAPI buffers are not guaranteed to be null-terminated or have extra padding, this results in reading one byte past the allocated heap buffer.",
+                "markdown": "**Vulnerability CVE-2026-2303**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|MEDIUM|go.mongodb.org/mongo-driver|1.17.7|[CVE-2026-2303](https://avd.aquasec.com/nvd/cve-2026-2303)|\n\nThe mongo-go-driver repository contains CGo bindings for GSSAPI (Kerberos) authentication on Linux and macOS. The C wrapper implementation contains a heap out-of-bounds read vulnerability due to incorrect assumptions about string termination in the GSSAPI standard. Since GSSAPI buffers are not guaranteed to be null-terminated or have extra padding, this results in reading one byte past the allocated heap buffer."
+              },
+              "properties": {
+                "cvssv3_baseScore": 6.5,
+                "cvssv3_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N",
+                "cvssv40_baseScore": 6.9,
+                "cvssv40_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+                "precision": "very-high",
+                "security-severity": "6.5",
+                "tags": [
+                  "vulnerability",
+                  "security",
+                  "MEDIUM"
+                ]
+              }
             }
           ],
-          "version": "0.71.0"
+          "version": "0.71.2"
         }
       },
       "results": [
@@ -122,6 +153,33 @@
               },
               "message": {
                 "text": "go.mod: github.com/jackc/pgx/v5@v5.7.6"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2026-2303",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "Package: go.mongodb.org/mongo-driver\nInstalled Version: v1.17.6\nVulnerability CVE-2026-2303\nSeverity: MEDIUM\nFixed Version: 1.17.7\nLink: [CVE-2026-2303](https://avd.aquasec.com/nvd/cve-2026-2303)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "go.mod",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "go.mod: go.mongodb.org/mongo-driver@v1.17.6"
               }
             }
           ]

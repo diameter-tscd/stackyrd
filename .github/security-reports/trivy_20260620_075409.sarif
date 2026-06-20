@@ -68,7 +68,7 @@
               }
             }
           ],
-          "version": "0.71.1"
+          "version": "0.71.2"
         }
       },
       "results": [
@@ -130,7 +130,7 @@
       "columnKind": "utf16CodeUnits",
       "originalUriBaseIds": {
         "ROOTPATH": {
-          "uri": "file:///home/runner/work/stackyrd-nano/stackyrd-nano/"
+          "uri": "file:///home/runner/work/stackyrd/stackyrd/"
         }
       }
     }

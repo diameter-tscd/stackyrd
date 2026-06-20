@@ -86,32 +86,6 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/plugin/sandbox.go"
-								},
-								"region": {
-									"endColumn": 12,
-									"endLine": 63,
-									"snippet": {
-										"text": "if int64(memInfo.RSS) \u003e maxBytes {"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 12,
-									"startLine": 63
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "integer overflow conversion uint64 -\u003e int64"
-					},
-					"ruleId": "G115"
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "pkg/utils/system.go"
 								},
 								"region": {
@@ -149,32 +123,6 @@
 									"sourceLanguage": "go",
 									"startColumn": 14,
 									"startLine": 79
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "integer overflow conversion int -\u003e int32"
-					},
-					"ruleId": "G115"
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/sandbox.go"
-								},
-								"region": {
-									"endColumn": 32,
-									"endLine": 106,
-									"snippet": {
-										"text": "go MemMonitor(execCtx, int32(os.Getpid()), memory, func() {"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 32,
-									"startLine": 106
 								}
 							}
 						}
@@ -346,33 +294,6 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/plugin/external_runtime.go"
-								},
-								"region": {
-									"endColumn": 22,
-									"endLine": 155,
-									"snippet": {
-										"text": "p.cmd = exec.Command(hostPath, hostScript, \"--socket\", socketPath, \"--name\", p.name)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 22,
-									"startLine": 155
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Command injection via taint analysis"
-					},
-					"ruleId": "G702",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "pkg/utils/io.go"
 								},
 								"region": {
@@ -508,17 +429,44 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/plugin/external_runtime.go"
+									"uri": ".agent/skills/stackyrd-origin-merge/scripts/merge_upstream.go"
 								},
 								"region": {
-									"endColumn": 10,
-									"endLine": 155,
+									"endColumn": 7,
+									"endLine": 87,
 									"snippet": {
-										"text": "p.cmd = exec.Command(hostPath, hostScript, \"--socket\", socketPath, \"--name\", p.name)"
+										"text": "c := exec.Command(cmd, args...)"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 10,
-									"startLine": 155
+									"startColumn": 7,
+									"startLine": 87
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": ".agent/skills/stackyrd-origin-merge/scripts/merge_upstream.go"
+								},
+								"region": {
+									"endColumn": 7,
+									"endLine": 70,
+									"snippet": {
+										"text": "c := exec.Command(cmd, args...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 7,
+									"startLine": 70
 								}
 							}
 						}
@@ -798,60 +746,6 @@
 					},
 					"ruleId": "G204",
 					"ruleIndex": 1
-				},
-				{
-					"fixes": [
-						{
-							"artifactChanges": [
-								{
-									"artifactLocation": {
-										"description": {
-											"text": "File requiring changes"
-										}
-									},
-									"replacements": [
-										{
-											"deletedRegion": {
-												"endColumn": 1,
-												"endLine": 1,
-												"startColumn": 1,
-												"startLine": 1
-											}
-										}
-									]
-								}
-							],
-							"description": {
-								"markdown": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal.",
-								"text": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
-							}
-						}
-					],
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/swagger/swagger.go"
-								},
-								"region": {
-									"endColumn": 19,
-									"endLine": 237,
-									"snippet": {
-										"text": "content, err := os.ReadFile(filePath)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 19,
-									"startLine": 237
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Potential file inclusion via variable"
-					},
-					"ruleId": "G304",
-					"ruleIndex": 2
 				},
 				{
 					"fixes": [
@@ -1430,13 +1324,13 @@
 								},
 								"region": {
 									"endColumn": 17,
-									"endLine": 96,
+									"endLine": 77,
 									"snippet": {
 										"text": "banner, err := os.ReadFile(bannerPath)"
 									},
 									"sourceLanguage": "go",
 									"startColumn": 17,
-									"startLine": 96
+									"startLine": 77
 								}
 							}
 						}
@@ -1505,33 +1399,6 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/infrastructure/grafana.go"
-								},
-								"region": {
-									"endColumn": 19,
-									"endLine": 492,
-									"snippet": {
-										"text": "jsonData, err := json.Marshal(ds)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 19,
-									"startLine": 492
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
-					},
-					"ruleId": "G117",
-					"ruleIndex": 1
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
 									"uri": "scripts/pkg/pkg.go"
 								},
 								"region": {
@@ -1551,7 +1418,7 @@
 						"text": "Expect file permissions to be 0600 or less"
 					},
 					"ruleId": "G302",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1578,7 +1445,7 @@
 						"text": "Expect file permissions to be 0600 or less"
 					},
 					"ruleId": "G302",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1605,7 +1472,7 @@
 						"text": "Expect file permissions to be 0600 or less"
 					},
 					"ruleId": "G302",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1632,7 +1499,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1659,7 +1526,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1686,7 +1553,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1713,7 +1580,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1740,7 +1607,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1767,7 +1634,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1794,7 +1661,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1821,88 +1688,7 @@
 						"text": "Expect directory permissions to be 0750 or less"
 					},
 					"ruleId": "G301",
-					"ruleIndex": 4
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/store.go"
-								},
-								"region": {
-									"endColumn": 13,
-									"endLine": 193,
-									"snippet": {
-										"text": "if err := os.MkdirAll(d, 0755); err != nil {"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 13,
-									"startLine": 193
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Expect directory permissions to be 0750 or less"
-					},
-					"ruleId": "G301",
-					"ruleIndex": 4
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/store.go"
-								},
-								"region": {
-									"endColumn": 12,
-									"endLine": 177,
-									"snippet": {
-										"text": "if err := os.MkdirAll(storeDir, 0755); err != nil {"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 12,
-									"startLine": 177
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Expect directory permissions to be 0750 or less"
-					},
-					"ruleId": "G301",
-					"ruleIndex": 4
-				},
-				{
-					"level": "error",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/init.go"
-								},
-								"region": {
-									"endColumn": 12,
-									"endLine": 65,
-									"snippet": {
-										"text": "if err := os.MkdirAll(storeBase, 0755); err != nil {"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 12,
-									"startLine": 65
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Expect directory permissions to be 0750 or less"
-					},
-					"ruleId": "G301",
-					"ruleIndex": 4
+					"ruleIndex": 3
 				},
 				{
 					"level": "error",
@@ -1929,7 +1715,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -1956,7 +1742,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -1983,7 +1769,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -2010,7 +1796,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -2037,7 +1823,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -2064,7 +1850,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -2091,7 +1877,7 @@
 						"text": "Expect WriteFile permissions to be 0600 or less"
 					},
 					"ruleId": "G306",
-					"ruleIndex": 7
+					"ruleIndex": 6
 				},
 				{
 					"level": "error",
@@ -2118,138 +1904,7 @@
 						"text": "Blocklisted import crypto/md5: weak cryptographic primitive"
 					},
 					"ruleId": "G501",
-					"ruleIndex": 9
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/plugin.pb.go"
-								},
-								"region": {
-									"endColumn": 32,
-									"endLine": 284,
-									"snippet": {
-										"text": "RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)),"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 32,
-									"startLine": 284
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Use of unsafe calls should be audited"
-					},
-					"ruleId": "G103"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/plugin.pb.go"
-								},
-								"region": {
-									"endColumn": 19,
-									"endLine": 284,
-									"snippet": {
-										"text": "RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)),"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 19,
-									"startLine": 284
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Use of unsafe calls should be audited"
-					},
-					"ruleId": "G103"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/plugin.pb.go"
-								},
-								"region": {
-									"endColumn": 84,
-									"endLine": 251,
-									"snippet": {
-										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 84,
-									"startLine": 251
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Use of unsafe calls should be audited"
-					},
-					"ruleId": "G103"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "pkg/plugin/plugin.pb.go"
-								},
-								"region": {
-									"endColumn": 71,
-									"endLine": 251,
-									"snippet": {
-										"text": "file_pkg_plugin_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pkg_plugin_plugin_proto_rawDesc), len(file_pkg_plugin_plugin_proto_rawDesc)))"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 71,
-									"startLine": 251
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Use of unsafe calls should be audited"
-					},
-					"ruleId": "G103"
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/swagger/swagger.go"
-								},
-								"region": {
-									"endColumn": 3,
-									"endLine": 474,
-									"snippet": {
-										"text": "fmt.Scanln(\u0026choice)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 3,
-									"startLine": 474
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleIndex": 8
 				},
 				{
 					"level": "warning",
@@ -2275,8 +1930,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2302,8 +1956,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2329,8 +1982,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2356,8 +2008,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2383,8 +2034,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2410,8 +2060,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2437,8 +2086,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2464,89 +2112,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/plugin/pkg.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 504,
-									"snippet": {
-										"text": "fs.Parse(args)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 504
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104",
-					"ruleIndex": 1
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/plugin/pkg.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 471,
-									"snippet": {
-										"text": "fs.Parse(args)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 471
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104",
-					"ruleIndex": 1
-				},
-				{
-					"level": "warning",
-					"locations": [
-						{
-							"physicalLocation": {
-								"artifactLocation": {
-									"uri": "scripts/plugin/pkg.go"
-								},
-								"region": {
-									"endColumn": 2,
-									"endLine": 427,
-									"snippet": {
-										"text": "fs.Parse(args)"
-									},
-									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 427
-								}
-							}
-						}
-					],
-					"message": {
-						"text": "Errors unhandled"
-					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2572,8 +2138,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2599,8 +2164,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2626,8 +2190,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2653,8 +2216,7 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
 				},
 				{
 					"level": "warning",
@@ -2662,17 +2224,17 @@
 						{
 							"physicalLocation": {
 								"artifactLocation": {
-									"uri": "pkg/plugin/runtime.go"
+									"uri": "pkg/terminal/guard.go"
 								},
 								"region": {
-									"endColumn": 2,
-									"endLine": 107,
+									"endColumn": 3,
+									"endLine": 62,
 									"snippet": {
-										"text": "vm.Set(\"$done\", func(opts map[string]interface{}) {\nsuccess, _ := opts[\"success\"].(bool)\ndata := opts[\"data\"]\nerrStr, _ := opts[\"error\"].(string)\nresult := \u0026Result{Success: success, Data: data, Error: errStr}\nselect {\ncase doneCh \u003c- result:\ndefault:\n}\n})\n"
+										"text": "os.Stderr.WriteString(\"raw mode: \" + err.Error() + \"\\n\")"
 									},
 									"sourceLanguage": "go",
-									"startColumn": 2,
-									"startLine": 98
+									"startColumn": 3,
+									"startLine": 62
 								}
 							}
 						}
@@ -2680,8 +2242,85 @@
 					"message": {
 						"text": "Errors unhandled"
 					},
-					"ruleId": "G104",
-					"ruleIndex": 1
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": ".agent/skills/stackyrd-origin-merge/scripts/merge_upstream.go"
+								},
+								"region": {
+									"endColumn": 4,
+									"endLine": 272,
+									"snippet": {
+										"text": "run(\"git\", \"add\", \"go.mod\", \"go.sum\")"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 4,
+									"startLine": 272
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": ".agent/skills/stackyrd-origin-merge/scripts/merge_upstream.go"
+								},
+								"region": {
+									"endColumn": 4,
+									"endLine": 228,
+									"snippet": {
+										"text": "run(\"git\", \"add\", f)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 4,
+									"startLine": 228
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": ".agent/skills/stackyrd-origin-merge/scripts/merge_upstream.go"
+								},
+								"region": {
+									"endColumn": 4,
+									"endLine": 162,
+									"snippet": {
+										"text": "runSilent(\"git\", \"checkout\", \"--detach\", upRef)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 4,
+									"startLine": 162
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104"
 				}
 			],
 			"taxonomies": [
@@ -2719,17 +2358,6 @@
 							"id": "22",
 							"shortDescription": {
 								"text": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
-							}
-						},
-						{
-							"fullDescription": {
-								"text": "The program calls a function that can never be guaranteed to work safely."
-							},
-							"guid": "b5fcdc26-1906-39a8-aa7f-04cbe2339bce",
-							"helpUri": "https://cwe.mitre.org/data/definitions/242.html",
-							"id": "242",
-							"shortDescription": {
-								"text": "Use of Inherently Dangerous Function"
 							}
 						},
 						{
@@ -2789,17 +2417,6 @@
 						},
 						{
 							"fullDescription": {
-								"text": "The code contains a class with sensitive data, but the class does not explicitly deny serialization. The data can be accessed by serializing the class through another class."
-							},
-							"guid": "fdc81496-9d22-3cc0-a286-79ad12ba2b74",
-							"helpUri": "https://cwe.mitre.org/data/definitions/499.html",
-							"id": "499",
-							"shortDescription": {
-								"text": "Serializable Class Containing Sensitive Data"
-							}
-						},
-						{
-							"fullDescription": {
 								"text": "The software does not properly anticipate or handle exceptional conditions that rarely occur during normal operation of the software."
 							},
 							"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
@@ -2841,44 +2458,6 @@
 					"informationUri": "https://github.com/securego/gosec/",
 					"name": "gosec",
 					"rules": [
-						{
-							"defaultConfiguration": {
-								"level": "warning"
-							},
-							"fullDescription": {
-								"text": "Use of unsafe calls should be audited"
-							},
-							"help": {
-								"text": "Use of unsafe calls should be audited\nSeverity: LOW\nConfidence: HIGH\n"
-							},
-							"id": "G103",
-							"name": "Use of Inherently Dangerous Function",
-							"properties": {
-								"precision": "high",
-								"tags": [
-									"security",
-									"LOW"
-								]
-							},
-							"relationships": [
-								{
-									"kinds": [
-										"superset"
-									],
-									"target": {
-										"guid": "b5fcdc26-1906-39a8-aa7f-04cbe2339bce",
-										"id": "242",
-										"toolComponent": {
-											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
-											"name": "CWE"
-										}
-									}
-								}
-							],
-							"shortDescription": {
-								"text": "Use of unsafe calls should be audited"
-							}
-						},
 						{
 							"defaultConfiguration": {
 								"level": "warning"
@@ -2953,44 +2532,6 @@
 							],
 							"shortDescription": {
 								"text": "Potential HTTP request made with variable url"
-							}
-						},
-						{
-							"defaultConfiguration": {
-								"level": "error"
-							},
-							"fullDescription": {
-								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
-							},
-							"help": {
-								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern\nSeverity: MEDIUM\nConfidence: MEDIUM\n"
-							},
-							"id": "G117",
-							"name": "Serializable Class Containing Sensitive Data",
-							"properties": {
-								"precision": "medium",
-								"tags": [
-									"security",
-									"MEDIUM"
-								]
-							},
-							"relationships": [
-								{
-									"kinds": [
-										"superset"
-									],
-									"target": {
-										"guid": "fdc81496-9d22-3cc0-a286-79ad12ba2b74",
-										"id": "499",
-										"toolComponent": {
-											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
-											"name": "CWE"
-										}
-									}
-								}
-							],
-							"shortDescription": {
-								"text": "Marshaled struct field \"Password\" (JSON key \"password\") matches secret pattern"
 							}
 						},
 						{
@@ -3295,44 +2836,6 @@
 							],
 							"shortDescription": {
 								"text": "Blocklisted import crypto/md5: weak cryptographic primitive"
-							}
-						},
-						{
-							"defaultConfiguration": {
-								"level": "error"
-							},
-							"fullDescription": {
-								"text": "Command injection via taint analysis"
-							},
-							"help": {
-								"text": "Command injection via taint analysis\nSeverity: HIGH\nConfidence: HIGH\n"
-							},
-							"id": "G702",
-							"name": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
-							"properties": {
-								"precision": "high",
-								"tags": [
-									"security",
-									"HIGH"
-								]
-							},
-							"relationships": [
-								{
-									"kinds": [
-										"superset"
-									],
-									"target": {
-										"guid": "1a37bf66-7c5a-3aa0-94bb-ffae58a9e01c",
-										"id": "78",
-										"toolComponent": {
-											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
-											"name": "CWE"
-										}
-									}
-								}
-							],
-							"shortDescription": {
-								"text": "Command injection via taint analysis"
 							}
 						},
 						{

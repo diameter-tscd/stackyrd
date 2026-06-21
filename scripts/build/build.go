@@ -998,11 +998,6 @@ func main() {
 		ctx.Config.UseUPX = true
 	}
 
-	// Detect low memory before any decision points — both CLI and TUI need this
-	if err := ctx.detectLowMemory(logger); err != nil {
-		logger.Warn("Failed to detect system memory: %v", err)
-	}
-
 	// Validate archive format with fallback to default
 	if normalized, ok := validArchiveFormat(*archiveFormat); ok {
 		ctx.Config.ArchiveFormat = normalized
@@ -1033,11 +1028,16 @@ func isTerminal() bool {
 
 // runTUIBuild runs the build with the bubbletea TUI
 func runTUIBuild(ctx *BuildContext, logger *Logger) {
+	defer func() {
+		fmt.Print("\033[?25h\033[0m") // ensure cursor visible and attributes reset
+	}()
+
 	_, err := RunBuildTUI(ctx, logger)
 	if err != nil {
 		fmt.Printf("\nBuild failed: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("\n%sSUCCESS!%s Build ready at: %s\n", B_PURPLE, RESET, ctx.DistPath)
 }
 
 // runCLIBuild runs the build with plain CLI output
@@ -1051,8 +1051,8 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}{
 		{"Checking Project Path", ctx.checkPath},
 		{"Checking required tools", ctx.checkRequiredTools},
-		{"Asking user about garble", ctx.askUserAboutGarble},
 		{"Detecting System Memory", ctx.detectLowMemory},
+		{"Asking user about garble", ctx.askUserAboutGarble},
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
 		{"Archiving backup", ctx.archiveBackup},
@@ -1275,8 +1275,8 @@ func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
 	}
 
 	skipPrompt := map[string]bool{
-		"Configure Garble":          ctx.Config.UseGarble || ctx.Config.LowMemory,
-		"Configure UPX Compression": ctx.Config.UseUPX || ctx.Config.LowMemory,
+		"Configure Garble":          ctx.Config.UseGarble,
+		"Configure UPX Compression": ctx.Config.UseUPX,
 	}
 
 	stepDefs := []struct {
@@ -1314,15 +1314,7 @@ func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
 			info.promptDef = p.def
 		}
 		if st == statusSkipped {
-			if ctx.Config.LowMemory {
-				info.message = "low memory"
-			} else {
-				info.message = "enabled via flag"
-			}
-		}
-		if ctx.Config.LowMemory && sd.name == "Compress with UPX" {
-			info.status = statusSkipped
-			info.message = "low memory"
+			info.message = "enabled via flag"
 		}
 		steps[i] = info
 	}
@@ -1421,6 +1413,19 @@ func (m *BuildTuiModel) triggerCurrentStep() tea.Cmd {
 
 	if step.status == statusSkipped {
 		return m.advanceToNext()
+	}
+
+	if m.ctx.Config.LowMemory {
+		if step.isPrompt {
+			step.status = statusSkipped
+			step.message = "low memory"
+			return m.advanceToNext()
+		}
+		if step.name == "Compress with UPX" {
+			step.status = statusSkipped
+			step.message = "low memory"
+			return m.advanceToNext()
+		}
 	}
 
 	if step.isPrompt && step.status == statusPending {

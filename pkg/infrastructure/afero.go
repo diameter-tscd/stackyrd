@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
+
 	"github.com/spf13/afero"
 )
 
@@ -369,4 +372,42 @@ func GetFileSystem() afero.Fs {
 func ResetForTesting() {
 	instance = nil
 	once = sync.Once{}
+}
+
+// Name returns the component name
+func (m *aferoManager) Name() string {
+	return "Afero Filesystem"
+}
+
+// GetStatus returns the current status
+func (m *aferoManager) GetStatus() map[string]interface{} {
+	if instance == nil {
+		return map[string]interface{}{"initialized": false}
+	}
+	instance.mu.RLock()
+	defer instance.mu.RUnlock()
+	return map[string]interface{}{
+		"initialized": true,
+		"aliases":     len(instance.aliases),
+	}
+}
+
+// Close cleans up the filesystem manager
+func (m *aferoManager) Close() error {
+	return nil
+}
+
+func init() {
+	// Register as infrastructure component — uses OS filesystem by default.
+	// Call Init() separately with an embed.FS to layer embed on top.
+	RegisterComponent("afero", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+		once.Do(func() {
+			instance = &aferoManager{
+				fs:      afero.NewOsFs(),
+				aliases: make(map[string]string),
+			}
+		})
+		l.Info("Afero filesystem manager initialized (OS filesystem)")
+		return instance, nil
+	})
 }

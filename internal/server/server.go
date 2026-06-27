@@ -14,6 +14,7 @@ import (
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/metrics"
 	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
@@ -129,6 +130,12 @@ func (s *Server) Start() error {
 	serviceRegistry.Boot(s.gin)
 	s.logger.Info("All services boot successfully")
 
+	// Register Prometheus metrics endpoint
+	if s.config.Metrics.Enabled {
+		s.logger.Info("Registering Prometheus metrics endpoint", "path", s.config.Metrics.Path)
+		s.gin.GET(s.config.Metrics.Path, gin.WrapH(metrics.GetMetrics().Handler()))
+	}
+
 	// Register Swagger UI
 	if s.config.Swagger.Enabled {
 		s.logger.Info("Registering Swagger UI documentation...")
@@ -172,9 +179,14 @@ func (s *Server) setConnectionDefaults() {
 
 func (s *Server) registerHealthEndpoints() {
 	s.gin.GET("/health", func(c *gin.Context) {
+		ready := s.infraInitManager.IsReady()
+		status := "ok"
+		if !ready {
+			status = "initializing"
+		}
 		response.Success(c, map[string]interface{}{
-			"status":                  "ok",
-			"server_ready":            true,
+			"status":                  status,
+			"server_ready":            ready,
 			"infrastructure":          s.infraInitManager.GetStatus(),
 			"initialization_progress": s.infraInitManager.GetInitializationProgress(),
 		})

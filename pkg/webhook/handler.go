@@ -12,6 +12,12 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"stackyrd/config"
+	"stackyrd/pkg/infrastructure"
+	"stackyrd/pkg/logger"
+
+	"github.com/gin-gonic/gin"
 )
 
 // WebhookConfig holds webhook configuration
@@ -261,4 +267,57 @@ func (wm *WebhookManager) GetStats() map[string]interface{} {
 		"event_types": eventTypes,
 		"url":         wm.config.URL,
 	}
+}
+
+// InfrastructureComponent interface implementation
+
+func (wm *WebhookManager) Name() string {
+	return "Webhook"
+}
+
+func (wm *WebhookManager) Close() error {
+	return nil
+}
+
+func (wm *WebhookManager) GetStatus() map[string]interface{} {
+	return wm.GetStats()
+}
+
+// RouteHandlers returns HTTP routes for receiving webhooks
+func (wm *WebhookManager) RouteHandlers() []infrastructure.RouteHandler {
+	path := "/api/v1/webhook"
+	return []infrastructure.RouteHandler{
+		{
+			Path: path,
+			Mode: infrastructure.RouterCustom,
+			Handlers: []gin.HandlerFunc{
+				func(c *gin.Context) {
+					wh := NewWebhookHandler(wm)
+					wh.Handle(c.Writer, c.Request)
+				},
+			},
+		},
+	}
+}
+
+var _ infrastructure.InfrastructureComponent = (*WebhookManager)(nil)
+var _ infrastructure.RouteRegistrar = (*WebhookManager)(nil)
+
+func init() {
+	infrastructure.RegisterComponent("webhook", func(cfg *config.Config, l *logger.Logger) (infrastructure.InfrastructureComponent, error) {
+		if !cfg.Webhook.Enabled {
+			return nil, nil
+		}
+		wm := NewWebhookManager(WebhookConfig{
+			URL:        cfg.Webhook.URL,
+			Secret:     cfg.Webhook.Secret,
+			Timeout:    time.Duration(cfg.Webhook.Timeout) * time.Second,
+			MaxRetries: cfg.Webhook.MaxRetries,
+			RetryDelay: 1 * time.Second,
+			Headers:    cfg.Webhook.Headers,
+			Enabled:    true,
+		})
+		l.Info("Webhook manager initialized", "url", cfg.Webhook.URL)
+		return wm, nil
+	})
 }

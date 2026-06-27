@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
 )
 
 var _ = &Hub{} // suppress unused lint; imported by other packages
@@ -122,17 +122,17 @@ func (h *Hub) GetConnectedClients() int {
 }
 
 // HandleWebSocket handles WebSocket connections
-func HandleWebSocket(hub *Hub) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+func HandleWebSocket(hub *Hub) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("WebSocket upgrade error: %v", err)
-			return err
+			return
 		}
 
-		clientID := c.QueryParam("client_id")
+		clientID := c.Query("client_id")
 		if clientID == "" {
-			clientID = c.RealIP()
+			clientID = c.ClientIP()
 		}
 
 		client := &Client{
@@ -146,8 +146,6 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 
 		go client.writePump()
 		go client.readPump()
-
-		return nil
 	}
 }
 

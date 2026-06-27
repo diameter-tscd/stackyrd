@@ -49,7 +49,7 @@ jobs:
 
     - name: Build
       if: hashFiles('go.mod') != ''
-      run: go build -v ./cmd/app/
+      run: go run scripts/build/build.go --no-tui --verbose --timeout 1
 
     - name: Test
       if: hashFiles('go.mod') != ''

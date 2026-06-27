@@ -31,6 +31,12 @@ func setupViperDefaults() {
 	viper.SetDefault("swagger.enabled", false) // enable explicitly in config
 	viper.SetDefault("app.debug", false)       // sanitise-by-default
 	viper.SetDefault("swagger.base_path", "/swagger")
+	viper.SetDefault("metrics.enabled", false)
+	viper.SetDefault("metrics.path", "/metrics")
+	viper.SetDefault("webhook.enabled", false)
+	viper.SetDefault("webhook.timeout_seconds", 30)
+	viper.SetDefault("webhook.max_retries", 3)
+	viper.SetDefault("webhook.endpoint", "/api/v1/webhook")
 }
 
 type Config struct {
@@ -46,6 +52,8 @@ type Config struct {
 	PostgresMultiConfig PostgresMultiConfig `mapstructure:"postgres"`
 	Mongo               MongoConfig         `mapstructure:"mongo"`
 	MongoMultiConfig    MongoMultiConfig    `mapstructure:"mongo"`
+	Webhook             WebhookConfig       `mapstructure:"webhook"`
+	Metrics             MetricsConfig       `mapstructure:"metrics"`
 	Grafana             GrafanaConfig       `mapstructure:"grafana"`
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
@@ -61,6 +69,16 @@ func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
 		return enabled
 	}
 	return true // Default to enabled if not specified
+}
+
+type WebhookConfig struct {
+	Enabled    bool              `mapstructure:"enabled"`
+	URL        string            `mapstructure:"url"`
+	Secret     string            `mapstructure:"secret"`
+	Timeout    int               `mapstructure:"timeout_seconds"`
+	MaxRetries int               `mapstructure:"max_retries"`
+	Headers    map[string]string `mapstructure:"headers"`
+	Endpoint   string            `mapstructure:"endpoint"`
 }
 
 type MinIOConfig struct {
@@ -187,6 +205,11 @@ type MongoConnectionConfig struct {
 type MongoMultiConfig struct {
 	Enabled     bool                    `mapstructure:"enabled"`
 	Connections []MongoConnectionConfig `mapstructure:"connections"`
+}
+
+type MetricsConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Path    string `mapstructure:"path"`
 }
 
 type GrafanaConfig struct {

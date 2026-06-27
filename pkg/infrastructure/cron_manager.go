@@ -199,12 +199,8 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 		// Remove old job
 		c.cron.Remove(entryID)
 
-		// Add new job with same function
-		wrappedCmd := func() {
-			// This is a placeholder - in practice you'd need to store the original function
-		}
-
-		newID, err := c.cron.AddFunc(newSchedule, wrappedCmd)
+		// Re-add with the original stored callback
+		newID, err := c.cron.AddFunc(newSchedule, job.cmd)
 		if err != nil {
 			return err
 		}

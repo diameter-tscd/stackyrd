@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/ulikunitz/xz"
 )
 
@@ -80,7 +81,11 @@ type BuildConfig struct {
 	Timeout          time.Duration
 	Verbose          bool
 	ArchiveFormat    string
+	LowMemory        bool
+	MemoryTotal      uint64
 }
+
+const lowMemoryThreshold = 8 * 1024 * 1024 * 1024 // 8GB
 
 // BuildContext holds the build state
 type BuildContext struct {
@@ -821,13 +826,21 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 	if ctx.Config.UseGarble {
 		cmd = exec.Command("garble", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
 	} else {
-		cmd = exec.Command("go", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
+		args := []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath}
+		if ctx.Config.LowMemory {
+			logger.Warn("Low-memory mode: limiting compiler to 1 concurrent compile (-p=1)")
+			args = append(args, "-p=1")
+		}
+		args = append(args, MAIN_PATH)
+		cmd = exec.Command("go", args...)
 	}
 
 	// Set environment for garble
-	if ctx.Config.UseGarble {
-		cmd.Env = append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
+	env := append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
+	if ctx.Config.LowMemory {
+		env = append(env, "GOMAXPROCS=1")
 	}
+	cmd.Env = env
 
 	// Run build
 	cmd.Stdout = os.Stdout
@@ -900,6 +913,30 @@ func isDir(path string) bool {
 		return false
 	}
 	return info.IsDir()
+}
+
+// detectLowMemory checks total system RAM, sets LowMemory flag,
+// and applies low-memory build settings (disables garble, UPX, etc.).
+func (ctx *BuildContext) detectLowMemory(logger *Logger) error {
+	v, err := mem.VirtualMemory()
+	if err != nil {
+		logger.Warn("Failed to detect system memory: %v. Assuming normal mode.", err)
+		ctx.Config.LowMemory = false
+		return nil
+	}
+
+	ctx.Config.MemoryTotal = v.Total
+	ctx.Config.LowMemory = v.Total < lowMemoryThreshold
+
+	if ctx.Config.LowMemory {
+		logger.Warn("Low memory detected: %s (< 8 GB). Enabling low-memory build mode.", humanizeSize(int64(v.Total)))
+		logger.Warn("Compiler parallelism will be reduced, garble/UPX will be skipped.")
+		ctx.Config.UseGarble = false
+		ctx.Config.UseUPX = false
+	} else {
+		logger.Info("System memory: %s", humanizeSize(int64(v.Total)))
+	}
+	return nil
 }
 
 // printBanner prints the application banner
@@ -991,11 +1028,16 @@ func isTerminal() bool {
 
 // runTUIBuild runs the build with the bubbletea TUI
 func runTUIBuild(ctx *BuildContext, logger *Logger) {
+	defer func() {
+		fmt.Print("\033[?25h\033[0m") // ensure cursor visible and attributes reset
+	}()
+
 	_, err := RunBuildTUI(ctx, logger)
 	if err != nil {
 		fmt.Printf("\nBuild failed: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("\n%sSUCCESS!%s Build ready at: %s\n", B_PURPLE, RESET, ctx.DistPath)
 }
 
 // runCLIBuild runs the build with plain CLI output
@@ -1009,6 +1051,7 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}{
 		{"Checking Project Path", ctx.checkPath},
 		{"Checking required tools", ctx.checkRequiredTools},
+		{"Detecting System Memory", ctx.detectLowMemory},
 		{"Asking user about garble", ctx.askUserAboutGarble},
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
@@ -1021,10 +1064,13 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}
 
 	for i, step := range steps {
-		if step.name == "Asking user about garble" && ctx.Config.UseGarble {
+		if step.name == "Asking user about garble" && (ctx.Config.UseGarble || ctx.Config.LowMemory) {
 			continue
 		}
-		if step.name == "Asking user about UPX compression" && ctx.Config.UseUPX {
+		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.LowMemory) {
+			continue
+		}
+		if step.name == "Compressing with UPX" && ctx.Config.LowMemory {
 			continue
 		}
 
@@ -1239,6 +1285,7 @@ func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
 	}{
 		{"Check Project Path", (*BuildContext).checkPath},
 		{"Check Required Tools", (*BuildContext).checkRequiredTools},
+		{"Detect System Memory", (*BuildContext).detectLowMemory},
 		{"Configure Garble", nil},
 		{"Stop Running Process", (*BuildContext).stopRunningProcess},
 		{"Create Backup", (*BuildContext).createBackup},
@@ -1366,6 +1413,19 @@ func (m *BuildTuiModel) triggerCurrentStep() tea.Cmd {
 
 	if step.status == statusSkipped {
 		return m.advanceToNext()
+	}
+
+	if m.ctx.Config.LowMemory {
+		if step.isPrompt {
+			step.status = statusSkipped
+			step.message = "low memory"
+			return m.advanceToNext()
+		}
+		if step.name == "Compress with UPX" {
+			step.status = statusSkipped
+			step.message = "low memory"
+			return m.advanceToNext()
+		}
 	}
 
 	if step.isPrompt && step.status == statusPending {

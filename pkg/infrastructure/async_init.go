@@ -5,6 +5,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,8 @@ type InfraInitManager struct {
 	mu       sync.RWMutex
 	logger   *logger.Logger
 	doneChan chan struct{}
+	wg       sync.WaitGroup
+	ready    atomic.Bool
 }
 
 // NewInfraInitManager creates a new infrastructure initialization manager
@@ -46,10 +49,12 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 
 	// Start async health checks and monitoring (non-blocking)
 	components := registry.GetAll()
+	im.wg.Add(len(components))
 	for name, component := range components {
 		name := name
 		component := component
 		go func(compName string, comp InfrastructureComponent) {
+			defer im.wg.Done()
 			startTime := time.Now()
 			// Update status to initialized
 			im.updateStatus(compName, &InfraInitStatus{
@@ -82,8 +87,12 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 		}(name, component)
 	}
 
-	// Signal that all synchronous initialization is complete
-	close(im.doneChan)
+	// Mark as ready once all async health checks complete
+	go func() {
+		im.wg.Wait()
+		im.ready.Store(true)
+		close(im.doneChan)
+	}()
 
 	return registry
 }
@@ -137,6 +146,11 @@ func (im *InfraInitManager) WaitForInitialization(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// IsReady returns true once all components have completed their health checks
+func (im *InfraInitManager) IsReady() bool {
+	return im.ready.Load()
 }
 
 // GetInitializationProgress returns overall initialization progress (0.0 to 1.0)

@@ -54,7 +54,7 @@ on:
         type: number
         default: 3
   push:
-    branches: [main, master]
+    branches: [ci/security]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -75,6 +75,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
           ref: ${{ github.ref }}
+
+      - name: Sync with development branch
+        run: |
+          git fetch origin development
+          git reset --hard origin/development
+          echo "Synced ci/security to development@$(git rev-parse --short HEAD)"
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -265,7 +271,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: security scan report $(date '+%Y-%m-%d %H:%M:%S')"
+            git commit -m "chore: security scan report $(date '+%Y-%m-%d %H:%M:%S') [skip ci]"
             git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
             git push origin "HEAD:${{ github.ref_name }}"
           fi

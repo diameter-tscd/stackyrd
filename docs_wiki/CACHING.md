@@ -4,7 +4,7 @@ Redis-backed cache abstraction with TTL support, cache-aside pattern, and batch 
 
 ## Overview
 
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis and implements standard caching patterns. It depends on the **redis** infrastructure component for the underlying connection pool and supports synchronous and asynchronous operations with configurable TTLs.
+The `pkg/cache/` package provides a `CachingManager` that wraps go-redis and implements standard caching patterns. It depends on the **redis** infrastructure component for the underlying connection pool and supports synchronous and asynchronous operations with configurable TTLs.
 
 ## Architecture
 

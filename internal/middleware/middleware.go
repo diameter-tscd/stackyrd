@@ -10,6 +10,7 @@ import (
 	"stackyrd/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 // MiddlewareFactory creates a middleware instance
@@ -142,7 +143,13 @@ func init() {
 	})
 
 	RegisterMiddleware("permission_check", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-		return PermissionCheck(logger), nil
+		blockedMethods := viper.GetStringSlice("middleware.permission_check.blocked_methods")
+		blockedPaths := viper.GetStringSlice("middleware.permission_check.blocked_paths")
+		if len(blockedMethods) == 0 {
+			blockedMethods = []string{http.MethodDelete}
+		}
+		logger.Debug("PermissionCheck configured", "blocked_methods", blockedMethods, "blocked_paths", blockedPaths)
+		return PermissionCheckWithConfig(logger, blockedMethods, blockedPaths), nil
 	})
 }
 
@@ -184,20 +191,55 @@ func Logger(l *logger.Logger) gin.HandlerFunc {
 
 // PermissionCheck enforces "allow accept permission except data deletion"
 func PermissionCheck(l *logger.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// This middleware intercepts all requests.
-		// "Accept permission" implies we default to allow, but strictly block generic DELETE actions
-		// if they are considered "delete data".
+	return PermissionCheckWithConfig(l, []string{http.MethodDelete}, nil)
+}
 
-		if c.Request.Method == http.MethodDelete {
-			l.Warn("Blocked DELETE attempt due to permission policy", "path", c.Request.URL.Path, "ip", c.ClientIP())
-			c.JSON(http.StatusForbidden, map[string]string{
-				"error": "Permission Denied: DELETE actions are restricted.",
-			})
-			c.Abort()
-			return
+// PermissionCheckWithConfig returns a permission check middleware that blocks
+// specific HTTP methods and/or path patterns. Empty slices mean no restriction.
+// By default blocks DELETE globally — configurable via middleware config.
+func PermissionCheckWithConfig(l *logger.Logger, blockedMethods []string, blockedPaths []string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		method := c.Request.Method
+		path := c.Request.URL.Path
+
+		for _, m := range blockedMethods {
+			if method != m {
+				continue
+			}
+
+			if len(blockedPaths) == 0 {
+				l.Warn("Blocked request due to permission policy", "method", method, "path", path, "ip", c.ClientIP())
+				c.JSON(http.StatusForbidden, map[string]string{
+					"error": "Permission Denied: " + method + " actions are restricted.",
+				})
+				c.Abort()
+				return
+			}
+
+			for _, p := range blockedPaths {
+				if matchPath(path, p) {
+					l.Warn("Blocked request due to permission policy", "method", method, "path", path, "ip", c.ClientIP())
+					c.JSON(http.StatusForbidden, map[string]string{
+						"error": "Permission Denied: " + method + " on " + p + " is restricted.",
+					})
+					c.Abort()
+					return
+				}
+			}
 		}
 
 		c.Next()
 	}
+}
+
+// matchPath checks if a request path matches a pattern (prefix match with * support)
+func matchPath(path, pattern string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	n := len(pattern)
+	if n > 0 && pattern[n-1] == '*' {
+		return len(path) >= n-1 && path[:n-1] == pattern[:n-1]
+	}
+	return path == pattern
 }

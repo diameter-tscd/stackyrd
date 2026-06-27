@@ -196,7 +196,7 @@ func scanBuiltinPlugins(pCfg PluginConfig, l *logger.Logger) error {
 
 		manifestData, err := fs.ReadFile(builtinFS, manifestPath)
 		if err != nil {
-			l.Debug("Skipping plugin directory (no plugin.yaml)", "name", pluginName)
+			l.Warn("Skipping plugin directory (no plugin.yaml)", "name", pluginName)
 			continue
 		}
 

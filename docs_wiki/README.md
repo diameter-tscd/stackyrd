@@ -20,9 +20,9 @@
 | [**Metrics**](METRICS.md) | `pkg/metrics/` | Prometheus metrics, custom metrics, dashboards |
 | [**Batch Processing**](BATCH.md) | `pkg/batch/` | Batch processing with worker pools, writers, readers |
 | [**Pagination**](PAGINATION.md) | `pkg/pagination/` | Cursor-based pagination with forward/backward navigation |
-| [**Logging**](LOGGING.md) | `pkg/logging/` | Structured logging, log rotation, sampling |
+| [**Logging**](LOGGING.md) | `pkg/logger/` | Structured logging, log rotation, sampling |
 | [**Webhooks**](WEBHOOK.md) | `pkg/webhook/` | Webhook sending/receiving, HMAC signing, event handlers |
-| [**Caching**](CACHING.md) | `pkg/caching/` | Redis-backed cache with TTL, cache-aside, batch invalidation |
+| [**Caching**](CACHING.md) | `pkg/cache/` | Redis-backed cache with TTL, cache-aside, batch invalidation |
 | [**Security**](SECURITY.md) | *middleware* | Auth modes, security headers, CORS, encryption, best practices |
 
 ## Operations

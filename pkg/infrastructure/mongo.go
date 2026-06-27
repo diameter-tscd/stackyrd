@@ -42,7 +42,7 @@ func (m *MongoConnectionManager) Name() string {
 	return "MongoDB Connection Manager"
 }
 
-func NewMongoDB(cfg config.MongoConfig, l *logger.Logger) (*MongoManager, error) {
+func NewMongoDB(cfg config.MongoConnectionConfig, l *logger.Logger) (*MongoManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -100,7 +100,7 @@ func NewMongoDB(cfg config.MongoConfig, l *logger.Logger) (*MongoManager, error)
 	}, nil
 }
 
-func NewMongoConnectionManager(cfg config.MongoMultiConfig, l *logger.Logger) (*MongoConnectionManager, error) {
+func NewMongoConnectionManager(cfg config.MongoConfig, l *logger.Logger) (*MongoConnectionManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -116,14 +116,7 @@ func NewMongoConnectionManager(cfg config.MongoMultiConfig, l *logger.Logger) (*
 			continue
 		}
 
-		// Convert connection config to single config for backward compatibility
-		singleCfg := config.MongoConfig{
-			Enabled:  connCfg.Enabled,
-			URI:      connCfg.URI,
-			Database: connCfg.Database,
-		}
-
-		db, err := NewMongoDB(singleCfg, l)
+		db, err := NewMongoDB(connCfg, l)
 		if err != nil {
 			// Log error but continue with other connections
 			l.Error("Failed to create MongoDB connection", err, "name", connCfg.Name)
@@ -597,12 +590,9 @@ func (m *MongoManager) Close() error {
 
 func init() {
 	RegisterComponent("mongo", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
-		if !cfg.Mongo.Enabled && !cfg.MongoMultiConfig.Enabled {
+		if !cfg.Mongo.Enabled {
 			return nil, nil
 		}
-		if cfg.MongoMultiConfig.Enabled {
-			return NewMongoConnectionManager(cfg.MongoMultiConfig, log)
-		}
-		return NewMongoDB(cfg.Mongo, log)
+		return NewMongoConnectionManager(cfg.Mongo, log)
 	})
 }

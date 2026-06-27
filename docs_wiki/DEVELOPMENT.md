@@ -217,7 +217,7 @@ if s.bridge != nil && s.bridge.HasPlugin("inspector") {
 
 ## Using the Cache
 
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. Enable it via `caching: true` under `services:` in `config.yaml`.
+The `pkg/cache/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. Enable it via `caching: true` under `services:` in `config.yaml`.
 
 ```go
 func init() {
@@ -262,7 +262,7 @@ s.cache.Invalidate(ctx, "user:1", "user:2", "user:3")
 
 ## Using the Cache
 
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a
+The `pkg/cache/` package provides a `CachingManager` that wraps go-redis with a
 cache-aside pattern, TTL support, and batch invalidation. It is injected via
 Dependencies under the `"caching"` key.
 

@@ -41,7 +41,7 @@ func (m *PostgresConnectionManager) Name() string {
 	return "PostgreSQL Connection Manager"
 }
 
-func NewPostgresDB(cfg config.PostgresConfig) (*PostgresManager, error) {
+func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -78,7 +78,7 @@ func NewPostgresDB(cfg config.PostgresConfig) (*PostgresManager, error) {
 	}, nil
 }
 
-func NewPostgresConnectionManager(cfg config.PostgresMultiConfig) (*PostgresConnectionManager, error) {
+func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectionManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -92,18 +92,7 @@ func NewPostgresConnectionManager(cfg config.PostgresMultiConfig) (*PostgresConn
 			continue
 		}
 
-		// Convert connection config to single config for backward compatibility
-		singleCfg := config.PostgresConfig{
-			Enabled:  connCfg.Enabled,
-			Host:     connCfg.Host,
-			Port:     connCfg.Port,
-			User:     connCfg.User,
-			Password: connCfg.Password,
-			DBName:   connCfg.DBName,
-			SSLMode:  connCfg.SSLMode,
-		}
-
-		db, err := NewPostgresDB(singleCfg)
+		db, err := NewPostgresDB(connCfg)
 		if err != nil {
 			// Log error but continue with other connections
 			// Don't fail the entire manager initialization
@@ -601,12 +590,9 @@ func (p *PostgresManager) Close() error {
 
 func init() {
 	RegisterComponent("postgres", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
-		if !cfg.Postgres.Enabled && !cfg.PostgresMultiConfig.Enabled {
+		if !cfg.Postgres.Enabled {
 			return nil, nil
 		}
-		if cfg.PostgresMultiConfig.Enabled {
-			return NewPostgresConnectionManager(cfg.PostgresMultiConfig)
-		}
-		return NewPostgresDB(cfg.Postgres)
+		return NewPostgresConnectionManager(cfg.Postgres)
 	})
 }

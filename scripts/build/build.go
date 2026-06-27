@@ -81,7 +81,8 @@ type BuildConfig struct {
 	Timeout          time.Duration
 	Verbose          bool
 	ArchiveFormat    string
-	LowMemory        bool
+	SlowMode         bool
+	FastMode         bool
 	MemoryTotal      uint64
 }
 
@@ -825,8 +826,8 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 		cmd = exec.Command("garble", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
 	} else {
 		args := []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath}
-		if ctx.Config.LowMemory {
-			logger.Warn("Low-memory mode: limiting compiler to 1 concurrent compile (-p=1)")
+		if ctx.Config.SlowMode {
+			logger.Warn("Slow mode: limiting compiler to 1 concurrent compile (-p=1)")
 			args = append(args, "-p=1")
 		}
 		args = append(args, MAIN_PATH)
@@ -835,7 +836,7 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 
 	// Set environment for garble
 	env := append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
-	if ctx.Config.LowMemory {
+	if ctx.Config.SlowMode {
 		env = append(env, "GOMAXPROCS=1")
 	}
 	cmd.Env = env
@@ -913,21 +914,43 @@ func isDir(path string) bool {
 	return info.IsDir()
 }
 
-// detectLowMemory checks total system RAM, sets LowMemory flag,
-// and applies low-memory build settings (disables garble, UPX, etc.).
-func (ctx *BuildContext) detectLowMemory(logger *Logger) error {
+// detectSystemResources checks total system RAM and CPU cores, sets SlowMode
+// flag, and applies build-mode settings (disables garble, UPX, reduces parallelism).
+func (ctx *BuildContext) detectSystemResources(logger *Logger) error {
+	if ctx.Config.SlowMode {
+		logger.Info("Slow mode forced via --slow-mode flag")
+		ctx.Config.UseGarble = false
+		ctx.Config.UseUPX = false
+		return nil
+	}
+	if ctx.Config.FastMode {
+		logger.Info("Fast mode forced via --fast-mode flag")
+		return nil
+	}
+
+	cpuCores := runtime.NumCPU()
+	logger.Info("Detected %d CPU core(s)", cpuCores)
+
 	v, err := mem.VirtualMemory()
 	if err != nil {
 		logger.Warn("Failed to detect system memory: %v. Assuming normal mode.", err)
-		ctx.Config.LowMemory = false
 		return nil
 	}
 
 	ctx.Config.MemoryTotal = v.Total
-	ctx.Config.LowMemory = v.Total < lowMemoryThreshold
 
-	if ctx.Config.LowMemory {
-		logger.Warn("Low memory detected: %s (< 8 GB). Enabling low-memory build mode.", humanizeSize(int64(v.Total)))
+	lowCPU := cpuCores < 4
+	lowRAM := v.Total < lowMemoryThreshold
+
+	ctx.Config.SlowMode = lowCPU || lowRAM
+
+	if lowCPU {
+		logger.Warn("Low CPU cores detected: %d (< 4). Enabling slow build mode.", cpuCores)
+	}
+	if lowRAM {
+		logger.Warn("Low memory detected: %s (< 8 GB). Enabling slow build mode.", humanizeSize(int64(v.Total)))
+	}
+	if ctx.Config.SlowMode {
 		logger.Warn("Compiler parallelism will be reduced, garble/UPX will be skipped.")
 		ctx.Config.UseGarble = false
 		ctx.Config.UseUPX = false
@@ -962,6 +985,8 @@ func main() {
 		verbose        = flag.Bool("verbose", false, "Enable verbose logging")
 		useGarble      = flag.Bool("garble", false, "Enable garble obfuscation (skips interactive prompt)")
 		useUPX         = flag.Bool("upx", false, "Enable UPX compression (skips interactive prompt)")
+		slowMode       = flag.Bool("slow-mode", false, "Force slow build mode (reduces parallelism, skips garble/UPX)")
+		fastMode       = flag.Bool("fast-mode", false, "Force fast build mode (skips garble/UPX/backup-archive for speed)")
 		archiveFormat  = flag.String("archive-format", DefaultFormat, "Backup archive format: tar (native LZMA2, default) or 7z (requires 7z binary)")
 		noTUI          = flag.Bool("no-tui", false, "Disable TUI, use plain CLI output")
 	)
@@ -994,6 +1019,14 @@ func main() {
 	}
 	if *useUPX {
 		ctx.Config.UseUPX = true
+	}
+	if *slowMode {
+		ctx.Config.SlowMode = true
+	}
+	if *fastMode {
+		ctx.Config.FastMode = true
+		ctx.Config.UseGarble = false
+		ctx.Config.UseUPX = false
 	}
 
 	// Validate archive format with fallback to default
@@ -1049,7 +1082,7 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}{
 		{"Checking Project Path", ctx.checkPath},
 		{"Checking required tools", ctx.checkRequiredTools},
-		{"Detecting System Memory", ctx.detectLowMemory},
+		{"Detecting System Resources", ctx.detectSystemResources},
 		{"Asking user about garble", ctx.askUserAboutGarble},
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
@@ -1062,13 +1095,16 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 	}
 
 	for i, step := range steps {
-		if step.name == "Asking user about garble" && (ctx.Config.UseGarble || ctx.Config.LowMemory) {
+		if step.name == "Asking user about garble" && (ctx.Config.UseGarble || ctx.Config.SlowMode || ctx.Config.FastMode) {
 			continue
 		}
-		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.LowMemory) {
+		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.SlowMode || ctx.Config.FastMode) {
 			continue
 		}
-		if step.name == "Compressing with UPX" && ctx.Config.LowMemory {
+		if step.name == "Compressing with UPX" && (ctx.Config.SlowMode || ctx.Config.FastMode) {
+			continue
+		}
+		if step.name == "Archiving backup" && ctx.Config.FastMode {
 			continue
 		}
 
@@ -1283,7 +1319,7 @@ func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
 	}{
 		{"Check Project Path", (*BuildContext).checkPath},
 		{"Check Required Tools", (*BuildContext).checkRequiredTools},
-		{"Detect System Memory", (*BuildContext).detectLowMemory},
+		{"Detect System Resources", (*BuildContext).detectSystemResources},
 		{"Configure Garble", nil},
 		{"Stop Running Process", (*BuildContext).stopRunningProcess},
 		{"Create Backup", (*BuildContext).createBackup},
@@ -1413,17 +1449,22 @@ func (m *BuildTuiModel) triggerCurrentStep() tea.Cmd {
 		return m.advanceToNext()
 	}
 
-	if m.ctx.Config.LowMemory {
+	if m.ctx.Config.SlowMode || m.ctx.Config.FastMode {
 		if step.isPrompt {
 			step.status = statusSkipped
-			step.message = "low memory"
+			step.message = "skipped"
 			return m.advanceToNext()
 		}
 		if step.name == "Compress with UPX" {
 			step.status = statusSkipped
-			step.message = "low memory"
+			step.message = "skipped"
 			return m.advanceToNext()
 		}
+	}
+	if m.ctx.Config.FastMode && step.name == "Archive Backup" {
+		step.status = statusSkipped
+		step.message = "fast mode"
+		return m.advanceToNext()
 	}
 
 	if step.isPrompt && step.status == statusPending {

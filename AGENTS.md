@@ -87,9 +87,9 @@ stackyrd/
 │   ├── tui/                            # Terminal UI (bubbletea + lipgloss)
 │   ├── metrics/                        # Prometheus metrics
 │   ├── pagination/                     # Cursor-based pagination
-│   ├── caching/                        # Redis-backed cache abstraction
+│   ├── cache/                          # Redis-backed cache abstraction
 │   ├── batch/                          # Batch processing utilities
-│   ├── logging/                        # Log rotation, sampling, structured helpers
+│   ├── logger/                         # Log rotation, sampling, structured helpers
 │   ├── resilience/                     # Circuit breaker, health checks, retry, timeout
 │   ├── testing/                        # Test helpers and mocks
 │   ├── utils/                          # General utilities (system, http, io, date, numeric, strings, image, params, broadcast)

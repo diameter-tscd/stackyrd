@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -10,12 +12,24 @@ import (
 	"stackyrd/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func init() {
-	// Register RateLimit middleware
 	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-		// Default: 60 requests per minute
+		if cfg.Redis.Enabled {
+			logger.Info("Rate limit using Redis backend")
+			client := redis.NewClient(&redis.Options{
+				Addr:     cfg.Redis.Address,
+				Password: cfg.Redis.Password,
+				DB:       cfg.Redis.DB,
+			})
+			if err := client.Ping(context.Background()).Err(); err != nil {
+				return nil, fmt.Errorf("redis rate limiter: failed to connect: %w", err)
+			}
+			return RedisRateLimitWithConfig(client, 60, time.Minute), nil
+		}
+		logger.Info("Rate limit using in-memory backend")
 		return RateLimit(), nil
 	})
 }
@@ -175,6 +189,65 @@ func RateLimitPerUser(rate int, window time.Duration) gin.HandlerFunc {
 			return
 		}
 
+		c.Next()
+	}
+}
+
+// RedisRateLimiter implements a sliding window rate limiter using Redis sorted sets
+type RedisRateLimiter struct {
+	client *redis.Client
+	rate   int
+	window time.Duration
+}
+
+// NewRedisRateLimiter creates a new Redis-backed rate limiter
+func NewRedisRateLimiter(client *redis.Client, rate int, window time.Duration) *RedisRateLimiter {
+	return &RedisRateLimiter{
+		client: client,
+		rate:   rate,
+		window: window,
+	}
+}
+
+func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, error) {
+	now := time.Now().UnixMilli()
+	windowStart := now - rl.window.Milliseconds()
+	redisKey := "ratelimit:" + key
+
+	pipe := rl.client.Pipeline()
+
+	pipe.ZRemRangeByScore(ctx, redisKey, "0", fmt.Sprintf("%d", windowStart))
+	pipe.ZCard(ctx, redisKey)
+	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: now})
+	pipe.Expire(ctx, redisKey, rl.window)
+
+	cmders, err := pipe.Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("redis rate limiter: %w", err)
+	}
+
+	count := cmders[1].(*redis.IntCmd).Val()
+	return count < int64(rl.rate), nil
+}
+
+// RedisRateLimitWithConfig creates a Redis-backed rate limit middleware
+func RedisRateLimitWithConfig(client *redis.Client, rate int, window time.Duration) gin.HandlerFunc {
+	limiter := NewRedisRateLimiter(client, rate, window)
+
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		allowed, err := limiter.isAllowed(c.Request.Context(), ip)
+		if err != nil {
+			c.Next()
+			return
+		}
+		if !allowed {
+			response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				"retry_after": time.Now().Add(window).Unix(),
+			})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

@@ -9,7 +9,7 @@ stackyrd provides two logging subsystems:
 | Package | Purpose |
 |---------|---------|
 | `pkg/logger/` | Zerolog-based structured logger used by services and infrastructure |
-| `pkg/logging/` | Enhanced logging with rotation, sampling, structured helpers |
+| `pkg/logger/` | Enhanced logging with rotation, sampling, structured helpers |
 
 ## Application Logger (pkg/logger)
 

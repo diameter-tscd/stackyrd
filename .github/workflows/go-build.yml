@@ -3,6 +3,41 @@ name: Go Build
 on:
   push:
     branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      garble:
+        description: "Enable garble obfuscation"
+        required: false
+        default: false
+        type: boolean
+      upx:
+        description: "Enable UPX LZMA compression"
+        required: false
+        default: false
+        type: boolean
+      archive_format:
+        description: "Backup archive format"
+        required: false
+        default: "tar"
+        type: choice
+        options:
+          - "tar"
+          - "7z"
+      run_lint:
+        description: "Run golangci-lint"
+        required: false
+        default: true
+        type: boolean
+      run_tests:
+        description: "Run go test ./... after build"
+        required: false
+        default: true
+        type: boolean
+      timeout:
+        description: "Build script prompt timeout (seconds)"
+        required: false
+        default: 1
+        type: number
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,6 +56,7 @@ jobs:
         cache: true
 
     - name: Run golangci-lint
+      if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_lint == 'true' }}
       uses: golangci/golangci-lint-action@v9
       continue-on-error: true
       with:
@@ -49,9 +85,20 @@ jobs:
 
     - name: Build
       if: hashFiles('go.mod') != ''
-      run: go run scripts/build/build.go --no-tui --verbose --timeout 1
+      run: |
+        ARGS="--no-tui --verbose --timeout ${{ inputs.timeout || 1 }}"
+        if [ "${{ inputs.garble }}" = "true" ]; then
+          ARGS="$ARGS --garble"
+        fi
+        if [ "${{ inputs.upx }}" = "true" ]; then
+          ARGS="$ARGS --upx"
+        fi
+        if [ -n "${{ inputs.archive_format }}" ] && [ "${{ inputs.archive_format }}" != "tar" ]; then
+          ARGS="$ARGS --archive-format ${{ inputs.archive_format }}"
+        fi
+        go run scripts/build/build.go $ARGS
 
     - name: Test
-      if: hashFiles('go.mod') != ''
+      if: hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_tests == 'true')
       run: go test -v ./...
       continue-on-error: true

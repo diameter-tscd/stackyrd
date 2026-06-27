@@ -228,17 +228,6 @@ func (ctx *BuildContext) checkRequiredTools(logger *Logger) error {
 		ctx.Config.UseGoversioninfo = true
 	}
 
-	// Check garble
-	if err := exec.Command("garble", "-h").Run(); err != nil {
-		logger.Warn("garble not found. Installing...")
-		if err := installGarble(logger); err != nil {
-			return fmt.Errorf("failed to install garble: %w", err)
-		}
-		logger.Success("garble installed")
-	} else {
-		logger.Success("garble found")
-	}
-
 	return nil
 }
 
@@ -824,6 +813,15 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 	}
 
 	if ctx.Config.UseGarble {
+		if err := exec.Command("garble", "-h").Run(); err != nil {
+			logger.Warn("garble not found. Installing...")
+			if err := installGarble(logger); err != nil {
+				return fmt.Errorf("failed to install garble: %w", err)
+			}
+			logger.Success("garble installed")
+		} else {
+			logger.Success("garble found")
+		}
 		cmd = exec.Command("garble", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
 	} else {
 		args := []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath}

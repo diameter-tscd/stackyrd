@@ -104,8 +104,8 @@ func LoadConfigFromURL(configURL string) error {
 	}
 
 	// Check content type
-	contentType := resp.Header.Get("Content-Type")
-	if contentType != "" && !contains(contentType, "yaml") && !contains(contentType, "yml") {
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if contentType != "" && !strings.Contains(contentType, "yaml") && !strings.Contains(contentType, "yml") {
 		fmt.Fprintf(os.Stderr, "Warning: Content-Type '%s' does not indicate YAML format\n", contentType)
 	}
 
@@ -115,11 +115,6 @@ func LoadConfigFromURL(configURL string) error {
 	}
 
 	return nil
-}
-
-// contains checks if a string contains a substring (case-insensitive)
-func contains(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // PrintUsage prints the usage information for command line flags based on provided definitions

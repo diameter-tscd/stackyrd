@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"stackyrd/pkg/response"
@@ -19,31 +20,9 @@ func setupBenchRouter(numRoutes int) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	for i := 0; i < numRoutes; i++ {
-		r.GET("/bench/item/:id/"+itoa(i), func(c *gin.Context) {})
+		r.GET("/bench/item/:id/"+strconv.Itoa(i), func(c *gin.Context) {})
 	}
 	return r
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b) - 1
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
 }
 
 // ─── Bare router overhead ────────────────────────────────────────────────

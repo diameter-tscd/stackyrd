@@ -10,16 +10,15 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
-func setupProductsTestRouter(service *modules.ProductsService) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.Default()
-	group := r.Group("/api/v1")
+func setupProductsTestRouter(service *modules.ProductsService) *echo.Echo {
+	e := echo.New()
+	group := e.Group("/api/v1")
 	service.RegisterRoutes(group)
-	return r
+	return e
 }
 
 func TestProductsService_Name(t *testing.T) {

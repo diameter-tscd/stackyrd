@@ -17,7 +17,7 @@ import (
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 // WebhookConfig holds webhook configuration
@@ -290,10 +290,13 @@ func (wm *WebhookManager) RouteHandlers() []infrastructure.RouteHandler {
 		{
 			Path: path,
 			Mode: infrastructure.RouterCustom,
-			Handlers: []gin.HandlerFunc{
-				func(c *gin.Context) {
-					wh := NewWebhookHandler(wm)
-					wh.Handle(c.Writer, c.Request)
+			Handlers: []echo.MiddlewareFunc{
+				func(next echo.HandlerFunc) echo.HandlerFunc {
+					return func(c echo.Context) error {
+						wh := NewWebhookHandler(wm)
+						wh.Handle(c.Response().Writer, c.Request())
+						return nil
+					}
 				},
 			},
 		},

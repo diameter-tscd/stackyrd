@@ -13,7 +13,7 @@ import (
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -46,7 +46,7 @@ func defaultPluginConfig() PluginConfig {
 	}
 }
 
-func Init(cfg *config.Config, l *logger.Logger, rg *gin.RouterGroup) error {
+func Init(cfg *config.Config, l *logger.Logger, rg *echo.Group) error {
 	pCfg := defaultPluginConfig()
 	loadPluginConfig(&pCfg)
 

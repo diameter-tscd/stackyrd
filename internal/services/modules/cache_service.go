@@ -11,7 +11,7 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 type CacheService struct {
@@ -34,69 +34,42 @@ func (s *CacheService) Endpoints() []string { return []string{"/cache"} }
 
 type CacheRequest struct {
 	Value string `json:"value"`
-	TTL   int    `json:"ttl_seconds"` // Optional
+	TTL   int    `json:"ttl_seconds"`
 }
 
-func (s *CacheService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *CacheService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/cache")
 
-	// GET /cache/:key
 	sub.GET("/:key", s.GetCachedValue)
-
-	// POST /cache/:key
 	sub.POST("/:key", s.SetCachedValue)
 }
 
-// GetCachedValue godoc
-// @Summary Get cached value by key
-// @Description Retrieve a cached value by its key
-// @Tags cache
-// @Accept json
-// @Produce json
-// @Param key path string true "Cache key"
-// @Success 200 {object} response.Response "Success"
-// @Failure 404 {object} response.Response "Key not found or expired"
-// @Router /cache/{key} [get]
-func (s *CacheService) GetCachedValue(c *gin.Context) {
+func (s *CacheService) GetCachedValue(c echo.Context) error {
 	key := c.Param("key")
 	val, found := s.store.Get(key)
 	if !found {
-		response.NotFound(c, "Key not found or expired")
-		return
+		return response.NotFound(c, "Key not found or expired")
 	}
-	response.Success(c, map[string]string{"key": key, "value": val})
+	return response.Success(c, map[string]string{"key": key, "value": val})
 }
 
-// SetCachedValue godoc
-// @Summary Set cached value
-// @Description Store a value in the cache with optional TTL
-// @Tags cache
-// @Accept json
-// @Produce json
-// @Param key path string true "Cache key"
-// @Param request body CacheRequest true "Cache request"
-// @Success 200 {object} response.Response "Cached successfully"
-// @Failure 400 {object} response.Response "Invalid body"
-// @Router /cache/{key} [post]
-func (s *CacheService) SetCachedValue(c *gin.Context) {
+func (s *CacheService) SetCachedValue(c echo.Context) error {
 	key := c.Param("key")
 	var req CacheRequest
 	if err := request.Bind(c, &req); err != nil {
-		response.BadRequest(c, "Invalid body")
-		return
+		return response.BadRequest(c, "Invalid body")
 	}
 
 	ttl := time.Duration(req.TTL) * time.Second
 	s.store.Set(key, req.Value, ttl)
 
-	response.Success(c, map[string]string{
+	return response.Success(c, map[string]string{
 		"message": "Cached successfully",
 		"key":     key,
 		"ttl":     ttl.String(),
 	})
 }
 
-// Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("cache_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		return NewCacheService(config.Services.IsEnabled("cache_service"))

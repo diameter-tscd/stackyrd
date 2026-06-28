@@ -10,195 +10,177 @@ import (
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
+func testEchoContext(method, path string) (echo.Context, *httptest.ResponseRecorder) {
+	e := echo.New()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, nil)
+	c := e.NewContext(req, rec)
+	return c, rec
+}
+
 func TestMiddleware_CORSAllowAll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.CORSAllowAll()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Origin", "http://example.com")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Origin", "http://example.com")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
 	assert.Equal(t, "http://example.com", rec.Header().Get("Access-Control-Allow-Origin"))
 	assert.Equal(t, "true", rec.Header().Get("Access-Control-Allow-Credentials"))
 }
 
 func TestMiddleware_CORSBlockedOrigin(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.CORSWithConfig([]string{"http://trusted.com"})
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Origin", "http://evil.com")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Origin", "http://evil.com")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
 	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestMiddleware_CORSPreflight(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.CORSAllowAll()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodOptions, "/", nil)
-	c.Request.Header.Set("Origin", "http://example.com")
+	c, rec := testEchoContext(http.MethodOptions, "/")
+	c.Request().Header.Set("Origin", "http://example.com")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
 func TestMiddleware_CORSSubdomainMatch(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.CORSWithConfig([]string{"*.example.com"})
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Origin", "http://sub.example.com")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Origin", "http://sub.example.com")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
 	assert.Equal(t, "http://sub.example.com", rec.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestMiddleware_JWTRequiredValid(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	secret := "test-secret"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
 	mw := middleware.JWTRequired(secret)
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Authorization", "Bearer "+token)
+	c, _ := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Authorization", "Bearer "+token)
 
-	mw(c)
-	assert.NotEqual(t, http.StatusUnauthorized, rec.Code)
+	var called bool
+	handler := mw(func(c echo.Context) error { called = true; return nil })
+	_ = handler(c)
+	assert.True(t, called)
 }
 
 func TestMiddleware_JWTRequiredInvalid(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.JWTRequired("secret")
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Authorization", "Bearer invalid-token")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Authorization", "Bearer invalid-token")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
 func TestMiddleware_JWTRequiredMissing(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.JWTRequired("secret")
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, rec := testEchoContext(http.MethodGet, "/")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
 func TestMiddleware_JWTSetsClaims(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	secret := "test-secret"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
 	mw := middleware.JWTRequired(secret)
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Authorization", "Bearer "+token)
+	c, _ := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Authorization", "Bearer "+token)
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
-	uid, _ := c.Get("user_id")
-	uname, _ := c.Get("username")
-	role, _ := c.Get("role")
+	uid := c.Get("user_id")
+	uname := c.Get("username")
+	role := c.Get("role")
 	assert.Equal(t, "u1", uid)
 	assert.Equal(t, "testuser", uname)
 	assert.Equal(t, "admin", role)
 }
 
 func TestMiddleware_RequireRoleAllowed(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.RequireRole("admin")
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := testEchoContext(http.MethodGet, "/")
 	c.Set("role", "admin")
 
 	var called bool
-	next := func(c *gin.Context) { called = true }
-	mw(c)
-	next(c)
+	handler := mw(func(c echo.Context) error { called = true; return nil })
+	_ = handler(c)
 
 	assert.True(t, called)
 }
 
 func TestMiddleware_RequireRoleForbidden(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.RequireRole("admin")
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, rec := testEchoContext(http.MethodGet, "/")
 	c.Set("role", "user")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
 func TestMiddleware_RateLimit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.RateLimitWithConfig(3, time.Minute)
 
 	for i := 0; i < 3; i++ {
-		rec := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(rec)
-		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-		c.Request.Header.Set("X-Forwarded-For", "10.0.0.1")
+		c, rec := testEchoContext(http.MethodGet, "/")
+		c.Request().Header.Set("X-Forwarded-For", "10.0.0.1")
 
-		mw(c)
+		handler := mw(func(c echo.Context) error { return nil })
+		_ = handler(c)
 		assert.NotEqual(t, http.StatusTooManyRequests, rec.Code, "iteration %d", i)
 	}
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("X-Forwarded-For", "10.0.0.1")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("X-Forwarded-For", "10.0.0.1")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 }
 
 func TestMiddleware_SecurityHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.Security()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, rec := testEchoContext(http.MethodGet, "/")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 
 	assert.Equal(t, "default-src 'self'", rec.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
@@ -207,43 +189,34 @@ func TestMiddleware_SecurityHeaders(t *testing.T) {
 }
 
 func TestMiddleware_SecurityPermissive(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.SecurityPermissive()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, rec := testEchoContext(http.MethodGet, "/")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 }
 
 func TestMiddleware_Audit(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	l := logger.New(false, nil)
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	c, _ := testEchoContext(http.MethodGet, "/test")
 
-	handler := middleware.AuditWithConfig(l)
-	handler(c)
+	handler := middleware.AuditWithConfig(l)(func(c echo.Context) error { return nil })
+	_ = handler(c)
 }
 
 func TestMiddleware_AuditSkipsHealth(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	l := logger.New(false, nil)
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/health", nil)
+	c, _ := testEchoContext(http.MethodGet, "/health")
 
-	handler := middleware.AuditSkipHealthCheck(l)
-	handler(c)
+	handler := middleware.AuditSkipHealthCheck(l)(func(c echo.Context) error { return nil })
+	_ = handler(c)
 }
 
 func TestMiddleware_EncryptionDisabled(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
 		Encryption: config.EncryptionConfig{
 			Enabled: false,
@@ -252,35 +225,30 @@ func TestMiddleware_EncryptionDisabled(t *testing.T) {
 	l := logger.New(false, nil)
 	mw := middleware.EncryptionMiddleware(cfg, l)
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := testEchoContext(http.MethodGet, "/")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 }
 
 func TestMiddleware_GzipEncoding(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.GzipMiddleware()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	c.Request.Header.Set("Accept-Encoding", "gzip")
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Accept-Encoding", "gzip")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
 }
 
 func TestMiddleware_GzipNoEncoding(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	mw := middleware.GzipMiddleware()
 
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, rec := testEchoContext(http.MethodGet, "/")
 
-	mw(c)
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
 	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 }
 
@@ -302,9 +270,7 @@ func TestMiddleware_GenerateToken(t *testing.T) {
 }
 
 func TestMiddleware_GetUserID(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := testEchoContext(http.MethodGet, "/")
 
 	assert.Empty(t, middleware.GetUserID(c))
 
@@ -313,9 +279,7 @@ func TestMiddleware_GetUserID(t *testing.T) {
 }
 
 func TestMiddleware_GetUsername(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := testEchoContext(http.MethodGet, "/")
 
 	assert.Empty(t, middleware.GetUsername(c))
 
@@ -324,9 +288,7 @@ func TestMiddleware_GetUsername(t *testing.T) {
 }
 
 func TestMiddleware_GetUserRole(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := testEchoContext(http.MethodGet, "/")
 
 	assert.Empty(t, middleware.GetUserRole(c))
 

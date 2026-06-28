@@ -9,15 +9,13 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v4"
 )
 
 func init() {
-	// Register JWT middleware
-	RegisterMiddleware("jwt", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-		// Use config for JWT secret, fallback to default
-		secretKey := "your-secret-key" // default
+	RegisterMiddleware("jwt", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+		secretKey := "your-secret-key"
 		if cfg.Auth.Type == "jwt" && cfg.Auth.Secret != "" {
 			secretKey = cfg.Auth.Secret
 		}
@@ -25,7 +23,6 @@ func init() {
 	})
 }
 
-// JWTClaims represents the claims in a JWT token
 type JWTClaims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
@@ -34,21 +31,18 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 }
 
-// JWTConfig holds JWT configuration
 type JWTConfig struct {
 	SecretKey     string
-	TokenLookup   string // "header:Authorization", "query:token", "cookie:token"
+	TokenLookup   string
 	SigningMethod string
 }
 
-// Default JWT configuration
 var defaultJWTConfig = JWTConfig{
 	SecretKey:     "your-secret-key",
 	TokenLookup:   "header:Authorization",
 	SigningMethod: jwt.SigningMethodHS256.Name,
 }
 
-// GenerateToken creates a new JWT token
 func GenerateToken(userID, username, email, role, secretKey string, expiration time.Duration) (string, error) {
 	claims := JWTClaims{
 		UserID:   userID,
@@ -65,49 +59,44 @@ func GenerateToken(userID, username, email, role, secretKey string, expiration t
 	return token.SignedString([]byte(secretKey))
 }
 
-// JWTRequired middleware validates JWT tokens
-func JWTRequired(secretKey string) gin.HandlerFunc {
+func JWTRequired(secretKey string) echo.MiddlewareFunc {
 	config := defaultJWTConfig
 	config.SecretKey = secretKey
 	return JWT(config)
 }
 
-// JWT middleware with custom configuration
-func JWT(config JWTConfig) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token, err := extractToken(c, config.TokenLookup)
-		if err != nil {
-			response.Unauthorized(c, "Missing or invalid token")
-			c.Abort()
-			return
+func JWT(config JWTConfig) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			token, err := extractToken(c, config.TokenLookup)
+			if err != nil {
+				return response.Unauthorized(c, "Missing or invalid token")
+			}
+
+			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+				return []byte(config.SecretKey), nil
+			})
+
+			if err != nil || !parsedToken.Valid {
+				return response.Unauthorized(c, "Invalid token")
+			}
+
+			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
+				c.Set("user_id", claims.UserID)
+				c.Set("username", claims.Username)
+				c.Set("email", claims.Email)
+				c.Set("role", claims.Role)
+			}
+
+			return next(c)
 		}
-
-		parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-			return []byte(config.SecretKey), nil
-		})
-
-		if err != nil || !parsedToken.Valid {
-			response.Unauthorized(c, "Invalid token")
-			c.Abort()
-			return
-		}
-
-		if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
-			c.Set("user_id", claims.UserID)
-			c.Set("username", claims.Username)
-			c.Set("email", claims.Email)
-			c.Set("role", claims.Role)
-		}
-
-		c.Next()
 	}
 }
 
-// extractToken extracts token from header, query, or cookie
-func extractToken(c *gin.Context, tokenLookup string) (string, error) {
+func extractToken(c echo.Context, tokenLookup string) (string, error) {
 	parts := strings.Split(tokenLookup, ":")
 	if len(parts) != 2 {
-		return c.GetHeader("Authorization"), nil
+		return c.Request().Header.Get("Authorization"), nil
 	}
 
 	source := parts[0]
@@ -115,94 +104,85 @@ func extractToken(c *gin.Context, tokenLookup string) (string, error) {
 
 	switch source {
 	case "header":
-		authHeader := c.GetHeader(key)
+		authHeader := c.Request().Header.Get(key)
 		if authHeader == "" {
 			return "", errors.New("authorization header not found")
 		}
-		// Remove "Bearer " prefix
 		return strings.TrimPrefix(authHeader, "Bearer "), nil
 
 	case "query":
-		return c.Query(key), nil
+		return c.QueryParam(key), nil
 
 	case "cookie":
 		cookie, err := c.Cookie(key)
 		if err != nil {
 			return "", err
 		}
-		return cookie, nil
+		return cookie.Value, nil
 
 	default:
-		return c.GetHeader("Authorization"), nil
+		return c.Request().Header.Get("Authorization"), nil
 	}
 }
 
-// JWTOptional middleware validates JWT tokens if present, but doesn't require them
-func JWTOptional(secretKey string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token, err := extractToken(c, defaultJWTConfig.TokenLookup)
-		if err != nil {
-			c.Next()
-			return
-		}
-
-		parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-			return []byte(secretKey), nil
-		})
-
-		if err != nil || !parsedToken.Valid {
-			c.Next()
-			return
-		}
-
-		if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
-			c.Set("user_id", claims.UserID)
-			c.Set("username", claims.Username)
-			c.Set("email", claims.Email)
-			c.Set("role", claims.Role)
-		}
-
-		c.Next()
-	}
-}
-
-// RequireRole middleware checks if user has required role
-func RequireRole(roles ...string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userRole, exists := c.Get("role")
-		if !exists {
-			response.Forbidden(c, "Insufficient permissions")
-			c.Abort()
-			return
-		}
-
-		roleStr, ok := userRole.(string)
-		if !ok {
-			response.Forbidden(c, "Insufficient permissions")
-			c.Abort()
-			return
-		}
-
-		for _, role := range roles {
-			if roleStr == role {
-				c.Next()
-				return
+func JWTOptional(secretKey string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			token, err := extractToken(c, defaultJWTConfig.TokenLookup)
+			if err != nil {
+				return next(c)
 			}
-		}
 
-		response.Forbidden(c, "Insufficient permissions")
-		c.Abort()
+			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+				return []byte(secretKey), nil
+			})
+
+			if err != nil || !parsedToken.Valid {
+				return next(c)
+			}
+
+			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
+				c.Set("user_id", claims.UserID)
+				c.Set("username", claims.Username)
+				c.Set("email", claims.Email)
+				c.Set("role", claims.Role)
+			}
+
+			return next(c)
+		}
 	}
 }
 
-// RequireAdmin middleware checks if user has admin role
-func RequireAdmin() gin.HandlerFunc {
+func RequireRole(roles ...string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			userRole := c.Get("role")
+			if userRole == nil {
+				return response.Forbidden(c, "Insufficient permissions")
+			}
+
+			roleStr, ok := userRole.(string)
+			if !ok {
+				return response.Forbidden(c, "Insufficient permissions")
+			}
+
+			for _, role := range roles {
+				if roleStr == role {
+					return next(c)
+				}
+			}
+
+			return response.Forbidden(c, "Insufficient permissions")
+		}
+	}
+}
+
+func RequireAdmin() echo.MiddlewareFunc {
 	return RequireRole("admin")
 }
 
-// GetUserID retrieves user ID from context
-func GetUserID(c *gin.Context) string {
-	if id, exists := c.Get("user_id"); exists {
+func GetUserID(c echo.Context) string {
+	if id := c.Get("user_id"); id != nil {
 		if idStr, ok := id.(string); ok {
 			return idStr
 		}
@@ -210,9 +190,8 @@ func GetUserID(c *gin.Context) string {
 	return ""
 }
 
-// GetUsername retrieves username from context
-func GetUsername(c *gin.Context) string {
-	if username, exists := c.Get("username"); exists {
+func GetUsername(c echo.Context) string {
+	if username := c.Get("username"); username != nil {
 		if usernameStr, ok := username.(string); ok {
 			return usernameStr
 		}
@@ -220,9 +199,8 @@ func GetUsername(c *gin.Context) string {
 	return ""
 }
 
-// GetUserRole retrieves user role from context
-func GetUserRole(c *gin.Context) string {
-	if role, exists := c.Get("role"); exists {
+func GetUserRole(c echo.Context) string {
+	if role := c.Get("role"); role != nil {
 		if roleStr, ok := role.(string); ok {
 			return roleStr
 		}

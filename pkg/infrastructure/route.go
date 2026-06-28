@@ -1,7 +1,7 @@
 package infrastructure
 
 import (
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 type RouterMode int8
@@ -15,8 +15,8 @@ const (
 type RouteHandler struct {
 	Path     string
 	Mode     RouterMode
-	Handlers []gin.HandlerFunc
-	Handler  func(*gin.RouterGroup)
+	Handlers []echo.MiddlewareFunc
+	Handler  func(*echo.Group)
 }
 
 type RouteRegistrar interface {

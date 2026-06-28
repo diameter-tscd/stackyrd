@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v4"
 	"github.com/spf13/afero"
 )
 
-func RegisterManagementRoutes(rg *gin.RouterGroup) {
+func RegisterManagementRoutes(rg *echo.Group) {
 	rg.GET("", handleList)
 	rg.GET("/:name", handleGet)
 	rg.POST("/:name/execute", handleExecute)
@@ -20,18 +20,18 @@ func RegisterManagementRoutes(rg *gin.RouterGroup) {
 	rg.GET("/manager/status", handleManagerStatus)
 }
 
-func handleManagerStatus(c *gin.Context) {
+func handleManagerStatus(c echo.Context) error {
 	reg := GetGlobalPluginRegistry()
 	metrics := CollectMetrics(reg)
-	c.JSON(http.StatusOK, metrics)
+	return c.JSON(http.StatusOK, metrics)
 }
 
-func handleList(c *gin.Context) {
+func handleList(c echo.Context) error {
 	reg := GetGlobalPluginRegistry()
 	metas := reg.GetAllMetas()
 	allStats := reg.GetAllStats()
 
-	result := make([]gin.H, 0, len(metas))
+	result := make([]map[string]interface{}, 0, len(metas))
 	for name, meta := range metas {
 		_, loaded := reg.Get(name)
 		status := "registered"
@@ -39,7 +39,7 @@ func handleList(c *gin.Context) {
 			status = "loaded"
 		}
 
-		entry := gin.H{
+		entry := map[string]interface{}{
 			"name":        name,
 			"version":     meta.Version,
 			"description": meta.Description,
@@ -60,7 +60,7 @@ func handleList(c *gin.Context) {
 	}
 
 	metrics := CollectMetrics(reg)
-	c.JSON(http.StatusOK, gin.H{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"plugins":        result,
 		"total":          metrics.TotalPlugins,
 		"loaded":         metrics.LoadedPlugins,
@@ -73,14 +73,13 @@ func handleList(c *gin.Context) {
 	})
 }
 
-func handleGet(c *gin.Context) {
+func handleGet(c echo.Context) error {
 	name := c.Param("name")
 	reg := GetGlobalPluginRegistry()
 
 	meta, ok := reg.GetMeta(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not found"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not found"})
 	}
 
 	_, loaded := reg.Get(name)
@@ -91,7 +90,7 @@ func handleGet(c *gin.Context) {
 
 	stats, _ := reg.GetStats(name)
 
-	response := gin.H{
+	response := map[string]interface{}{
 		"name":        name,
 		"version":     meta.Version,
 		"description": meta.Description,
@@ -99,7 +98,7 @@ func handleGet(c *gin.Context) {
 		"entrypoint":  meta.Entrypoint,
 		"type":        entrypointType(meta.Entrypoint),
 		"depends_on":  meta.DependsOn,
-		"limits": gin.H{
+		"limits": map[string]interface{}{
 			"max_timeout_ms":   meta.Limits.MaxTimeoutMs,
 			"max_memory_bytes": meta.Limits.MaxMemoryBytes,
 		},
@@ -118,25 +117,24 @@ func handleGet(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, response)
 }
 
 type executeRequest struct {
 	Args map[string]interface{} `json:"args"`
 }
 
-func handleExecute(c *gin.Context) {
+func handleExecute(c echo.Context) error {
 	name := c.Param("name")
 	reg := GetGlobalPluginRegistry()
 
 	p, ok := reg.Get(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not loaded"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not loaded"})
 	}
 
 	var req executeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.Bind(&req); err != nil {
 		req.Args = make(map[string]interface{})
 	}
 	if req.Args == nil {
@@ -162,59 +160,53 @@ func handleExecute(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
 		})
-		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	return c.JSON(http.StatusOK, result)
 }
 
 type uploadScriptRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content string `json:"content"`
 }
 
-func handleUploadScript(c *gin.Context) {
+func handleUploadScript(c echo.Context) error {
 	name := c.Param("name")
 	fileName := c.Param("file")
 
 	reg := GetGlobalPluginRegistry()
 	fsys, ok := reg.GetFilesystem(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not found"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not found"})
 	}
 
 	var req uploadScriptRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "content field required"})
-		return
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{"error": "content field required"})
 	}
 
 	scriptPath := "scripts/" + fileName
 	if err := afero.WriteFile(fsys, scriptPath, []byte(req.Content), 0644); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to write script: " + err.Error()})
-		return
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to write script: " + err.Error()})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "script uploaded", "path": scriptPath})
+	return c.JSON(http.StatusOK, map[string]interface{}{"message": "script uploaded", "path": scriptPath})
 }
 
-func handleListScripts(c *gin.Context) {
+func handleListScripts(c echo.Context) error {
 	name := c.Param("name")
 	reg := GetGlobalPluginRegistry()
 	fsys, ok := reg.GetFilesystem(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not found"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not found"})
 	}
 
 	entries, err := afero.ReadDir(fsys, "scripts")
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"scripts": []string{}})
-		return
+		return c.JSON(http.StatusOK, map[string]interface{}{"scripts": []string{}})
 	}
 
 	files := make([]string, 0, len(entries))
@@ -228,28 +220,26 @@ func handleListScripts(c *gin.Context) {
 		}
 		files = append(files, name)
 	}
-	c.JSON(http.StatusOK, gin.H{"scripts": files})
+	return c.JSON(http.StatusOK, map[string]interface{}{"scripts": files})
 }
 
-func handleGetScript(c *gin.Context) {
+func handleGetScript(c echo.Context) error {
 	name := c.Param("name")
 	fileName := c.Param("file")
 
 	reg := GetGlobalPluginRegistry()
 	fsys, ok := reg.GetFilesystem(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not found"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not found"})
 	}
 
 	scriptPath := "scripts/" + fileName
 	content, err := afero.ReadFile(fsys, scriptPath)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "script not found"})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"name":    fileName,
 		"content": string(content),
 	})
@@ -269,21 +259,19 @@ func isCompiledArtifact(name string) bool {
 	return false
 }
 
-func handleUnload(c *gin.Context) {
+func handleUnload(c echo.Context) error {
 	name := c.Param("name")
 	reg := GetGlobalPluginRegistry()
 
 	p, ok := reg.Get(name)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "plugin not loaded"})
-		return
+		return c.JSON(http.StatusNotFound, map[string]interface{}{"error": "plugin not loaded"})
 	}
 
 	if err := p.Close(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to close plugin: " + err.Error()})
-		return
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to close plugin: " + err.Error()})
 	}
 
 	reg.Remove(name)
-	c.JSON(http.StatusOK, gin.H{"message": "plugin unloaded", "name": name})
+	return c.JSON(http.StatusOK, map[string]interface{}{"message": "plugin unloaded", "name": name})
 }

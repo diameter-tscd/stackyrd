@@ -117,12 +117,13 @@ mgr.Send(ctx, event)
 
 // Incoming (same manager, different endpoint)
 handler := webhook.NewWebhookHandler(mgr)
-mgr.Register("user.updated", func(e webhook.WebhookEvent) {
-    log.Printf("User updated: %v", e.Data)
+mgr.Register("user.updated", func(evt webhook.WebhookEvent) {
+    log.Printf("User updated: %v", evt.Data)
 })
 
-r.POST("/webhook", func(c *gin.Context) {
-    handler.Handle(c.Writer, c.Request)
+r.POST("/webhook", func(c echo.Context) error {
+    handler.Handle(c.Response().Writer, c.Request())
+    return nil
 })
 ```
 

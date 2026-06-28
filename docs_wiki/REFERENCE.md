@@ -176,7 +176,7 @@ type Service interface {
     WireName() string
     Enabled() bool
     Endpoints() []string
-    RegisterRoutes(*gin.RouterGroup)
+    RegisterRoutes(*echo.Group)
     Get() interface{}
 }
 ```

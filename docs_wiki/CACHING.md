@@ -26,11 +26,11 @@ The `CachingManager` is the primary entry point. It wraps go-redis and provides 
 ### Creating a Manager
 
 ```go
-import "stackyrd/pkg/caching"
+import "stackyrd/pkg/cache"
 
 // CachingManager wraps go-redis and uses the infrastructure RedisManager.
 // Create via the factory with a config section.
-manager := caching.NewManager(cfg.Caching, redisClient)
+manager := cache.NewManager(cfg.Caching, redisClient)
 ```
 
 ### Basic Operations
@@ -200,10 +200,10 @@ type CachingConfig struct {
 type UserService struct {
     enabled bool
     logger  *logger.Logger
-    cache   *caching.CachingManager
+    cache   *cache.CachingManager
 }
 
-func (s *UserService) GetUser(c *gin.Context) {
+func (s *UserService) GetUser(c echo.Context) error {
     id := c.Param("id")
 
     var user User
@@ -214,7 +214,7 @@ func (s *UserService) GetUser(c *gin.Context) {
         s.cache.SetJSON(c.Request.Context(), "user:"+id, user, 5*time.Minute)
     }
 
-    response.Success(c, user)
+    return response.Success(c, user)
 }
 ```
 
@@ -225,9 +225,9 @@ The `CachingManager` is available via the `Dependencies` bag as `"caching"`:
 ```go
 func init() {
     registry.RegisterService("users", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var manager *caching.CachingManager
+        var manager *cache.CachingManager
         if m, ok := deps.Get("caching"); ok {
-            manager, _ = m.(*caching.CachingManager)
+            manager, _ = m.(*cache.CachingManager)
         }
         return NewUserService(cfg.Services.IsEnabled("users"), log, manager)
     })

@@ -8,7 +8,7 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 {{IMPORTS}}
 )
 
@@ -39,7 +39,7 @@ func (s *{{SERVICE_NAME}}) Endpoints() []string {
 }
 
 {{SWAGGER_ANNOTATIONS}}
-func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
 	{
 		sub.GET("", s.listHandler)
@@ -48,16 +48,16 @@ func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // listHandler handles GET /{{SERVICE_NAME_LOWER}}
-func (s *{{SERVICE_NAME}}) listHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) listHandler(c echo.Context) error {
 	// TODO: Implement list logic
-	response.Success(c, []interface{}{}, "List endpoint")
+	return response.Success(c, []interface{}{}, "List endpoint")
 }
 
 // getHandler handles GET /{{SERVICE_NAME_LOWER}}/:id
-func (s *{{SERVICE_NAME}}) getHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) getHandler(c echo.Context) error {
 	// TODO: Implement get logic
 	id := c.Param("id")
-	response.Success(c, map[string]string{"id": id}, "Get endpoint")
+	return response.Success(c, map[string]string{"id": id}, "Get endpoint")
 }
 
 {{INIT_FUNCTION}}

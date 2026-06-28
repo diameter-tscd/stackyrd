@@ -7,18 +7,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
-// NewTestGin creates a new Gin engine for testing
-func NewTestGin() *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	return gin.New()
+// NewTestEcho creates a new Echo instance for testing
+func NewTestEcho() *echo.Echo {
+	return echo.New()
 }
 
 // NewTestContext creates a new test context with the given method, path, and body
-func NewTestContext(method, path string, body interface{}) (*gin.Context, *httptest.ResponseRecorder) {
-	gin.SetMode(gin.TestMode)
+func NewTestContext(method, path string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
+	e := echo.New()
 	rec := httptest.NewRecorder()
 
 	var req *http.Request
@@ -30,14 +29,13 @@ func NewTestContext(method, path string, body interface{}) (*gin.Context, *httpt
 		req = httptest.NewRequest(method, path, nil)
 	}
 
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = req
+	c := e.NewContext(req, rec)
 	return c, rec
 }
 
 // NewTestContextWithQuery creates a test context with query parameters
-func NewTestContextWithQuery(method, path string, queryParams map[string]string) (*gin.Context, *httptest.ResponseRecorder) {
-	gin.SetMode(gin.TestMode)
+func NewTestContextWithQuery(method, path string, queryParams map[string]string) (echo.Context, *httptest.ResponseRecorder) {
+	e := echo.New()
 	rec := httptest.NewRecorder()
 
 	req := httptest.NewRequest(method, path, nil)
@@ -47,14 +45,13 @@ func NewTestContextWithQuery(method, path string, queryParams map[string]string)
 	}
 	req.URL.RawQuery = q.Encode()
 
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = req
+	c := e.NewContext(req, rec)
 	return c, rec
 }
 
 // NewTestContextWithParams creates a test context with path parameters
-func NewTestContextWithParams(method, path string, params map[string]string, body interface{}) (*gin.Context, *httptest.ResponseRecorder) {
-	gin.SetMode(gin.TestMode)
+func NewTestContextWithParams(method, path string, params map[string]string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
+	e := echo.New()
 	rec := httptest.NewRecorder()
 
 	var req *http.Request
@@ -66,12 +63,17 @@ func NewTestContextWithParams(method, path string, params map[string]string, bod
 		req = httptest.NewRequest(method, path, nil)
 	}
 
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = req
-	c.Params = make([]gin.Param, 0, len(params))
+	c := e.NewContext(req, rec)
+
+	names := make([]string, 0, len(params))
+	values := make([]string, 0, len(params))
 	for k, v := range params {
-		c.Params = append(c.Params, gin.Param{Key: k, Value: v})
+		names = append(names, k)
+		values = append(values, v)
 	}
+	c.SetParamNames(names...)
+	c.SetParamValues(values...)
+
 	return c, rec
 }
 
@@ -110,5 +112,3 @@ func AssertJSON(t *testing.T, rec *httptest.ResponseRecorder, expected map[strin
 		}
 	}
 }
-
-

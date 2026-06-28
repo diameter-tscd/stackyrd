@@ -68,6 +68,7 @@ Thumbs.db
 # Python artifacts
 *.pyc
 __pycache__/
+handler.pyc
 
 # Plugin store (runtime writable overlay)
 store/

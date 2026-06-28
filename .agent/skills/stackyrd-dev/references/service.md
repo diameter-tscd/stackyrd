@@ -1,133 +1,79 @@
 # Adding a Service
 
-Services are the primary way to add business logic and HTTP endpoints to stackyrd. They follow the **auto-registration** pattern — create a file in `internal/services/modules/`, implement the interface, register via `init()`, and toggle via `config.yaml`.
+Create `internal/services/modules/{name}_service.go` (package `modules`). Implement `interfaces.Service`, register via `init()`.
 
-## Interface Requirements
-
-Every service must implement `interfaces.Service` (`pkg/interfaces/service.go`):
+## Interface
 
 ```go
 type Service interface {
-    Name() string              // Human-readable display name
-    WireName() string          // DI wire name (snake_case, used for config key lookup)
-    Enabled() bool             // Config-driven toggle
-    Endpoints() []string       // HTTP endpoint patterns this service handles
-    RegisterRoutes(g *gin.RouterGroup)  // Register routes on the API group
-    Get() interface{}          // Return the underlying instance
+    Name() string
+    WireName() string
+    Enabled() bool
+    Endpoints() []string
+    RegisterRoutes(g *echo.Group)
+    Get() interface{}
 }
 ```
 
-## File Template
-
-Create `internal/services/modules/{name}_service.go`:
+## Skeleton
 
 ```go
 package modules
 
 import (
+    "github.com/labstack/echo/v4"
     "stackyrd/config"
     "stackyrd/pkg/interfaces"
     "stackyrd/pkg/logger"
     "stackyrd/pkg/registry"
     "stackyrd/pkg/response"
-
-    "github.com/gin-gonic/gin"
 )
 
-type {Name}Service struct {
-    enabled bool
-    logger  *logger.Logger
+type ThingService struct { cfg *config.Config; log *logger.Logger }
+
+func (s *ThingService) Name() string     { return "Thing Service" }
+func (s *ThingService) WireName() string { return "thing" }
+func (s *ThingService) Enabled() bool    { return s.cfg.Services.IsEnabled("thing_service") }
+func (s *ThingService) Endpoints() []string { return []string{"/thing", "/thing/:id"} }
+func (s *ThingService) Get() interface{} { return s }
+
+func (s *ThingService) RegisterRoutes(g *echo.Group) {
+    sub := g.Group("/thing")
+    sub.GET("", s.list)
+    sub.GET("/:id", s.get)
+    sub.POST("", s.create)
+    sub.PUT("/:id", s.update)
+    sub.DELETE("/:id", s.delete)
 }
 
-func New{Name}Service(enabled bool, logger *logger.Logger) *{Name}Service {
-    return &{Name}Service{
-        enabled: enabled,
-        logger:  logger,
-    }
-}
-
-func (s *{Name}Service) Name() string {
-    return "{Name} Service"
-}
-
-func (s *{Name}Service) WireName() string {
-    return "{wire_name}"
-}
-
-func (s *{Name}Service) Enabled() bool {
-    return s.enabled
-}
-
-func (s *{Name}Service) Endpoints() []string {
-    return []string{
-        "/{endpoint}",
-        "/{endpoint}/:id",
-    }
-}
-
-func (s *{Name}Service) Get() interface{} {
-    return s
-}
-
-func (s *{Name}Service) RegisterRoutes(g *gin.RouterGroup) {
-    sub := g.Group("/{endpoint}")
-    {
-        sub.GET("", s.list)
-        sub.GET("/:id", s.get)
-        sub.POST("", s.create)
-        sub.PUT("/:id", s.update)
-        sub.DELETE("/:id", s.delete)
-    }
-}
-
-func (s *{Name}Service) list(c *gin.Context) {
-    response.Success(c, nil, "List endpoint")
-}
-
-func (s *{Name}Service) get(c *gin.Context) {
-    response.Success(c, nil, "Get endpoint")
-}
-
-func (s *{Name}Service) create(c *gin.Context) {
-    response.Created(c, nil, "Created")
-}
-
-func (s *{Name}Service) update(c *gin.Context) {
-    response.Success(c, nil, "Updated")
-}
-
-func (s *{Name}Service) delete(c *gin.Context) {
-    response.Success(c, nil, "Deleted")
-}
+func (s *ThingService) list(c echo.Context) error   { return response.Success(c, nil, "list") }
+func (s *ThingService) get(c echo.Context) error    { return response.Success(c, nil, "get") }
+func (s *ThingService) create(c echo.Context) error { return response.Created(c, nil, "created") }
+func (s *ThingService) update(c echo.Context) error { return response.Success(c, nil, "updated") }
+func (s *ThingService) delete(c echo.Context) error { return response.Success(c, nil, "deleted") }
 
 func init() {
-    registry.RegisterService("{name}_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        return New{Name}Service(config.Services.IsEnabled("{name}_service"), logger)
+    registry.RegisterService("thing_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        return &ThingService{cfg: cfg, log: log}
     })
 }
 ```
 
-## Config Toggle
-
-Add to `services:` in `config.yaml`:
+## Config
 
 ```yaml
 services:
-  {name}_service: true
+  thing_service: true
 ```
 
-If the service accesses infrastructure components from the `Dependencies` bag, the factory function becomes:
+## Accessing Infrastructure
 
 ```go
 func init() {
-    registry.RegisterService("{name}_service", func(cfg *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        svc := New{Name}Service(cfg.Services.IsEnabled("{name}_service"), logger)
-        // Access infra components
+    registry.RegisterService("thing_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        svc := &ThingService{cfg: cfg, log: log}
         if comp, ok := deps.Get("redis"); ok {
             svc.redis = comp.(*infrastructure.RedisManager)
-        }
-        if comp, ok := deps.Get("postgres"); ok {
-            svc.postgres = comp.(*infrastructure.PostgresConnectionManager)
         }
         return svc
     })
@@ -136,83 +82,12 @@ func init() {
 
 ## Testing
 
-Write tests in `tests/services/{name}_service_test.go` (package `services`). The pattern used in existing tests uses Gin directly with `httptest`:
+Write tests in `tests/services/{name}_service_test.go`. Use `echo.New()` and `httptest` to build a router. See `tests/services/users_service_test.go` for the canonical pattern.
 
-```go
-package services
+## Patterns
 
-import (
-    "encoding/json"
-    "net/http"
-    "net/http/httptest"
-    "testing"
-
-    "stackyrd/internal/services/modules"
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/response"
-
-    "github.com/gin-gonic/gin"
-    "github.com/stretchr/testify/assert"
-)
-
-func setup{Name}TestRouter(service *modules.{Name}Service) *gin.Engine {
-    gin.SetMode(gin.TestMode)
-    r := gin.Default()
-    group := r.Group("/api/v1")
-    service.RegisterRoutes(group)
-    return r
-}
-
-func Test{Name}Service_Name(t *testing.T) {
-    l := logger.New(false, nil)
-    service := modules.New{Name}Service(true, l)
-    assert.Equal(t, "{Name} Service", service.Name())
-}
-
-func Test{Name}Service_Enabled(t *testing.T) {
-    l := logger.New(false, nil)
-    service := modules.New{Name}Service(true, l)
-    assert.True(t, service.Enabled())
-    disabledService := modules.New{Name}Service(false, l)
-    assert.False(t, disabledService.Enabled())
-}
-
-func Test{Name}Service_Endpoints(t *testing.T) {
-    l := logger.New(false, nil)
-    service := modules.New{Name}Service(true, l)
-    assert.Contains(t, service.Endpoints(), "/{endpoint}")
-}
-
-func Test{Name}Service_List(t *testing.T) {
-    l := logger.New(false, nil)
-    service := modules.New{Name}Service(true, l)
-    router := setup{Name}TestRouter(service)
-
-    req, _ := http.NewRequest("GET", "/api/v1/{endpoint}", nil)
-    w := httptest.NewRecorder()
-    router.ServeHTTP(w, req)
-
-    assert.Equal(t, http.StatusOK, w.Code)
-    var resp response.Response
-    err := json.Unmarshal(w.Body.Bytes(), &resp)
-    assert.NoError(t, err)
-    assert.True(t, resp.Success)
-}
-```
-
-## Real Examples from the Codebase
-
-Reference these existing services for concrete patterns:
-
-| File | Pattern |
-|------|---------|
-| `users_service.go` | Full CRUD with validation, pagination, mock DB, sync.Map for concurrent access |
-| `products_service.go` | Simple read-only service (minimal template) |
-| `tasks_service.go` | Event-driven with PluginBridge access |
-
-## Key Points
-
-- All handlers receive a `*gin.Context` — use `request.Bind()` for request body binding
-- Use `response` helpers for consistent API response formatting
-- For route-level middleware (e.g., auth on specific routes), apply it inside `RegisterRoutes` on the subgroup
-- For authentication on service routes, check `config.Auth.Type` — JWT and API key modes are configured globally
+- `users_service.go` — full CRUD with validation, pagination, sync.Map
+- `products_service.go` — read-only (minimal template)
+- `tasks_service.go` — event-driven with PluginBridge access
+- All handlers are `func(echo.Context) error` — use `request.Bind()` for body binding
+- Route middleware is applied on the `sub` group inside `RegisterRoutes`

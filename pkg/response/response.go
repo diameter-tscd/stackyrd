@@ -5,31 +5,28 @@ import (
 	"time"
 
 	"fmt"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"sync/atomic"
 )
 
-// Response represents the standard API response structure
 type Response struct {
 	Success       bool         `json:"success"`
-	Status        int          `json:"status"` // HTTP Status Code
+	Status        int          `json:"status"`
 	Message       string       `json:"message,omitempty"`
 	Data          interface{}  `json:"data,omitempty"`
 	Error         *ErrorDetail `json:"error,omitempty"`
 	Meta          *Meta        `json:"meta,omitempty"`
-	Timestamp     int64        `json:"timestamp"`      // Unix Timestamp
-	Datetime      string       `json:"datetime"`       // ISO8601 Datetime
-	CorrelationID string       `json:"correlation_id"` // Request ID for tracking
+	Timestamp     int64        `json:"timestamp"`
+	Datetime      string       `json:"datetime"`
+	CorrelationID string       `json:"correlation_id"`
 }
 
-// ErrorDetail represents detailed error information
 type ErrorDetail struct {
 	Code    string                 `json:"code"`
 	Message string                 `json:"message"`
 	Details map[string]interface{} `json:"details,omitempty"`
 }
 
-// Meta represents metadata for the response (pagination, etc.)
 type Meta struct {
 	Page       int                    `json:"page,omitempty"`
 	PerPage    int                    `json:"per_page,omitempty"`
@@ -38,15 +35,13 @@ type Meta struct {
 	Extra      map[string]interface{} `json:"extra,omitempty"`
 }
 
-// PaginationRequest represents standard pagination parameters
 type PaginationRequest struct {
 	Page    int    `form:"page" json:"page"`
 	PerPage int    `form:"per_page" json:"per_page"`
 	Sort    string `form:"sort" json:"sort,omitempty"`
-	Order   string `form:"order" json:"order,omitempty"` // asc, desc
+	Order   string `form:"order" json:"order,omitempty"`
 }
 
-// GetPage returns the page number (default: 1)
 func (p *PaginationRequest) GetPage() int {
 	if p.Page < 1 {
 		return 1
@@ -54,7 +49,6 @@ func (p *PaginationRequest) GetPage() int {
 	return p.Page
 }
 
-// GetPerPage returns the per_page limit (default: 10, max: 100)
 func (p *PaginationRequest) GetPerPage() int {
 	if p.PerPage < 1 {
 		return 10
@@ -65,12 +59,10 @@ func (p *PaginationRequest) GetPerPage() int {
 	return p.PerPage
 }
 
-// GetOffset calculates the offset for database queries
 func (p *PaginationRequest) GetOffset() int {
 	return (p.GetPage() - 1) * p.GetPerPage()
 }
 
-// GetOrder returns the order direction (default: desc)
 func (p *PaginationRequest) GetOrder() string {
 	if p.Order == "" {
 		return "desc"
@@ -78,15 +70,14 @@ func (p *PaginationRequest) GetOrder() string {
 	return p.Order
 }
 
-// Success sends a successful response
-func Success(c *gin.Context, data interface{}, message ...string) {
+func Success(c echo.Context, data interface{}, message ...string) error {
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	c.JSON(http.StatusOK, Response{
+	return c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
@@ -97,15 +88,14 @@ func Success(c *gin.Context, data interface{}, message ...string) {
 	})
 }
 
-// SuccessWithMeta sends a successful response with metadata
-func SuccessWithMeta(c *gin.Context, data interface{}, meta *Meta, message ...string) {
+func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...string) error {
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	c.JSON(http.StatusOK, Response{
+	return c.JSON(http.StatusOK, Response{
 		Success:       true,
 		Status:        http.StatusOK,
 		Message:       msg,
@@ -117,15 +107,14 @@ func SuccessWithMeta(c *gin.Context, data interface{}, meta *Meta, message ...st
 	})
 }
 
-// Created sends a 201 Created response
-func Created(c *gin.Context, data interface{}, message ...string) {
+func Created(c echo.Context, data interface{}, message ...string) error {
 	msg := "Resource created successfully"
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	c.JSON(http.StatusCreated, Response{
+	return c.JSON(http.StatusCreated, Response{
 		Success:       true,
 		Status:        http.StatusCreated,
 		Message:       msg,
@@ -136,85 +125,74 @@ func Created(c *gin.Context, data interface{}, message ...string) {
 	})
 }
 
-// NoContent sends a 204 No Content response
-func NoContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
+func NoContent(c echo.Context) error {
+	return c.NoContent(http.StatusNoContent)
 }
 
-// BadRequest sends a 400 Bad Request error response
-func BadRequest(c *gin.Context, message string, details ...map[string]interface{}) {
-	Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
+func BadRequest(c echo.Context, message string, details ...map[string]interface{}) error {
+	return Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
 }
 
-// Unauthorized sends a 401 Unauthorized error response
-func Unauthorized(c *gin.Context, message ...string) {
+func Unauthorized(c echo.Context, message ...string) error {
 	msg := "Unauthorized access"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
+	return Error(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
 }
 
-// Forbidden sends a 403 Forbidden error response
-func Forbidden(c *gin.Context, message ...string) {
+func Forbidden(c echo.Context, message ...string) error {
 	msg := "Access forbidden"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusForbidden, "FORBIDDEN", msg)
+	return Error(c, http.StatusForbidden, "FORBIDDEN", msg)
 }
 
-// NotFound sends a 404 Not Found error response
-func NotFound(c *gin.Context, message ...string) {
+func NotFound(c echo.Context, message ...string) error {
 	msg := "Resource not found"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusNotFound, "NOT_FOUND", msg)
+	return Error(c, http.StatusNotFound, "NOT_FOUND", msg)
 }
 
-// Conflict sends a 409 Conflict error response
-func Conflict(c *gin.Context, message string, details ...map[string]interface{}) {
-	Error(c, http.StatusConflict, "CONFLICT", message, details...)
+func Conflict(c echo.Context, message string, details ...map[string]interface{}) error {
+	return Error(c, http.StatusConflict, "CONFLICT", message, details...)
 }
 
-// ValidationError sends a 422 Unprocessable Entity error response
-func ValidationError(c *gin.Context, message string, details map[string]string) {
-	// Convert map[string]string to map[string]interface{} for the error details
+func ValidationError(c echo.Context, message string, details map[string]string) error {
 	errorDetails := make(map[string]interface{})
 	for k, v := range details {
 		errorDetails[k] = v
 	}
-	Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, errorDetails)
+	return Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, errorDetails)
 }
 
-// InternalServerError sends a 500 Internal Server Error response
-func InternalServerError(c *gin.Context, message ...string) {
+func InternalServerError(c echo.Context, message ...string) error {
 	msg := "Internal server error"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
+	return Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
 }
 
-// ServiceUnavailable sends a 503 Service Unavailable error response
-func ServiceUnavailable(c *gin.Context, message ...string) {
+func ServiceUnavailable(c echo.Context, message ...string) error {
 	msg := "Service temporarily unavailable"
 	if len(message) > 0 {
 		msg = message[0]
 	}
-	Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
+	return Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
 }
 
-// Error sends a generic error response with custom status code
-func Error(c *gin.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) {
+func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) error {
 	var errorDetails map[string]interface{}
 	if len(details) > 0 {
 		errorDetails = details[0]
 	}
 
 	now := time.Now()
-	c.JSON(statusCode, Response{
+	return c.JSON(statusCode, Response{
 		Success: false,
 		Status:  statusCode,
 		Error: &ErrorDetail{
@@ -228,23 +206,18 @@ func Error(c *gin.Context, statusCode int, errorCode string, message string, det
 	})
 }
 
-// getCorrelationID extracts or generates the correlation ID
-func getCorrelationID(c *gin.Context) string {
-	// Try standard request ID
-	id := c.GetHeader("X-Request-ID")
+func getCorrelationID(c echo.Context) string {
+	id := c.Request().Header.Get("X-Request-ID")
 	if id == "" {
-		id = c.GetHeader("X-Correlation-ID")
+		id = c.Request().Header.Get("X-Correlation-ID")
 	}
 
-	// If still empty, generate a UUID v4 without allocating via crypto/rand each call
 	if id == "" {
 		id = genUUID()
 	}
 	return id
 }
 
-// uuidCounter is an atomic counter used to generate UUID v4s without crypto/rand
-// on every call — significantly cheaper for the rare fallback path.
 var uuidCounter uint64
 
 func genUUID() string {
@@ -254,7 +227,6 @@ func genUUID() string {
 		uint32(hi>>32), uint16(hi), uint16(lo>>48), uint16(lo>>32), uint32(lo))
 }
 
-// CalculateMeta creates pagination metadata
 func CalculateMeta(page, perPage int, total int64, extra ...map[string]interface{}) *Meta {
 	totalPages := int(total) / perPage
 	if int(total)%perPage > 0 {

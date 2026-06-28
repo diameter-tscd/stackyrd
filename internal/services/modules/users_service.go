@@ -11,8 +11,8 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/labstack/echo/v4"
 )
 
 type UsersService struct {
@@ -59,62 +59,16 @@ func (s *UsersService) Get() interface{} {
 	return s
 }
 
-func (s *UsersService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *UsersService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/users")
 	{
-		// @Summary List users with pagination
-		// @Description Get a paginated list of users
-		// @Tags users
-		// @Accept json
-		// @Produce json
-		// @Param page query int false "Page number" default(1)
-		// @Param per_page query int false "Items per page" default(10)
-		// @Success 200 {object} response.Response{data=[]User} "Success"
-		// @Failure 400 {object} response.Response "Bad request"
-		// @Router /users [get]
 		sub.GET("", s.listUsers)
-
-		// @Summary Get user by ID
-		// @Description Get a specific user by ID
-		// @Tags users
-		// @Accept json
-		// @Produce json
-		// @Param id path int true "User ID"
-		// @Success 200 {object} response.Response{data=User} "Success"
-		// @Failure 404 {object} response.Response "User not found"
-		// @Router /users/{id} [get]
 		sub.GET("/:id", s.getUser)
-
-		// @Summary Create user
-		// @Description Create a new user
-		// @Tags users
-		// @Accept json
-		// @Produce json
-		// @Param user body User true "User data"
-		// @Success 201 {object} response.Response{data=User} "User created"
-		// @Failure 400 {object} response.Response "Invalid input"
-		// @Failure 422 {object} response.Response "Validation error"
-		// @Router /users [post]
 		sub.POST("", s.createUser)
-
-		// @Summary Update user
-		// @Description Update an existing user
-		// @Tags users
-		// @Accept json
-		// @Produce json
-		// @Param id path int true "User ID"
-		// @Param user body User true "User data"
-		// @Success 200 {object} response.Response{data=User} "User updated"
-		// @Failure 400 {object} response.Response "Invalid input"
-		// @Failure 404 {object} response.Response "User not found"
-		// @Router /users/{id} [put]
 		sub.PUT("/:id", s.updateUser)
-
-		// DELETE is blocked by PermissionCheck middleware
 	}
 }
 
-// Mock database — protected by usersMu for concurrent read/write safety
 var (
 	usersMu   sync.RWMutex
 	usersList = []User{
@@ -127,9 +81,22 @@ var (
 	}
 )
 
-func (s *UsersService) listUsers(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "10"))
+func (s *UsersService) listUsers(c echo.Context) error {
+	pageStr := c.QueryParam("page")
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil {
+			page = p
+		}
+	}
+
+	perPageStr := c.QueryParam("per_page")
+	perPage := 10
+	if perPageStr != "" {
+		if pp, err := strconv.Atoi(perPageStr); err == nil {
+			perPage = pp
+		}
+	}
 
 	if page < 1 {
 		page = 1
@@ -144,8 +111,7 @@ func (s *UsersService) listUsers(c *gin.Context) {
 		return len(usersList)
 	}()
 	if page > totalUsers {
-		response.BadRequest(c, "Invalid pagination parameters")
-		return
+		return response.BadRequest(c, "Invalid pagination parameters")
 	}
 
 	usersMu.RLock()
@@ -159,62 +125,57 @@ func (s *UsersService) listUsers(c *gin.Context) {
 	usersMu.RUnlock()
 
 	meta := response.CalculateMeta(page, perPage, int64(len(usersList)))
-	response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
+	return response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
 }
 
-func (s *UsersService) getUser(c *gin.Context) {
+func (s *UsersService) getUser(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 
 	usersMu.RLock()
 	u, ok := usersIdx[id]
 	usersMu.RUnlock()
 	if ok {
-		response.Success(c, *u, "User retrieved successfully")
-		return
+		return response.Success(c, *u, "User retrieved successfully")
 	}
 
-	response.NotFound(c, "User not found")
+	return response.NotFound(c, "User not found")
 }
 
-func (s *UsersService) createUser(c *gin.Context) {
+func (s *UsersService) createUser(c echo.Context) error {
 	var user User
 	if err := request.Bind(c, &user); err != nil {
 		if validationErr, ok := err.(*request.ValidationError); ok {
-			response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
 		} else {
-			response.BadRequest(c, err.Error())
+			return response.BadRequest(c, err.Error())
 		}
-		return
 	}
 
-	// Assign new ID
 	usersMu.Lock()
 	if len(usersList) >= maxUsers {
 		usersMu.Unlock()
-		response.Error(c, 503, "SERVICE_UNAVAILABLE", "User limit reached", nil)
-		return
+		return response.Error(c, 503, "SERVICE_UNAVAILABLE", "User limit reached", nil)
 	}
 	user.ID = len(usersList) + 1
 	usersList = append(usersList, user)
 	usersIdx[user.ID] = &usersList[len(usersList)-1]
 	usersMu.Unlock()
 
-	response.Created(c, user, "User created successfully")
+	return response.Created(c, user, "User created successfully")
 }
 
 const maxUsers = 10000
 
-func (s *UsersService) updateUser(c *gin.Context) {
+func (s *UsersService) updateUser(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 
 	var user User
 	if err := request.Bind(c, &user); err != nil {
 		if validationErr, ok := err.(*request.ValidationError); ok {
-			response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
+			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
 		} else {
-			response.BadRequest(c, err.Error())
+			return response.BadRequest(c, err.Error())
 		}
-		return
 	}
 
 	usersMu.Lock()
@@ -223,22 +184,18 @@ func (s *UsersService) updateUser(c *gin.Context) {
 	if ok {
 		user.ID = id
 		*u = user
-		response.Success(c, user, "User updated successfully")
-		return
+		return response.Success(c, user, "User updated successfully")
 	}
 
-	response.NotFound(c, "User not found")
+	return response.NotFound(c, "User not found")
 }
 
-// Auto-registration function - called when package is imported
 func init() {
-	// Service registration is handled by the registry package
 	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		return NewUsersService(config.Services.IsEnabled("users_service"), logger)
 	})
 }
 
-// ValidateAge is a custom validator for age
 func ValidateAge(fl validator.FieldLevel) bool {
 	age, ok := fl.Field().Interface().(int)
 	if !ok {

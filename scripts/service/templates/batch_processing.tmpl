@@ -6,7 +6,7 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 {{IMPORTS}}
 )
 
@@ -37,7 +37,7 @@ func (s *{{SERVICE_NAME}}) Endpoints() []string {
 }
 
 {{SWAGGER_ANNOTATIONS}}
-func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
 	{
 		sub.POST("/batch", s.batchHandler)
@@ -46,15 +46,15 @@ func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // batchHandler handles POST /{{SERVICE_NAME_LOWER}}/batch
-func (s *{{SERVICE_NAME}}) batchHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) batchHandler(c echo.Context) error {
 	// TODO: Implement batch processing logic
-	response.Success(c, nil, "Batch processing started")
+	return response.Success(c, nil, "Batch processing started")
 }
 
 // batchStatusHandler handles GET /{{SERVICE_NAME_LOWER}}/batch/status
-func (s *{{SERVICE_NAME}}) batchStatusHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) batchStatusHandler(c echo.Context) error {
 	// TODO: Implement batch status check logic
-	response.Success(c, map[string]interface{}{
+	return response.Success(c, map[string]interface{}{
 		"status":   "processing",
 		"progress": 0,
 	}, "Batch status")

@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"stackyrd/pkg/resilience"
+	"github.com/labstack/echo/v4"
 
-	"github.com/gin-gonic/gin"
+	"stackyrd/pkg/resilience"
 )
 
 // HTTPClient is an HTTP client with retry capabilities
@@ -206,40 +206,39 @@ func (c *HTTPClient) Delete(ctx context.Context, url string, headers map[string]
 	return c.Do(ctx, req)
 }
 
-// GetWithGin performs a GET request using gin.Context for context propagation.
+// GetWithEcho performs a GET request using echo.Context for context propagation.
 // Example:
 //
-//	resp, err := client.GetWithGin(c, "https://api.example.com/data", nil)
-func (c *HTTPClient) GetWithGin(ginCtx *gin.Context, url string, headers map[string]string) (*http.Response, error) {
-	ctx := ginCtx.Request.Context()
+//	resp, err := client.GetWithEcho(c, "https://api.example.com/data", nil)
+func (c *HTTPClient) GetWithEcho(ectx echo.Context, url string, headers map[string]string) (*http.Response, error) {
+	ctx := ectx.Request().Context()
 	return c.Get(ctx, url, headers)
 }
 
-// PostJSONWithGin performs a POST JSON request using gin.Context for context propagation.
+// PostJSONWithEcho performs a POST JSON request using echo.Context for context propagation.
 // Example:
 //
 //	data := map[string]string{"action": "restart"}
-//	resp, err := client.PostJSONWithGin(c, "https://api.example.com/action", data, nil)
-func (c *HTTPClient) PostJSONWithGin(ginCtx *gin.Context, url string, data interface{}, headers map[string]string) (*http.Response, error) {
-	ctx := ginCtx.Request.Context()
+//	resp, err := client.PostJSONWithEcho(c, "https://api.example.com/action", data, nil)
+func (c *HTTPClient) PostJSONWithEcho(ectx echo.Context, url string, data interface{}, headers map[string]string) (*http.Response, error) {
+	ctx := ectx.Request().Context()
 	return c.PostJSON(ctx, url, data, headers)
 }
 
-// RespondWithHTTPResponse sends an HTTP response from an external request through gin.
+// RespondWithHTTPResponse sends an HTTP response from an external request through echo.
 // Example:
 //
 //	resp, _ := client.Get(ctx, "https://api.example.com/data", nil)
 //	RespondWithHTTPResponse(c, resp)
-func RespondWithHTTPResponse(ginCtx *gin.Context, resp *http.Response) {
+func RespondWithHTTPResponse(ectx echo.Context, resp *http.Response) error {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		ginCtx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response body"})
-		return
+		return ectx.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to read response body"})
 	}
 
-	ginCtx.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	return ectx.Blob(resp.StatusCode, resp.Header.Get("Content-Type"), body)
 }
 
 // setHeaders sets headers on an HTTP request

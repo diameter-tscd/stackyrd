@@ -11,16 +11,15 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestRouter(service *modules.UsersService) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.Default()
-	group := r.Group("/api/v1")
+func setupTestRouter(service *modules.UsersService) *echo.Echo {
+	e := echo.New()
+	group := e.Group("/api/v1")
 	service.RegisterRoutes(group)
-	return r
+	return e
 }
 
 func TestUsersService_Name(t *testing.T) {
@@ -219,8 +218,8 @@ func TestUsersService_DeleteUserBlocked(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// DELETE should return 404 because it's not registered
-	assert.Equal(t, http.StatusNotFound, w.Code)
+	// DELETE should return 405 because the route exists but method is not allowed
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
 func TestUsersService_DisabledService(t *testing.T) {

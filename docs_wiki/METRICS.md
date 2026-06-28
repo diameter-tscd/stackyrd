@@ -9,9 +9,9 @@ Metrics are auto-collected via the singleton `metrics.GetMetrics()`. Register th
 ```go
 import "stackyrd/pkg/metrics"
 
-engine := gin.Default()
+e := echo.New()
 m := metrics.GetMetrics()
-engine.GET("/metrics", gin.WrapH(m.Handler()))
+e.GET("/metrics", echo.WrapHandler(m.Handler()))
 ```
 
 Access at `http://localhost:8080/metrics`.
@@ -80,10 +80,11 @@ Access at `http://localhost:8080/metrics`.
 ### HTTP Requests
 
 ```go
-func (s *MyService) handler(c *gin.Context) {
+func (s *MyService) handler(c echo.Context) error {
     start := time.Now()
     // ... handle request ...
     m.RecordHTTPRequest("GET", "/api/v1/users", 200, time.Since(start), reqSize, respSize)
+    return nil
 }
 ```
 

@@ -25,7 +25,7 @@ import (
     "stackyrd/pkg/logger"
     "stackyrd/pkg/registry"
     "stackyrd/pkg/response"
-    "github.com/gin-gonic/gin"
+    "github.com/labstack/echo/v4"
 )
 
 type YourService struct {
@@ -43,18 +43,17 @@ func (s *YourService) Enabled() bool       { return s.enabled }
 func (s *YourService) Endpoints() []string { return []string{"GET /your-api"} }
 func (s *YourService) Get() interface{}    { return s }
 
-func (s *YourService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *YourService) RegisterRoutes(g *echo.Group) {
     g.GET("/your-api", s.handleGet)
 }
 
-func (s *YourService) handleGet(c *gin.Context) {
-    response.Success(c, map[string]string{"msg": "Hello"})
+func (s *YourService) handleGet(c echo.Context) error {
+    return response.Success(c, map[string]string{"msg": "Hello"})
 }
 
 func init() {
     registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        helper := registry.NewServiceHelper(cfg, log, deps)
-        if !helper.IsServiceEnabled("your_service") {
+        if !cfg.Services.IsEnabled("your_service") {
             return nil
         }
         return NewYourService(true, log)
@@ -76,7 +75,7 @@ type Service interface {
     WireName() string                         // DI wire name
     Enabled() bool                            // Toggle
     Endpoints() []string                      // Endpoint patterns
-    RegisterRoutes(g *gin.RouterGroup)        // Register routes
+    RegisterRoutes(g *echo.Group)             // Register routes
     Get() interface{}                         // Return underlying instance
 }
 ```
@@ -91,15 +90,20 @@ package middleware
 import (
     "stackyrd/config"
     "stackyrd/pkg/logger"
-    "github.com/gin-gonic/gin"
+    "github.com/labstack/echo/v4"
 )
 
 func init() {
-    RegisterMiddleware("your_middleware", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-        return func(c *gin.Context) {
-            // before request
-            c.Next()
-            // after request
+    RegisterMiddleware("your_middleware", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+        return func(next echo.HandlerFunc) echo.HandlerFunc {
+            return func(c echo.Context) error {
+                // before request
+                if err := next(c); err != nil {
+                    c.Error(err)
+                }
+                // after request
+                return nil
+            }
         }, nil
     })
 }
@@ -149,17 +153,15 @@ type CreateUserRequest struct {
     Email    string `json:"email" validate:"required,email"`
 }
 
-func (s *YourService) create(c *gin.Context) {
+func (s *YourService) create(c echo.Context) error {
     var req CreateUserRequest
     if err := request.Bind(c, &req); err != nil {
         if validationErr, ok := err.(*request.ValidationError); ok {
-            response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-            return
+            return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
         }
-        response.BadRequest(c, err.Error())
-        return
+        return response.BadRequest(c, err.Error())
     }
-    response.Created(c, req)
+    return response.Created(c, req)
 }
 ```
 
@@ -217,99 +219,28 @@ if s.bridge != nil && s.bridge.HasPlugin("inspector") {
 
 ## Using the Cache
 
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. Enable it via `caching: true` under `services:` in `config.yaml`.
+The `pkg/cache/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. It is injected via Dependencies under the `"caching"` key.
 
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("my_service") {
-            return nil
-        }
-        var cm *caching.CachingManager
-        if c, ok := deps.Get("caching"); ok {
-            cm = c.(*caching.CachingManager)
-        }
-        return NewMyService(true, log, cm)
-    })
-}
-
-// Cache-aside pattern at runtime:
-func (s *MyService) getUser(ctx context.Context, id string) (*User, error) {
-    key := "user:" + id
-    var user User
-    found, err := s.cache.Get(ctx, key, &user)
-    if err != nil {
-        return nil, err
-    }
-    if found {
-        return &user, nil
-    }
-    // Miss — load from database
-    user, err := s.db.FindUser(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    // Populate cache with TTL
-    if err := s.cache.Set(ctx, key, &user, 5*time.Minute); err != nil {
-        log.Warn().Err(err).Msg("failed to cache user")
-    }
-    return &user, nil
-}
-
-// Batch invalidation:
-s.cache.Invalidate(ctx, "user:1", "user:2", "user:3")
-```
-
-## Using the Cache
-
-The `pkg/caching/` package provides a `CachingManager` that wraps go-redis with a
-cache-aside pattern, TTL support, and batch invalidation. It is injected via
-Dependencies under the `"caching"` key.
-
-Enable in `config.yaml`:
 ```yaml
 services:
   caching: true
 ```
 
 ```go
+import "stackyrd/pkg/cache"
+
 func init() {
     registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
         if !cfg.Services.IsEnabled("my_service") {
             return nil
         }
-        var cm *caching.CachingManager
+        var cm *cache.CachingManager
         if c, ok := deps.Get("caching"); ok {
-            cm = c.(*caching.CachingManager)
+            cm = c.(*cache.CachingManager)
         }
         return NewMyService(true, log, cm)
     })
 }
-
-// Cache-aside pattern at runtime:
-func (s *MyService) getUser(ctx context.Context, id string) (*User, error) {
-    key := "user:" + id
-    var user User
-    found, err := s.cache.Get(ctx, key, &user)
-    if err != nil {
-        return nil, err
-    }
-    if found {
-        return &user, nil
-    }
-    // Miss — load from database
-    user, err := s.db.FindUser(ctx, id)
-    if err != nil {
-        return nil, err
-    }
-    if err := s.cache.Set(ctx, key, &user, 5*time.Minute); err != nil {
-        return nil, err
-    }
-    return &user, nil
-}
-
-// Batch invalidation:
-s.cache.Invalidate(ctx, "user:1", "user:2", "user:3")
 ```
 
 ## Response Helpers

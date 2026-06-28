@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/labstack/echo/v4"
 )
 
 var validate *validator.Validate
@@ -25,8 +25,8 @@ func init() {
 }
 
 // Bind binds and validates request data
-func Bind(c *gin.Context, req interface{}) error {
-	if err := c.ShouldBind(req); err != nil {
+func Bind(c echo.Context, req interface{}) error {
+	if err := c.Bind(req); err != nil {
 		return fmt.Errorf("invalid request format: %w", err)
 	}
 

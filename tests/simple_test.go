@@ -13,7 +13,7 @@ import (
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -175,8 +175,7 @@ func TestRegistry_RegisterNilFactory(t *testing.T) {
 
 func TestRegistry_BootEmpty(t *testing.T) {
 	reg := registry.NewServiceRegistry(logger.New(false, nil))
-	gin.SetMode(gin.TestMode)
-	assert.NotPanics(t, func() { reg.Boot(gin.New()) })
+	assert.NotPanics(t, func() { reg.Boot(echo.New()) })
 }
 
 // Dependencies container tests

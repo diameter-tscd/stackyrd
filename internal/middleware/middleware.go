@@ -9,26 +9,23 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
+	"github.com/spf13/viper"
 )
 
-// MiddlewareFactory creates a middleware instance
-type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error)
+type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
 
-// MiddlewareRegistry manages middleware auto-registration
 type MiddlewareRegistry struct {
 	mu        sync.RWMutex
 	factories map[string]MiddlewareFactory
 	enabled   map[string]bool
 }
 
-// Global registry instance
 var (
 	globalMiddlewareRegistry *MiddlewareRegistry
 	registryOnce             sync.Once
 )
 
-// GetGlobalMiddlewareRegistry returns the singleton middleware registry
 func GetGlobalMiddlewareRegistry() *MiddlewareRegistry {
 	registryOnce.Do(func() {
 		globalMiddlewareRegistry = &MiddlewareRegistry{
@@ -39,38 +36,32 @@ func GetGlobalMiddlewareRegistry() *MiddlewareRegistry {
 	return globalMiddlewareRegistry
 }
 
-// RegisterMiddleware registers a middleware factory
 func RegisterMiddleware(name string, factory MiddlewareFactory) {
 	GetGlobalMiddlewareRegistry().Register(name, factory)
 }
 
-// Register registers a middleware factory with the registry
 func (r *MiddlewareRegistry) Register(name string, factory MiddlewareFactory) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.factories[name] = factory
-	// Default to enabled
 	r.enabled[name] = true
 }
 
-// SetEnabled sets whether a middleware is enabled
 func (r *MiddlewareRegistry) SetEnabled(name string, enabled bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.enabled[name] = enabled
 }
 
-// IsEnabled checks if a middleware is enabled
 func (r *MiddlewareRegistry) IsEnabled(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if enabled, exists := r.enabled[name]; exists {
 		return enabled
 	}
-	return true // Default to enabled if not explicitly set
+	return true
 }
 
-// ApplyConfig applies middleware configuration from config
 func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
 	if cfg.Middleware == nil {
 		return
@@ -79,15 +70,13 @@ func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Update enabled status based on config
 	for name := range r.factories {
 		r.enabled[name] = cfg.Middleware.IsEnabled(name)
 	}
 }
 
-// AutoDiscoverMiddlewares creates and returns all enabled middleware
-func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger *logger.Logger) []gin.HandlerFunc {
-	var middlewares []gin.HandlerFunc
+func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger *logger.Logger) []echo.MiddlewareFunc {
+	var middlewares []echo.MiddlewareFunc
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -112,92 +101,122 @@ func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger 
 	return middlewares
 }
 
-// Config holds middleware configuration
 type Config struct {
 	AuthType string
 	Logger   *logger.Logger
 }
 
-// InitMiddlewares registers global middlewares (legacy support)
-func InitMiddlewares(r *gin.Engine, cfg Config) {
-	// Request ID
-	r.Use(RequestID())
-
-	// Custom Logger Middleware
-	r.Use(Logger(cfg.Logger))
-
-	// Global Permission Middleware (Allow all except DELETE for demo purposes)
-	// In a real app, this might be selective
-	r.Use(PermissionCheck(cfg.Logger))
+func InitMiddlewares(e *echo.Echo, cfg Config) {
+	e.Use(RequestID())
+	e.Use(Logger(cfg.Logger))
+	e.Use(PermissionCheck(cfg.Logger))
 }
 
 func init() {
-	// Register core middlewares
-	RegisterMiddleware("request_id", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+	RegisterMiddleware("request_id", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return RequestID(), nil
 	})
 
-	RegisterMiddleware("logger", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+	RegisterMiddleware("logger", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return Logger(logger), nil
 	})
 
-	RegisterMiddleware("permission_check", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-		return PermissionCheck(logger), nil
+	RegisterMiddleware("permission_check", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+		blockedMethods := viper.GetStringSlice("middleware.permission_check.blocked_methods")
+		blockedPaths := viper.GetStringSlice("middleware.permission_check.blocked_paths")
+		if len(blockedMethods) == 0 {
+			blockedMethods = []string{http.MethodDelete}
+		}
+		logger.Debug("PermissionCheck configured", "blocked_methods", blockedMethods, "blocked_paths", blockedPaths)
+		return PermissionCheckWithConfig(logger, blockedMethods, blockedPaths), nil
 	})
 }
 
-func RequestID() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Generate request ID if not present
-		requestID := c.GetHeader("X-Request-ID")
-		if requestID == "" {
-			requestID = "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		}
-		c.Set("X-Request-ID", requestID)
-		c.Writer.Header().Set("X-Request-ID", requestID)
-		c.Next()
-	}
-}
-
-func Logger(l *logger.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-
-		c.Next()
-
-		latency := time.Since(start)
-		status := c.Writer.Status()
-		method := c.Request.Method
-		path := c.Request.URL.Path
-
-		msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
-
-		if status >= 500 {
-			l.Error(msg, nil)
-		} else if status >= 400 {
-			l.Warn(msg)
-		} else {
-			l.Info(msg)
+func RequestID() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			requestID := c.Request().Header.Get("X-Request-ID")
+			if requestID == "" {
+				requestID = "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+			}
+			c.Set("X-Request-ID", requestID)
+			c.Response().Header().Set("X-Request-ID", requestID)
+			return next(c)
 		}
 	}
 }
 
-// PermissionCheck enforces "allow accept permission except data deletion"
-func PermissionCheck(l *logger.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// This middleware intercepts all requests.
-		// "Accept permission" implies we default to allow, but strictly block generic DELETE actions
-		// if they are considered "delete data".
+func Logger(l *logger.Logger) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			start := time.Now()
 
-		if c.Request.Method == http.MethodDelete {
-			l.Warn("Blocked DELETE attempt due to permission policy", "path", c.Request.URL.Path, "ip", c.ClientIP())
-			c.JSON(http.StatusForbidden, map[string]string{
-				"error": "Permission Denied: DELETE actions are restricted.",
-			})
-			c.Abort()
-			return
+			err := next(c)
+
+			latency := time.Since(start)
+			status := c.Response().Status
+			method := c.Request().Method
+			path := c.Request().URL.Path
+
+			msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
+
+			if status >= 500 {
+				l.Error(msg, nil)
+			} else if status >= 400 {
+				l.Warn(msg)
+			} else {
+				l.Info(msg)
+			}
+
+			return err
 		}
-
-		c.Next()
 	}
+}
+
+func PermissionCheck(l *logger.Logger) echo.MiddlewareFunc {
+	return PermissionCheckWithConfig(l, []string{http.MethodDelete}, nil)
+}
+
+func PermissionCheckWithConfig(l *logger.Logger, blockedMethods []string, blockedPaths []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			method := c.Request().Method
+			path := c.Request().URL.Path
+
+			for _, m := range blockedMethods {
+				if method != m {
+					continue
+				}
+
+				if len(blockedPaths) == 0 {
+					l.Warn("Blocked request due to permission policy", "method", method, "path", path, "ip", c.RealIP())
+					return c.JSON(http.StatusForbidden, map[string]string{
+						"error": "Permission Denied: " + method + " actions are restricted.",
+					})
+				}
+
+				for _, p := range blockedPaths {
+					if matchPath(path, p) {
+						l.Warn("Blocked request due to permission policy", "method", method, "path", path, "ip", c.RealIP())
+						return c.JSON(http.StatusForbidden, map[string]string{
+							"error": "Permission Denied: " + method + " on " + p + " is restricted.",
+						})
+					}
+				}
+			}
+
+			return next(c)
+		}
+	}
+}
+
+func matchPath(path, pattern string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	n := len(pattern)
+	if n > 0 && pattern[n-1] == '*' {
+		return len(path) >= n-1 && path[:n-1] == pattern[:n-1]
+	}
+	return path == pattern
 }

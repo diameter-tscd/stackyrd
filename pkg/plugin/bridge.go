@@ -35,8 +35,10 @@ func (b *PluginBridge) GetStatus() map[string]interface{} {
 	metrics := CollectMetrics(b.registry)
 	metas := b.registry.GetAllMetas()
 	plugins := b.registry.GetAll()
+	stats := b.registry.GetAllStats()
 
 	loaded := 0
+	errored := 0
 	entries := make([]PluginSummary, 0, len(metas))
 	for name, meta := range metas {
 		_, isLoaded := plugins[name]
@@ -44,6 +46,10 @@ func (b *PluginBridge) GetStatus() map[string]interface{} {
 		if isLoaded {
 			status = "loaded"
 			loaded++
+		}
+		if s, ok := stats[name]; ok && s.Status == "error" {
+			status = "error"
+			errored++
 		}
 		entries = append(entries, PluginSummary{
 			Name:        name,
@@ -57,7 +63,8 @@ func (b *PluginBridge) GetStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"total":          len(metas),
 		"loaded":         loaded,
-		"registered":     len(metas) - loaded,
+		"error":          errored,
+		"registered":     len(metas) - loaded - errored,
 		"plugins":        entries,
 		"active_execs":   metrics.ActiveExecutions,
 		"goroutines":     metrics.GoroutineCount,
@@ -107,6 +114,7 @@ func (b *PluginBridge) Execute(name string, args map[string]interface{}) (*Resul
 func (b *PluginBridge) ListPlugins() []PluginSummary {
 	metas := b.registry.GetAllMetas()
 	plugins := b.registry.GetAll()
+	stats := b.registry.GetAllStats()
 
 	result := make([]PluginSummary, 0, len(metas))
 	for name, meta := range metas {
@@ -114,6 +122,9 @@ func (b *PluginBridge) ListPlugins() []PluginSummary {
 		status := "registered"
 		if isLoaded {
 			status = "loaded"
+		}
+		if s, ok := stats[name]; ok && s.Status == "error" {
+			status = "error"
 		}
 		result = append(result, PluginSummary{
 			Name:        name,

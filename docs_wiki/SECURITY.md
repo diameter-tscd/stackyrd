@@ -147,17 +147,16 @@ type CreateUserRequest struct {
     Password string `json:"password" validate:"required,min=8"`
 }
 
-func (s *UserService) create(c *gin.Context) {
+func (s *UserService) create(c echo.Context) error {
     var req CreateUserRequest
     if err := request.Bind(c, &req); err != nil {
         if validationErr, ok := err.(*request.ValidationError); ok {
-            response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-            return
+            return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
         }
-        response.BadRequest(c, err.Error())
-        return
+        return response.BadRequest(c, err.Error())
     }
     // safe to use req
+    return nil
 }
 ```
 

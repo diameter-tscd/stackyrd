@@ -7,31 +7,24 @@ import (
 	"stackyrd/pkg/logger"
 	"sync"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/spf13/viper"
 )
 
-// ServiceFactory creates a service instance with dependencies
 type ServiceFactory func(config *config.Config, logger *logger.Logger, deps *Dependencies) interfaces.Service
 
-// Global registry of service factories — write-once, read-many after boot
 var serviceFactories = &sync.Map{}
 
-// Global read-only registry of discovered services — write-once, read-many
 var (
 	serviceDiscovered = &sync.Map{}
-	// serviceDiscoveredMu removed: sync.Map is lock-free for reads
 )
 
-// RegisterService registers a service factory for automatic discovery
 func RegisterService(name string, factory ServiceFactory) {
-	// avoid duplicate register if service has same name
 	if _, exist := serviceFactories.Load(name); !exist && factory != nil {
 		serviceFactories.Store(name, factory)
 	}
 }
 
-// AutoDiscoverServices automatically discovers and creates all enabled services
 func AutoDiscoverServices(
 	config *config.Config,
 	logger *logger.Logger,
@@ -60,13 +53,11 @@ func AutoDiscoverServices(
 	return services
 }
 
-// ServiceRegistry holds discovered services and manages their lifecycle
 type ServiceRegistry struct {
 	services []interfaces.Service
 	logger   *logger.Logger
 }
 
-// NewServiceRegistry creates a new service registry
 func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 	return &ServiceRegistry{
 		services: make([]interfaces.Service, 0),
@@ -74,7 +65,6 @@ func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 	}
 }
 
-// GetServiceFactories returns the global service factories map for testing/debugging
 func GetServiceFactories() map[string]ServiceFactory {
 	result := make(map[string]ServiceFactory)
 	serviceFactories.Range(func(key, value interface{}) bool {
@@ -89,12 +79,10 @@ func GetService(name string) interface{} {
 	return val
 }
 
-// Register adds a service to the registry
 func (r *ServiceRegistry) Register(s interfaces.Service) {
 	r.services = append(r.services, s)
 }
 
-// RegisterServiceWithDependencies creates and registers a service with dependencies
 func (r *ServiceRegistry) RegisterServiceWithDependencies(
 	config *config.Config,
 	logger *logger.Logger,
@@ -118,14 +106,12 @@ func (r *ServiceRegistry) RegisterServiceWithDependencies(
 	return fmt.Errorf("failed to create service: %s", serviceName)
 }
 
-// GetServices returns the list of registered services
 func (r *ServiceRegistry) GetServices() []interfaces.Service {
 	return r.services
 }
 
-// Boot initializes enabled services and registers their routes
-func (r *ServiceRegistry) Boot(engine *gin.Engine) {
-	api := engine.Group(viper.GetString("server.services_endpoint"))
+func (r *ServiceRegistry) Boot(e *echo.Echo) {
+	api := e.Group(viper.GetString("server.services_endpoint"))
 
 	for _, s := range r.services {
 		if s.Enabled() {
@@ -138,10 +124,9 @@ func (r *ServiceRegistry) Boot(engine *gin.Engine) {
 	}
 }
 
-// BootService boots a single service (for dynamic registration)
-func (r *ServiceRegistry) BootService(engine *gin.Engine, s interfaces.Service) {
+func (r *ServiceRegistry) BootService(e *echo.Echo, s interfaces.Service) {
 	if s.Enabled() {
-		api := engine.Group(viper.GetString("server.services_endpoint"))
+		api := e.Group(viper.GetString("server.services_endpoint"))
 		r.logger.Info("Starting Service...", "service", s.Name())
 		s.RegisterRoutes(api)
 		r.logger.Info("Service Started", "service", s.Name())

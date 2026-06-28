@@ -6,17 +6,15 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 func init() {
-	// Register Security middleware
-	RegisterMiddleware("security", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+	RegisterMiddleware("security", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return Security(), nil
 	})
 }
 
-// SecurityConfig holds security headers configuration
 type SecurityConfig struct {
 	ContentSecurityPolicy         string
 	XContentTypeOptions           string
@@ -28,7 +26,6 @@ type SecurityConfig struct {
 	StrictTransportSecurityMaxAge int
 }
 
-// Default security configuration
 var defaultSecurityConfig = SecurityConfig{
 	ContentSecurityPolicy:         "default-src 'self'",
 	XContentTypeOptions:           "nosniff",
@@ -37,32 +34,31 @@ var defaultSecurityConfig = SecurityConfig{
 	ReferrerPolicy:                "strict-origin-when-cross-origin",
 	PermissionsPolicy:             "camera=(), microphone=(), geolocation=()",
 	StrictTransportSecurity:       "max-age=%d; includeSubDomains",
-	StrictTransportSecurityMaxAge: 31536000, // 1 year
+	StrictTransportSecurityMaxAge: 31536000,
 }
 
-// Security middleware with default strict settings
-func Security() gin.HandlerFunc {
+func Security() echo.MiddlewareFunc {
 	return SecurityWithConfig(defaultSecurityConfig)
 }
 
-// SecurityWithConfig middleware with custom settings
-func SecurityWithConfig(config SecurityConfig) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Writer.Header().Set("Content-Security-Policy", config.ContentSecurityPolicy)
-		c.Writer.Header().Set("X-Content-Type-Options", config.XContentTypeOptions)
-		c.Writer.Header().Set("X-Frame-Options", config.XFrameOptions)
-		c.Writer.Header().Set("X-XSS-Protection", config.XXSSProtection)
-		c.Writer.Header().Set("Referrer-Policy", config.ReferrerPolicy)
-		c.Writer.Header().Set("Permissions-Policy", config.PermissionsPolicy)
-		c.Writer.Header().Set("Strict-Transport-Security",
-			fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge))
+func SecurityWithConfig(config SecurityConfig) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Response().Header().Set("Content-Security-Policy", config.ContentSecurityPolicy)
+			c.Response().Header().Set("X-Content-Type-Options", config.XContentTypeOptions)
+			c.Response().Header().Set("X-Frame-Options", config.XFrameOptions)
+			c.Response().Header().Set("X-XSS-Protection", config.XXSSProtection)
+			c.Response().Header().Set("Referrer-Policy", config.ReferrerPolicy)
+			c.Response().Header().Set("Permissions-Policy", config.PermissionsPolicy)
+			c.Response().Header().Set("Strict-Transport-Security",
+				fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge))
 
-		c.Next()
+			return next(c)
+		}
 	}
 }
 
-// SecurityPermissive middleware for development environments
-func SecurityPermissive() gin.HandlerFunc {
+func SecurityPermissive() echo.MiddlewareFunc {
 	return SecurityWithConfig(SecurityConfig{
 		ContentSecurityPolicy:         "default-src 'self' 'unsafe-inline' 'unsafe-eval'",
 		XContentTypeOptions:           "nosniff",

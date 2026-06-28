@@ -6,7 +6,7 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 {{IMPORTS}}
 )
 
@@ -37,7 +37,7 @@ func (s *{{SERVICE_NAME}}) Endpoints() []string {
 }
 
 {{SWAGGER_ANNOTATIONS}}
-func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
 	{
 		sub.GET("/ws", s.wsHandler)
@@ -45,10 +45,10 @@ func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // wsHandler handles GET /{{SERVICE_NAME_LOWER}}/ws
-func (s *{{SERVICE_NAME}}) wsHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) wsHandler(c echo.Context) error {
 	// TODO: Implement WebSocket upgrade logic
 	// Use github.com/gorilla/websocket for WebSocket support
-	response.Success(c, nil, "WebSocket endpoint ready")
+	return response.Success(c, nil, "WebSocket endpoint ready")
 }
 
 {{INIT_FUNCTION}}

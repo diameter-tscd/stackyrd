@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -9,18 +11,29 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 )
 
 func init() {
-	// Register RateLimit middleware
-	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
-		// Default: 60 requests per minute
+	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+		if cfg.Redis.Enabled {
+			logger.Info("Rate limit using Redis backend")
+			client := redis.NewClient(&redis.Options{
+				Addr:     cfg.Redis.Address,
+				Password: cfg.Redis.Password,
+				DB:       cfg.Redis.DB,
+			})
+			if err := client.Ping(context.Background()).Err(); err != nil {
+				return nil, fmt.Errorf("redis rate limiter: failed to connect: %w", err)
+			}
+			return RedisRateLimitWithConfig(client, 60, time.Minute), nil
+		}
+		logger.Info("Rate limit using in-memory backend")
 		return RateLimit(), nil
 	})
 }
 
-// RateLimiter implements a simple token bucket rate limiter
 type RateLimiter struct {
 	visitors map[string]*visitor
 	mu       sync.RWMutex
@@ -55,7 +68,6 @@ func startRateLimitCleanup() {
 	})
 }
 
-// NewRateLimiter creates a new rate limiter
 func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
 		visitors: make(map[string]*visitor),
@@ -97,9 +109,6 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 
 	rl.mu.RLock()
 	v, exists := rl.visitors[ip]
-	// Fast path: existing visitor, still within the window → upgrade to write
-	// lock to increment count.  We must verify `exists` before ever touching
-	// `v` (a nil dereference here causes a hard panic).
 	if exists && now.Sub(v.lastSeen) <= rl.window {
 		rl.mu.RUnlock()
 
@@ -112,16 +121,11 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 		v.lastSeen = now
 		return true
 	}
-	// Slow path: new visitor or window expired — create/reset entry under
-	// write lock.  v may be nil here (first visit); only dereference `v`
-	// after the Lock/Exists re-check below.
 	rl.mu.RUnlock()
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	// Double-check after acquiring write lock — another goroutine may have
-	// raced in and created the entry already.
 	if v, exists = rl.visitors[ip]; exists && now.Sub(v.lastSeen) <= rl.window {
 		v.count++
 		v.lastSeen = now
@@ -132,49 +136,100 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 	return true
 }
 
-// RateLimit middleware with default settings (60 requests per minute)
-func RateLimit() gin.HandlerFunc {
+func RateLimit() echo.MiddlewareFunc {
 	return RateLimitWithConfig(60, time.Minute)
 }
 
-// RateLimitWithConfig middleware with custom settings
-func RateLimitWithConfig(rate int, window time.Duration) gin.HandlerFunc {
+func RateLimitWithConfig(rate int, window time.Duration) echo.MiddlewareFunc {
 	limiter := NewRateLimiter(rate, window)
 
-	return func(c *gin.Context) {
-		ip := c.ClientIP()
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ip := c.RealIP()
 
-		if !limiter.isAllowed(ip) {
-			response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
-				"retry_after": time.Now().Add(window).Unix(),
-			})
-			c.Abort()
-			return
+			if !limiter.isAllowed(ip) {
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+					"retry_after": time.Now().Add(window).Unix(),
+				})
+			}
+
+			return next(c)
 		}
-
-		c.Next()
 	}
 }
 
-// RateLimitPerUser middleware based on user ID (requires JWT)
-func RateLimitPerUser(rate int, window time.Duration) gin.HandlerFunc {
+func RateLimitPerUser(rate int, window time.Duration) echo.MiddlewareFunc {
 	limiter := NewRateLimiter(rate, window)
 
-	return func(c *gin.Context) {
-		userID, exists := c.Get("user_id")
-		if !exists {
-			c.Next()
-			return
-		}
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			userID := c.Get("user_id")
+			if userID == nil {
+				return next(c)
+			}
 
-		if !limiter.isAllowed(userID.(string)) {
-			response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
-				"retry_after": time.Now().Add(window).Unix(),
-			})
-			c.Abort()
-			return
-		}
+			if !limiter.isAllowed(userID.(string)) {
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+					"retry_after": time.Now().Add(window).Unix(),
+				})
+			}
 
-		c.Next()
+			return next(c)
+		}
+	}
+}
+
+type RedisRateLimiter struct {
+	client *redis.Client
+	rate   int
+	window time.Duration
+}
+
+func NewRedisRateLimiter(client *redis.Client, rate int, window time.Duration) *RedisRateLimiter {
+	return &RedisRateLimiter{
+		client: client,
+		rate:   rate,
+		window: window,
+	}
+}
+
+func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, error) {
+	now := time.Now().UnixMilli()
+	windowStart := now - rl.window.Milliseconds()
+	redisKey := "ratelimit:" + key
+
+	pipe := rl.client.Pipeline()
+
+	pipe.ZRemRangeByScore(ctx, redisKey, "0", fmt.Sprintf("%d", windowStart))
+	pipe.ZCard(ctx, redisKey)
+	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: now})
+	pipe.Expire(ctx, redisKey, rl.window)
+
+	cmders, err := pipe.Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("redis rate limiter: %w", err)
+	}
+
+	count := cmders[1].(*redis.IntCmd).Val()
+	return count < int64(rl.rate), nil
+}
+
+func RedisRateLimitWithConfig(client *redis.Client, rate int, window time.Duration) echo.MiddlewareFunc {
+	limiter := NewRedisRateLimiter(client, rate, window)
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ip := c.RealIP()
+			allowed, err := limiter.isAllowed(c.Request().Context(), ip)
+			if err != nil {
+				return next(c)
+			}
+			if !allowed {
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+					"retry_after": time.Now().Add(window).Unix(),
+				})
+			}
+			return next(c)
+		}
 	}
 }

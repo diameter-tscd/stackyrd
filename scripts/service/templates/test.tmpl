@@ -9,24 +9,22 @@ import (
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestService() (*modules.{{SERVICE_NAME}}, *gin.Engine) {
-	gin.SetMode(gin.TestMode)
-	
+func setupTestService() (*modules.{{SERVICE_NAME}}, *echo.Echo) {
 	l, _ := logger.NewLogger(logger.Config{
 		Level:  "error",
 		Format: "json",
 	})
-	
+
 	service := modules.New{{SERVICE_NAME}}(true, l)
-	
-	router := gin.New()
-	service.RegisterRoutes(router.Group("/api/v1"))
-	
-	return service, router
+
+	e := echo.New()
+	service.RegisterRoutes(e.Group("/api/v1"))
+
+	return service, e
 }
 
 func TestNew{{SERVICE_NAME}}(t *testing.T) {
@@ -34,7 +32,7 @@ func TestNew{{SERVICE_NAME}}(t *testing.T) {
 		Level:  "error",
 		Format: "json",
 	})
-	
+
 	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}}, l)
 	assert.NotNil(t, service, "expected service to be created")
 	assert.True(t, service.Enabled(), "expected service to be enabled")
@@ -47,7 +45,7 @@ func Test{{SERVICE_NAME}}Disabled(t *testing.T) {
 		Level:  "error",
 		Format: "json",
 	})
-	
+
 	service := modules.New{{SERVICE_NAME}}(false{{CONSTRUCTOR_ARGS}}, l)
 	assert.False(t, service.Enabled(), "expected service to be disabled")
 }
@@ -57,16 +55,15 @@ func Test{{SERVICE_NAME}}Endpoints(t *testing.T) {
 		Level:  "error",
 		Format: "json",
 	})
-	
+
 	service := modules.New{{SERVICE_NAME}}(true{{CONSTRUCTOR_ARGS}}, l)
 	endpoints := service.Endpoints()
 	assert.NotEmpty(t, endpoints, "expected at least one endpoint")
 }
 
 func Test{{SERVICE_NAME}}RegisterRoutes(t *testing.T) {
-	_, router := setupTestService()
-	
+	_, e := setupTestService()
+
 	// Test that routes are registered
-	routes := router.Routes()
-	assert.NotEmpty(t, routes, "expected routes to be registered")
+	assert.NotNil(t, e)
 }

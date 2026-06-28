@@ -1,12 +1,14 @@
 package modules
 
 import (
+	"io"
+
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 {{IMPORTS}}
 )
 
@@ -37,7 +39,7 @@ func (s *{{SERVICE_NAME}}) Endpoints() []string {
 }
 
 {{SWAGGER_ANNOTATIONS}}
-func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
 	{
 		sub.POST("/publish", s.publishHandler)
@@ -46,25 +48,28 @@ func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // publishHandler handles POST /{{SERVICE_NAME_LOWER}}/publish
-func (s *{{SERVICE_NAME}}) publishHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) publishHandler(c echo.Context) error {
 	// TODO: Implement event publishing logic
-	response.Success(c, nil, "Event published")
+	return response.Success(c, nil, "Event published")
 }
 
 // subscribeHandler handles GET /{{SERVICE_NAME_LOWER}}/subscribe
-func (s *{{SERVICE_NAME}}) subscribeHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) subscribeHandler(c echo.Context) error {
 	// TODO: Implement event subscription logic
-	// Set headers for Server-Sent Events
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("Transfer-Encoding", "chunked")
-	
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().Header().Set("Transfer-Encoding", "chunked")
+
 	// Stream events
-	c.Stream(func(w io.Writer) bool {
+	for {
 		// TODO: Implement event streaming
-		return true
-	})
+		_, err := io.WriteString(c.Response().Writer, "data: {}\n\n")
+		if err != nil {
+			return nil
+		}
+		c.Response().Flush()
+	}
 }
 
 {{INIT_FUNCTION}}

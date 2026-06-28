@@ -6,17 +6,15 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 func init() {
-	// Register Audit middleware
-	RegisterMiddleware("audit", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+	RegisterMiddleware("audit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return AuditWithConfig(logger), nil
 	})
 }
 
-// AuditConfig holds audit logging configuration
 type AuditConfig struct {
 	Logger           *logger.Logger
 	LogRequestBody   bool
@@ -25,7 +23,6 @@ type AuditConfig struct {
 	SkipPaths        []string
 }
 
-// Default audit configuration
 var defaultAuditConfig = AuditConfig{
 	LogRequestBody:   false,
 	LogHeaders:       false,
@@ -33,92 +30,85 @@ var defaultAuditConfig = AuditConfig{
 	SkipPaths:        []string{"/health", "/health/infrastructure"},
 }
 
-// AuditWithConfig creates audit logging middleware with custom configuration
-func AuditWithConfig(l *logger.Logger) gin.HandlerFunc {
+func AuditWithConfig(l *logger.Logger) echo.MiddlewareFunc {
 	return Audit(defaultAuditConfig, l)
 }
 
-// AuditSkipHealthCheck creates audit logging middleware that skips health check endpoints
-func AuditSkipHealthCheck(l *logger.Logger) gin.HandlerFunc {
+func AuditSkipHealthCheck(l *logger.Logger) echo.MiddlewareFunc {
 	config := defaultAuditConfig
 	config.Logger = l
 	return Audit(config, l)
 }
 
-// Audit creates audit logging middleware
-func Audit(config AuditConfig, l *logger.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Skip configured paths
-		for _, path := range config.SkipPaths {
-			if c.Request.URL.Path == path {
-				c.Next()
-				return
-			}
-		}
-
-		start := time.Now()
-		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
-
-		c.Next()
-
-		latency := time.Since(start)
-		statusCode := c.Writer.Status()
-
-		// Build log fields
-		fields := map[string]interface{}{
-			"method":     c.Request.Method,
-			"path":       path,
-			"query":      query,
-			"status":     statusCode,
-			"latency":    latency.String(),
-			"client_ip":  c.ClientIP(),
-			"user_agent": c.Request.UserAgent(),
-			"request_id": c.Writer.Header().Get("X-Request-ID"),
-		}
-
-		// Add user info if available
-		if userID, exists := c.Get("user_id"); exists {
-			fields["user_id"] = userID
-		}
-		if username, exists := c.Get("username"); exists {
-			fields["username"] = username
-		}
-
-		// Log headers if configured
-		if config.LogHeaders {
-			headers := make(map[string]string)
-			for name, values := range c.Request.Header {
-				// Skip sensitive headers
-				skip := false
-				for _, sensitive := range config.SensitiveHeaders {
-					if name == sensitive {
-						skip = true
-						break
-					}
-				}
-				if !skip {
-					for _, v := range values {
-						headers[name] = v
-					}
+func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			for _, path := range config.SkipPaths {
+				if c.Request().URL.Path == path {
+					return next(c)
 				}
 			}
-			fields["headers"] = headers
-		}
 
-		// Convert fields map to keyvals slice
-		keyvals := make([]interface{}, 0, len(fields)*2)
-		for k, v := range fields {
-			keyvals = append(keyvals, k, v)
-		}
+			start := time.Now()
+			path := c.Request().URL.Path
+			query := c.Request().URL.RawQuery
 
-		// Log with appropriate level based on status code
-		if statusCode >= 500 {
-			l.Error("API Request", nil, keyvals...)
-		} else if statusCode >= 400 {
-			l.Warn("API Request", keyvals...)
-		} else {
-			l.Info("API Request", keyvals...)
+			err := next(c)
+
+			latency := time.Since(start)
+			statusCode := c.Response().Status
+
+			fields := map[string]interface{}{
+				"method":     c.Request().Method,
+				"path":       path,
+				"query":      query,
+				"status":     statusCode,
+				"latency":    latency.String(),
+				"client_ip":  c.RealIP(),
+				"user_agent": c.Request().UserAgent(),
+				"request_id": c.Response().Header().Get("X-Request-ID"),
+			}
+
+			if userID := c.Get("user_id"); userID != nil {
+				fields["user_id"] = userID
+			}
+			if username := c.Get("username"); username != nil {
+				fields["username"] = username
+			}
+
+			if config.LogHeaders {
+				headers := make(map[string]string)
+				for name, values := range c.Request().Header {
+					skip := false
+					for _, sensitive := range config.SensitiveHeaders {
+						if name == sensitive {
+							skip = true
+							break
+						}
+					}
+					if !skip {
+						for _, v := range values {
+							headers[name] = v
+						}
+					}
+				}
+				fields["headers"] = headers
+			}
+
+			keyvals := make([]interface{}, 0, len(fields)*2)
+			for k, v := range fields {
+				keyvals = append(keyvals, k, v)
+			}
+
+			if statusCode >= 500 {
+				l.Error("API Request", nil, keyvals...)
+			} else if statusCode >= 400 {
+				l.Warn("API Request", keyvals...)
+			} else {
+				l.Info("API Request", keyvals...)
+			}
+
+			return err
 		}
 	}
 }

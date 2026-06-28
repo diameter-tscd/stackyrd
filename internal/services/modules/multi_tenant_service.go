@@ -12,11 +12,10 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
 
-// MultiTenantOrder represents an order that can exist in different databases
 type MultiTenantOrder struct {
 	gorm.Model
 	TenantID    string  `json:"tenant_id" gorm:"not null;index"`
@@ -27,7 +26,6 @@ type MultiTenantOrder struct {
 	Status      string  `json:"status" gorm:"not null;default:'pending'"`
 }
 
-// MultiTenantService demonstrates using multiple PostgreSQL connections with GORM
 type MultiTenantService struct {
 	enabled                   bool
 	postgresConnectionManager *infrastructure.PostgresConnectionManager
@@ -65,7 +63,7 @@ func (s *MultiTenantService) Endpoints() []string {
 }
 func (s *MultiTenantService) Get() interface{} { return s }
 
-func (s *MultiTenantService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *MultiTenantService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/orders")
 
 	sub.GET("/:tenant", s.listOrdersByTenant)
@@ -75,62 +73,34 @@ func (s *MultiTenantService) RegisterRoutes(g *gin.RouterGroup) {
 	sub.DELETE("/:tenant/:id", s.deleteOrder)
 }
 
-// listOrdersByTenant godoc
-// @Summary List orders by tenant
-// @Description Retrieve all orders from a specific tenant's database
-// @Tags orders
-// @Accept json
-// @Produce json
-// @Param tenant path string true "Tenant identifier"
-// @Success 200 {object} response.Response "Orders retrieved from tenant database"
-// @Failure 404 {object} response.Response "Tenant database not found"
-// @Failure 500 {object} response.Response "Failed to query tenant database"
-// @Router /orders/{tenant} [get]
-func (s *MultiTenantService) listOrdersByTenant(c *gin.Context) {
+func (s *MultiTenantService) listOrdersByTenant(c echo.Context) error {
 	tenant := c.Param("tenant")
 
 	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
 	if !exists {
-		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
 	}
 
 	var orders []MultiTenantOrder
 	result := dbConn.ORM.Where("tenant_id = ?", tenant).Order("created_at DESC").Find(&orders)
 	if result.Error != nil {
-		response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
 	}
 
-	response.Success(c, orders, fmt.Sprintf("Orders retrieved from tenant '%s' database", tenant))
+	return response.Success(c, orders, fmt.Sprintf("Orders retrieved from tenant '%s' database", tenant))
 }
 
-// createOrder godoc
-// @Summary Create order in tenant database
-// @Description Create a new order in a specific tenant's database
-// @Tags orders
-// @Accept json
-// @Produce json
-// @Param tenant path string true "Tenant identifier"
-// @Param request body MultiTenantOrder true "Order data"
-// @Success 201 {object} response.Response "Order created in tenant database"
-// @Failure 400 {object} response.Response "Invalid order data"
-// @Failure 404 {object} response.Response "Tenant database not found"
-// @Failure 500 {object} response.Response "Failed to create order"
-// @Router /orders/{tenant} [post]
-func (s *MultiTenantService) createOrder(c *gin.Context) {
+func (s *MultiTenantService) createOrder(c echo.Context) error {
 	tenant := c.Param("tenant")
 
 	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
 	if !exists {
-		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
 	}
 
 	var order MultiTenantOrder
 	if err := request.Bind(c, &order); err != nil {
-		response.BadRequest(c, "Invalid order data")
-		return
+		return response.BadRequest(c, "Invalid order data")
 	}
 
 	order.TenantID = tenant
@@ -138,99 +108,62 @@ func (s *MultiTenantService) createOrder(c *gin.Context) {
 
 	result := dbConn.ORM.Create(&order)
 	if result.Error != nil {
-		response.InternalServerError(c, fmt.Sprintf("Failed to create order in tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to create order in tenant '%s' database: %v", tenant, result.Error))
 	}
 
-	response.Created(c, order, fmt.Sprintf("Order created in tenant '%s' database", tenant))
+	return response.Created(c, order, fmt.Sprintf("Order created in tenant '%s' database", tenant))
 }
 
-// getOrderByTenant godoc
-// @Summary Get order by tenant
-// @Description Retrieve a specific order from a tenant's database
-// @Tags orders
-// @Accept json
-// @Produce json
-// @Param tenant path string true "Tenant identifier"
-// @Param id path string true "Order ID"
-// @Success 200 {object} response.Response "Order retrieved from tenant database"
-// @Failure 400 {object} response.Response "Invalid order ID"
-// @Failure 404 {object} response.Response "Tenant database or order not found"
-// @Failure 500 {object} response.Response "Failed to query tenant database"
-// @Router /orders/{tenant}/{id} [get]
-func (s *MultiTenantService) getOrderByTenant(c *gin.Context) {
+func (s *MultiTenantService) getOrderByTenant(c echo.Context) error {
 	tenant := c.Param("tenant")
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		response.BadRequest(c, "Invalid order ID")
-		return
+		return response.BadRequest(c, "Invalid order ID")
 	}
 
 	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
 	if !exists {
-		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
 	}
 
 	var order MultiTenantOrder
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).First(&order)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
-			return
+			return response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
 		}
-		response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
 	}
 
-	response.Success(c, order, fmt.Sprintf("Order retrieved from tenant '%s' database", tenant))
+	return response.Success(c, order, fmt.Sprintf("Order retrieved from tenant '%s' database", tenant))
 }
 
-// updateOrder godoc
-// @Summary Update order in tenant database
-// @Description Update an order in a specific tenant's database
-// @Tags orders
-// @Accept json
-// @Produce json
-// @Param tenant path string true "Tenant identifier"
-// @Param id path string true "Order ID"
-// @Param request body MultiTenantOrder true "Order update data"
-// @Success 200 {object} response.Response "Order updated in tenant database"
-// @Failure 400 {object} response.Response "Invalid order ID or update data"
-// @Failure 404 {object} response.Response "Tenant database or order not found"
-// @Failure 500 {object} response.Response "Failed to update order"
-// @Router /orders/{tenant}/{id} [put]
-func (s *MultiTenantService) updateOrder(c *gin.Context) {
+func (s *MultiTenantService) updateOrder(c echo.Context) error {
 	tenant := c.Param("tenant")
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		response.BadRequest(c, "Invalid order ID")
-		return
+		return response.BadRequest(c, "Invalid order ID")
 	}
 
 	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
 	if !exists {
-		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
 	}
 
 	var updateData MultiTenantOrder
 	if err := request.Bind(c, &updateData); err != nil {
-		response.BadRequest(c, "Invalid update data")
-		return
+		return response.BadRequest(c, "Invalid update data")
 	}
 
 	var order MultiTenantOrder
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).First(&order)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
-			return
+			return response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
 		}
-		response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
 	}
 
 	updates := make(map[string]interface{})
@@ -251,62 +184,42 @@ func (s *MultiTenantService) updateOrder(c *gin.Context) {
 	}
 
 	if len(updates) == 0 {
-		response.BadRequest(c, "No fields to update")
-		return
+		return response.BadRequest(c, "No fields to update")
 	}
 
 	result = dbConn.ORM.Model(&order).Updates(updates)
 	if result.Error != nil {
-		response.InternalServerError(c, fmt.Sprintf("Failed to update order in tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to update order in tenant '%s' database: %v", tenant, result.Error))
 	}
 
-	response.Success(c, nil, fmt.Sprintf("Order updated in tenant '%s' database", tenant))
+	return response.Success(c, nil, fmt.Sprintf("Order updated in tenant '%s' database", tenant))
 }
 
-// deleteOrder godoc
-// @Summary Delete order from tenant database
-// @Description Delete an order from a specific tenant's database
-// @Tags orders
-// @Accept json
-// @Produce json
-// @Param tenant path string true "Tenant identifier"
-// @Param id path string true "Order ID"
-// @Success 200 {object} response.Response "Order deleted from tenant database"
-// @Failure 400 {object} response.Response "Invalid order ID"
-// @Failure 404 {object} response.Response "Tenant database or order not found"
-// @Failure 500 {object} response.Response "Failed to delete order"
-// @Router /orders/{tenant}/{id} [delete]
-func (s *MultiTenantService) deleteOrder(c *gin.Context) {
+func (s *MultiTenantService) deleteOrder(c echo.Context) error {
 	tenant := c.Param("tenant")
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		response.BadRequest(c, "Invalid order ID")
-		return
+		return response.BadRequest(c, "Invalid order ID")
 	}
 
 	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
 	if !exists {
-		response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
 	}
 
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).Delete(&MultiTenantOrder{})
 	if result.Error != nil {
-		response.InternalServerError(c, fmt.Sprintf("Failed to delete order from tenant '%s' database: %v", tenant, result.Error))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Failed to delete order from tenant '%s' database: %v", tenant, result.Error))
 	}
 
 	if result.RowsAffected == 0 {
-		response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
-		return
+		return response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
 	}
 
-	response.Success(c, nil, fmt.Sprintf("Order deleted from tenant '%s' database", tenant))
+	return response.Success(c, nil, fmt.Sprintf("Order deleted from tenant '%s' database", tenant))
 }
 
-// Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("multi_tenant_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)

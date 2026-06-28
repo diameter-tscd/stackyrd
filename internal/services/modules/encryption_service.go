@@ -20,7 +20,7 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 type EncryptionService struct {
@@ -66,7 +66,7 @@ func (s *EncryptionService) Endpoints() []string {
 	return []string{"/encryption/encrypt", "/encryption/decrypt", "/encryption/status", "/encryption/key-rotate"}
 }
 
-func (s *EncryptionService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *EncryptionService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/encryption")
 	sub.POST("/encrypt", s.EncryptData)
 	sub.POST("/decrypt", s.DecryptData)
@@ -74,7 +74,6 @@ func (s *EncryptionService) RegisterRoutes(g *gin.RouterGroup) {
 	sub.POST("/key-rotate", s.RotateKey)
 }
 
-// Request/Response structs
 type EncryptRequest struct {
 	Data        string `json:"data" validate:"required"`
 	ContentType string `json:"content_type,omitempty"`
@@ -112,7 +111,6 @@ type KeyRotateRequest struct {
 	NewKey string `json:"new_key" validate:"required,min=16,max=64"`
 }
 
-// Encryption/Decryption functions
 func (s *EncryptionService) encrypt(data []byte) (string, error) {
 	block, err := aes.NewCipher(s.encryptionKey)
 	if err != nil {
@@ -163,12 +161,10 @@ func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 	return decrypted, nil
 }
 
-// Handlers
-func (s *EncryptionService) EncryptData(c *gin.Context) {
+func (s *EncryptionService) EncryptData(c echo.Context) error {
 	var req EncryptRequest
 	if err := request.Bind(c, &req); err != nil {
-		response.BadRequest(c, "Invalid request body")
-		return
+		return response.BadRequest(c, "Invalid request body")
 	}
 
 	contentType := req.ContentType
@@ -178,8 +174,7 @@ func (s *EncryptionService) EncryptData(c *gin.Context) {
 
 	encrypted, err := s.encrypt([]byte(req.Data))
 	if err != nil {
-		response.InternalServerError(c, fmt.Sprintf("Encryption failed: %v", err))
-		return
+		return response.InternalServerError(c, fmt.Sprintf("Encryption failed: %v", err))
 	}
 
 	resp := EncryptResponse{
@@ -189,14 +184,13 @@ func (s *EncryptionService) EncryptData(c *gin.Context) {
 		ContentType:   contentType,
 	}
 
-	response.Success(c, resp, "Data encrypted successfully")
+	return response.Success(c, resp, "Data encrypted successfully")
 }
 
-func (s *EncryptionService) DecryptData(c *gin.Context) {
+func (s *EncryptionService) DecryptData(c echo.Context) error {
 	var req DecryptRequest
 	if err := request.Bind(c, &req); err != nil {
-		response.BadRequest(c, "Invalid request body")
-		return
+		return response.BadRequest(c, "Invalid request body")
 	}
 
 	contentType := req.ContentType
@@ -206,8 +200,7 @@ func (s *EncryptionService) DecryptData(c *gin.Context) {
 
 	decrypted, err := s.decrypt(req.EncryptedData)
 	if err != nil {
-		response.BadRequest(c, fmt.Sprintf("Decryption failed: %v", err))
-		return
+		return response.BadRequest(c, fmt.Sprintf("Decryption failed: %v", err))
 	}
 
 	resp := DecryptResponse{
@@ -217,10 +210,10 @@ func (s *EncryptionService) DecryptData(c *gin.Context) {
 		ContentType:   contentType,
 	}
 
-	response.Success(c, resp, "Data decrypted successfully")
+	return response.Success(c, resp, "Data decrypted successfully")
 }
 
-func (s *EncryptionService) GetStatus(c *gin.Context) {
+func (s *EncryptionService) GetStatus(c echo.Context) error {
 	currentKeyPreview := fmt.Sprintf("%s...", hex.EncodeToString(s.encryptionKey[:4]))
 
 	resp := StatusResponse{
@@ -232,19 +225,17 @@ func (s *EncryptionService) GetStatus(c *gin.Context) {
 		LastRotation: time.Now().Unix(),
 	}
 
-	response.Success(c, resp, "Encryption service status")
+	return response.Success(c, resp, "Encryption service status")
 }
 
-func (s *EncryptionService) RotateKey(c *gin.Context) {
+func (s *EncryptionService) RotateKey(c echo.Context) error {
 	var req KeyRotateRequest
 	if err := request.Bind(c, &req); err != nil {
-		response.BadRequest(c, "Invalid request body")
-		return
+		return response.BadRequest(c, "Invalid request body")
 	}
 
 	if len(req.NewKey) < 16 {
-		response.BadRequest(c, "New key must be at least 16 characters long")
-		return
+		return response.BadRequest(c, "New key must be at least 16 characters long")
 	}
 
 	newKeyBytes := []byte(req.NewKey)
@@ -262,13 +253,12 @@ func (s *EncryptionService) RotateKey(c *gin.Context) {
 		s.algorithm = "aes-256-gcm-custom"
 	}
 
-	response.Success(c, map[string]string{
+	return response.Success(c, map[string]string{
 		"message":         "Encryption key rotated successfully",
 		"new_key_preview": fmt.Sprintf("%s...", hex.EncodeToString(s.encryptionKey[:4])),
 	}, "Key rotation successful")
 }
 
-// Helper functions
 func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -285,7 +275,6 @@ func (s *EncryptionService) DecryptJSON(encryptedData string, target interface{}
 	return json.Unmarshal(decrypted, target)
 }
 
-// Auto-registration function
 func init() {
 	registry.RegisterService("encryption_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		encryptionConfig := map[string]interface{}{

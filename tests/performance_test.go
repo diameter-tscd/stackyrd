@@ -5,48 +5,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
-// setupBenchRouter returns a gin.Engine with N distinct routes registered.
-// Pass 0 for the bare-engine baseline.
-func setupBenchRouter(numRoutes int) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+func setupBenchRouter(numRoutes int) *echo.Echo {
+	e := echo.New()
 	for i := 0; i < numRoutes; i++ {
-		r.GET("/bench/item/:id/"+itoa(i), func(c *gin.Context) {})
+		e.GET("/bench/item/:id/"+strconv.Itoa(i), func(c echo.Context) error { return nil })
 	}
-	return r
+	return e
 }
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b) - 1
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
-}
-
-// ─── Bare router overhead ────────────────────────────────────────────────
 
 func BenchmarkRouter_ServeHTTP_Baseline(b *testing.B) {
 	r := setupBenchRouter(0)
@@ -57,8 +31,6 @@ func BenchmarkRouter_ServeHTTP_Baseline(b *testing.B) {
 		r.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
-
-// ─── Router latency with one registered route ──────────────────────────────
 
 func BenchmarkRouter_ServeHTTP_SingleRoute(b *testing.B) {
 	r := setupBenchRouter(1)
@@ -80,45 +52,38 @@ func BenchmarkRouter_ServeHTTP_FiftyRoutes(b *testing.B) {
 	}
 }
 
-// ─── JSON response serialisation ─────────────────────────────────────────
-
 func BenchmarkHandler_JSON_Success(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/json", func(c *gin.Context) {
-		data := gin.H{"id": 1, "name": "Alice", "email": "alice@example.com"}
-		response.Success(c, data, "ok")
+	e := echo.New()
+	e.GET("/json", func(c echo.Context) error {
+		data := map[string]interface{}{"id": 1, "name": "Alice", "email": "alice@example.com"}
+		return response.Success(c, data, "ok")
 	})
 
 	req, _ := http.NewRequest("GET", "/json", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
 func BenchmarkHandler_JSON_WithMetaPagination(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/paginated", func(c *gin.Context) {
+	e := echo.New()
+	e.GET("/paginated", func(c echo.Context) error {
 		meta := response.CalculateMeta(1, 10, 1000)
-		response.SuccessWithMeta(c, []string{"a", "b", "c"}, meta, "ok")
+		return response.SuccessWithMeta(c, []string{"a", "b", "c"}, meta, "ok")
 	})
 
 	req, _ := http.NewRequest("GET", "/paginated", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── JSON request binding ────────────────────────────────────────────────
-
 func BenchmarkHandler_JSON_RequestBind(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	e := echo.New()
 
 	type payload struct {
 		Name     string `json:"name"     validate:"required"`
@@ -128,12 +93,12 @@ func BenchmarkHandler_JSON_RequestBind(b *testing.B) {
 		Age      int    `json:"age"      validate:"gte=0,lte=130"`
 	}
 
-	r.POST("/bind", func(c *gin.Context) {
+	e.POST("/bind", func(c echo.Context) error {
 		var p payload
-		if err := c.ShouldBindJSON(&p); err == nil {
-			response.Success(c, p, "bound")
+		if err := c.Bind(&p); err == nil {
+			return response.Success(c, p, "bound")
 		} else {
-			response.BadRequest(c, err.Error())
+			return response.BadRequest(c, err.Error())
 		}
 	})
 
@@ -143,69 +108,57 @@ func BenchmarkHandler_JSON_RequestBind(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── Path parameter look-up ─────────────────────────────────────────────
-
 func BenchmarkHandler_PathParameter(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/item/:id", func(c *gin.Context) {
+	e := echo.New()
+	e.GET("/item/:id", func(c echo.Context) error {
 		id := c.Param("id")
-		response.Success(c, gin.H{"id": id}, "ok")
+		return response.Success(c, map[string]interface{}{"id": id}, "ok")
 	})
 
 	req, _ := http.NewRequest("GET", "/item/42", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── Middleware overhead ────────────────────────────────────────────────
-
 func BenchmarkMiddleware_RecoveryOverhead(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-
-	r := gin.New() // baseline — no middleware
-	r.GET("/mid", func(c *gin.Context) { response.NoContent(c) })
+	e := echo.New()
+	e.GET("/mid", func(c echo.Context) error { return response.NoContent(c) })
 
 	req, _ := http.NewRequest("GET", "/mid", nil)
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(w, req)
+		e.ServeHTTP(w, req)
 	}
 }
 
-// ─── Response body size impact ─────────────────────────────────────────
-
 func BenchmarkHandler_JSON_SmallPayload(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/small", func(c *gin.Context) {
-		response.Success(c, gin.H{"x": 1}, "")
+	e := echo.New()
+	e.GET("/small", func(c echo.Context) error {
+		return response.Success(c, map[string]interface{}{"x": 1}, "")
 	})
 	req, _ := http.NewRequest("GET", "/small", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
 func BenchmarkHandler_JSON_LargePayload(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	e := echo.New()
 
-	// 5 KB payload: 100 records of 50 bytes each
-	items := make([]gin.H, 100)
+	items := make([]map[string]interface{}, 100)
 	for i := range items {
-		items[i] = gin.H{
+		items[i] = map[string]interface{}{
 			"id":    i,
 			"name":  "User Name Placeholder that has some length",
 			"email": "user@example.com",
@@ -213,60 +166,52 @@ func BenchmarkHandler_JSON_LargePayload(b *testing.B) {
 		}
 	}
 
-	r.GET("/large", func(c *gin.Context) {
-		response.Success(c, items, "ok")
+	e.GET("/large", func(c echo.Context) error {
+		return response.Success(c, items, "ok")
 	})
 	req, _ := http.NewRequest("GET", "/large", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── Error response serialisation ─────────────────────────────────────
-
 func BenchmarkHandler_ErrorResponse(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/err", func(c *gin.Context) {
-		response.NotFound(c, "resource not found")
+	e := echo.New()
+	e.GET("/err", func(c echo.Context) error {
+		return response.NotFound(c, "resource not found")
 	})
 	req, _ := http.NewRequest("GET", "/err", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── Concurrent request throughput ─────────────────────────────────────
-
 func BenchmarkService_Endpoint_Concurrent(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	e := echo.New()
 
-	// Register service-like routes to exercise a realistic route tree.
-	r.GET("/health", func(c *gin.Context) {
-		response.Success(c, gin.H{"status": "ok"}, "healthy")
+	e.GET("/health", func(c echo.Context) error {
+		return response.Success(c, map[string]interface{}{"status": "ok"}, "healthy")
 	})
-	r.POST("/users", func(c *gin.Context) {
-		data := gin.H{"id": 1, "name": "Alice", "email": "alice@example.com"}
-		response.Created(c, data, "created")
+	e.POST("/users", func(c echo.Context) error {
+		data := map[string]interface{}{"id": 1, "name": "Alice", "email": "alice@example.com"}
+		return response.Created(c, data, "created")
 	})
-	r.GET("/users/:id", func(c *gin.Context) {
-		response.Success(c, gin.H{"id": c.Param("id")}, "found")
+	e.GET("/users/:id", func(c echo.Context) error {
+		return response.Success(c, map[string]interface{}{"id": c.Param("id")}, "found")
 	})
 
-	bodyJ, _ := json.Marshal(gin.H{"name": "Alice", "email": "alice@example.com"})
+	bodyJ, _ := json.Marshal(map[string]interface{}{"name": "Alice", "email": "alice@example.com"})
 	postReq, _ := http.NewRequest("POST", "/users", bytes.NewBuffer(bodyJ))
 	postReq.Header.Set("Content-Type", "application/json")
 
 	getUserReq, _ := http.NewRequest("GET", "/users/1", nil)
 	healthReq, _ := http.NewRequest("GET", "/health", nil)
 
-	// snapshot body sizes to capture serialisation cost fairly
-	healthBodyBefore, _ := json.Marshal(gin.H{"status": "ok", "success": true})
+	healthBodyBefore, _ := json.Marshal(map[string]interface{}{"status": "ok", "success": true})
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -276,48 +221,42 @@ func BenchmarkService_Endpoint_Concurrent(b *testing.B) {
 		for pb.Next() {
 			switch frame % 3 {
 			case 0:
-				r.ServeHTTP(httptest.NewRecorder(), healthReq)
+				e.ServeHTTP(httptest.NewRecorder(), healthReq)
 			case 1:
-				r.ServeHTTP(httptest.NewRecorder(), getUserReq)
+				e.ServeHTTP(httptest.NewRecorder(), getUserReq)
 			default:
-				r.ServeHTTP(httptest.NewRecorder(), postReq)
+				e.ServeHTTP(httptest.NewRecorder(), postReq)
 			}
 			frame++
 		}
 	})
 
-	_ = healthBodyBefore // silences unused warning; reserved for fine-grained body-size assertions
+	_ = healthBodyBefore
 }
 
-// ─── Router group / sub-route overhead ─────────────────────────────────
-
 func BenchmarkRouter_SubRoute_Depth(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-
-	r := gin.New()
-	api := r.Group("/api/v1")
+	e := echo.New()
+	api := e.Group("/api/v1")
 	v1 := api.Group("/v1")
-	v1.GET("/items/:id", func(c *gin.Context) {})
+	v1.GET("/items/:id", func(c echo.Context) error { return nil })
 
 	req, _ := http.NewRequest("GET", "/api/v1/v1/items/1", nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r.ServeHTTP(httptest.NewRecorder(), req)
+		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
 
-// ─── Service wiring validation (import-time side-effects check) ─────────
-
 func TestPerformancePackage_RouterReturnsResponse(t *testing.T) {
-	// sanity test: ensure the benchmark router returns 200 for registered routes.
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/ping", func(c *gin.Context) { c.String(200, "pong") })
+	e := echo.New()
+	e.GET("/ping", func(c echo.Context) error {
+		return c.String(http.StatusOK, "pong")
+	})
 
 	req, _ := http.NewRequest("GET", "/ping", nil)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	e.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "pong", w.Body.String())
 }

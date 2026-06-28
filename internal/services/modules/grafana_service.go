@@ -10,7 +10,7 @@ import (
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 type GrafanaService struct {
@@ -35,7 +35,7 @@ func (s *GrafanaService) Endpoints() []string {
 	return []string{"/grafana/dashboards", "/grafana/datasources", "/grafana/annotations", "/grafana/health"}
 }
 
-func (s *GrafanaService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *GrafanaService) RegisterRoutes(g *echo.Group) {
 	grafana := g.Group("/grafana")
 
 	dashboards := grafana.Group("/dashboards")
@@ -54,159 +54,93 @@ func (s *GrafanaService) RegisterRoutes(g *gin.RouterGroup) {
 	grafana.GET("/health", s.getHealth)
 }
 
-// createDashboard godoc
-// @Summary Create Grafana dashboard
-// @Description Create a new Grafana dashboard
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param request body infrastructure.GrafanaDashboard true "Dashboard configuration"
-// @Success 201 {object} response.Response "Dashboard created successfully"
-// @Failure 400 {object} response.Response "Invalid dashboard data"
-// @Failure 500 {object} response.Response "Failed to create dashboard"
-// @Router /grafana/dashboards [post]
-func (s *GrafanaService) createDashboard(c *gin.Context) {
+func (s *GrafanaService) createDashboard(c echo.Context) error {
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.ShouldBindJSON(&dashboard); err != nil {
-		response.BadRequest(c, "Invalid dashboard data")
-		return
+	if err := c.Bind(&dashboard); err != nil {
+		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
-	result, err := s.grafanaManager.CreateDashboard(c.Request.Context(), dashboard)
+	result, err := s.grafanaManager.CreateDashboard(c.Request().Context(), dashboard)
 	if err != nil {
 		s.logger.Error("Failed to create Grafana dashboard", err)
-		response.InternalServerError(c, "Failed to create dashboard")
-		return
+		return response.InternalServerError(c, "Failed to create dashboard")
 	}
 
-	response.Created(c, result, "Dashboard created successfully")
+	return response.Created(c, result, "Dashboard created successfully")
 }
 
-// updateDashboard godoc
-// @Summary Update Grafana dashboard
-// @Description Update an existing Grafana dashboard
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param uid path string true "Dashboard UID"
-// @Param request body infrastructure.GrafanaDashboard true "Dashboard configuration"
-// @Success 200 {object} response.Response "Dashboard updated successfully"
-// @Failure 400 {object} response.Response "Invalid dashboard data"
-// @Failure 500 {object} response.Response "Failed to update dashboard"
-// @Router /grafana/dashboards/{uid} [put]
-func (s *GrafanaService) updateDashboard(c *gin.Context) {
+func (s *GrafanaService) updateDashboard(c echo.Context) error {
 	uid := c.Param("uid")
 	if uid == "" {
-		response.BadRequest(c, "Dashboard UID is required")
-		return
+		return response.BadRequest(c, "Dashboard UID is required")
 	}
 
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.ShouldBindJSON(&dashboard); err != nil {
-		response.BadRequest(c, "Invalid dashboard data")
-		return
+	if err := c.Bind(&dashboard); err != nil {
+		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
 	dashboard.UID = uid
 
-	result, err := s.grafanaManager.UpdateDashboard(c.Request.Context(), dashboard)
+	result, err := s.grafanaManager.UpdateDashboard(c.Request().Context(), dashboard)
 	if err != nil {
 		s.logger.Error("Failed to update Grafana dashboard", err, "uid", uid)
-		response.InternalServerError(c, "Failed to update dashboard")
-		return
+		return response.InternalServerError(c, "Failed to update dashboard")
 	}
 
-	response.Success(c, result, "Dashboard updated successfully")
+	return response.Success(c, result, "Dashboard updated successfully")
 }
 
-// getDashboard godoc
-// @Summary Get Grafana dashboard
-// @Description Retrieve a Grafana dashboard by UID
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param uid path string true "Dashboard UID"
-// @Success 200 {object} response.Response "Dashboard retrieved successfully"
-// @Failure 400 {object} response.Response "Dashboard UID is required"
-// @Failure 404 {object} response.Response "Dashboard not found"
-// @Router /grafana/dashboards/{uid} [get]
-func (s *GrafanaService) getDashboard(c *gin.Context) {
+func (s *GrafanaService) getDashboard(c echo.Context) error {
 	uid := c.Param("uid")
 	if uid == "" {
-		response.BadRequest(c, "Dashboard UID is required")
-		return
+		return response.BadRequest(c, "Dashboard UID is required")
 	}
 
-	dashboard, err := s.grafanaManager.GetDashboard(c.Request.Context(), uid)
+	dashboard, err := s.grafanaManager.GetDashboard(c.Request().Context(), uid)
 	if err != nil {
 		s.logger.Error("Failed to get Grafana dashboard", err, "uid", uid)
-		response.NotFound(c, "Dashboard not found")
-		return
+		return response.NotFound(c, "Dashboard not found")
 	}
 
-	response.Success(c, dashboard, "Dashboard retrieved successfully")
+	return response.Success(c, dashboard, "Dashboard retrieved successfully")
 }
 
-// deleteDashboard godoc
-// @Summary Delete Grafana dashboard
-// @Description Delete a Grafana dashboard by UID
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param uid path string true "Dashboard UID"
-// @Success 200 {object} response.Response "Dashboard deleted successfully"
-// @Failure 400 {object} response.Response "Dashboard UID is required"
-// @Failure 500 {object} response.Response "Failed to delete dashboard"
-// @Router /grafana/dashboards/{uid} [delete]
-func (s *GrafanaService) deleteDashboard(c *gin.Context) {
+func (s *GrafanaService) deleteDashboard(c echo.Context) error {
 	uid := c.Param("uid")
 	if uid == "" {
-		response.BadRequest(c, "Dashboard UID is required")
-		return
+		return response.BadRequest(c, "Dashboard UID is required")
 	}
 
-	err := s.grafanaManager.DeleteDashboard(c.Request.Context(), uid)
+	err := s.grafanaManager.DeleteDashboard(c.Request().Context(), uid)
 	if err != nil {
 		s.logger.Error("Failed to delete Grafana dashboard", err, "uid", uid)
-		response.InternalServerError(c, "Failed to delete dashboard")
-		return
+		return response.InternalServerError(c, "Failed to delete dashboard")
 	}
 
-	response.Success(c, nil, "Dashboard deleted successfully")
+	return response.Success(c, nil, "Dashboard deleted successfully")
 }
 
-// listDashboards godoc
-// @Summary List Grafana dashboards
-// @Description List all Grafana dashboards with pagination
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param per_page query int false "Items per page" default(50)
-// @Success 200 {object} response.Response "Dashboards retrieved successfully"
-// @Failure 500 {object} response.Response "Failed to list dashboards"
-// @Router /grafana/dashboards [get]
-func (s *GrafanaService) listDashboards(c *gin.Context) {
+func (s *GrafanaService) listDashboards(c echo.Context) error {
 	page := 1
 	perPage := 50
 
-	if pageStr := c.Query("page"); pageStr != "" {
+	if pageStr := c.QueryParam("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
 			page = p
 		}
 	}
 
-	if perPageStr := c.Query("per_page"); perPageStr != "" {
+	if perPageStr := c.QueryParam("per_page"); perPageStr != "" {
 		if pp, err := strconv.Atoi(perPageStr); err == nil && pp > 0 && pp <= 100 {
 			perPage = pp
 		}
 	}
 
-	dashboards, err := s.grafanaManager.ListDashboards(c.Request.Context())
+	dashboards, err := s.grafanaManager.ListDashboards(c.Request().Context())
 	if err != nil {
 		s.logger.Error("Failed to list Grafana dashboards", err)
-		response.InternalServerError(c, "Failed to list dashboards")
-		return
+		return response.InternalServerError(c, "Failed to list dashboards")
 	}
 
 	start := (page - 1) * perPage
@@ -221,86 +155,49 @@ func (s *GrafanaService) listDashboards(c *gin.Context) {
 	}
 
 	meta := response.CalculateMeta(page, perPage, int64(len(dashboards)))
-	response.SuccessWithMeta(c, dashboards, meta, "Dashboards retrieved successfully")
+	return response.SuccessWithMeta(c, dashboards, meta, "Dashboards retrieved successfully")
 }
 
-// createDataSource godoc
-// @Summary Create Grafana data source
-// @Description Create a new Grafana data source
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param request body infrastructure.GrafanaDataSource true "Data source configuration"
-// @Success 201 {object} response.Response "Data source created successfully"
-// @Failure 400 {object} response.Response "Invalid data source data"
-// @Failure 500 {object} response.Response "Failed to create data source"
-// @Router /grafana/datasources [post]
-func (s *GrafanaService) createDataSource(c *gin.Context) {
+func (s *GrafanaService) createDataSource(c echo.Context) error {
 	var ds infrastructure.GrafanaDataSource
-	if err := c.ShouldBindJSON(&ds); err != nil {
-		response.BadRequest(c, "Invalid data source data")
-		return
+	if err := c.Bind(&ds); err != nil {
+		return response.BadRequest(c, "Invalid data source data")
 	}
 
-	result, err := s.grafanaManager.CreateDataSource(c.Request.Context(), ds)
+	result, err := s.grafanaManager.CreateDataSource(c.Request().Context(), ds)
 	if err != nil {
 		s.logger.Error("Failed to create Grafana data source", err)
-		response.InternalServerError(c, "Failed to create data source")
-		return
+		return response.InternalServerError(c, "Failed to create data source")
 	}
 
-	response.Created(c, result, "Data source created successfully")
+	return response.Created(c, result, "Data source created successfully")
 }
 
-// createAnnotation godoc
-// @Summary Create Grafana annotation
-// @Description Create a new Grafana annotation
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Param request body infrastructure.GrafanaAnnotation true "Annotation data"
-// @Success 201 {object} response.Response "Annotation created successfully"
-// @Failure 400 {object} response.Response "Invalid annotation data"
-// @Failure 500 {object} response.Response "Failed to create annotation"
-// @Router /grafana/annotations [post]
-func (s *GrafanaService) createAnnotation(c *gin.Context) {
+func (s *GrafanaService) createAnnotation(c echo.Context) error {
 	var annotation infrastructure.GrafanaAnnotation
-	if err := c.ShouldBindJSON(&annotation); err != nil {
-		response.BadRequest(c, "Invalid annotation data")
-		return
+	if err := c.Bind(&annotation); err != nil {
+		return response.BadRequest(c, "Invalid annotation data")
 	}
 
-	result, err := s.grafanaManager.CreateAnnotation(c.Request.Context(), annotation)
+	result, err := s.grafanaManager.CreateAnnotation(c.Request().Context(), annotation)
 	if err != nil {
 		s.logger.Error("Failed to create Grafana annotation", err)
-		response.InternalServerError(c, "Failed to create annotation")
-		return
+		return response.InternalServerError(c, "Failed to create annotation")
 	}
 
-	response.Created(c, result, "Annotation created successfully")
+	return response.Created(c, result, "Annotation created successfully")
 }
 
-// getHealth godoc
-// @Summary Get Grafana health status
-// @Description Check Grafana service health
-// @Tags grafana
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.Response "Grafana health check successful"
-// @Failure 503 {object} response.Response "Grafana is not available"
-// @Router /grafana/health [get]
-func (s *GrafanaService) getHealth(c *gin.Context) {
-	health, err := s.grafanaManager.GetHealth(c.Request.Context())
+func (s *GrafanaService) getHealth(c echo.Context) error {
+	health, err := s.grafanaManager.GetHealth(c.Request().Context())
 	if err != nil {
 		s.logger.Error("Failed to get Grafana health", err)
-		response.ServiceUnavailable(c, "Grafana is not available")
-		return
+		return response.ServiceUnavailable(c, "Grafana is not available")
 	}
 
-	response.Success(c, health, "Grafana health check successful")
+	return response.Success(c, health, "Grafana health check successful")
 }
 
-// Auto-registration function - called when package is imported
 func init() {
 	registry.RegisterService("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)

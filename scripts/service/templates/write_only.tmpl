@@ -7,7 +7,7 @@ import (
 	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 {{IMPORTS}}
 )
 
@@ -38,7 +38,7 @@ func (s *{{SERVICE_NAME}}) Endpoints() []string {
 }
 
 {{SWAGGER_ANNOTATIONS}}
-func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
 	{
 		sub.POST("", s.createHandler)
@@ -47,16 +47,16 @@ func (s *{{SERVICE_NAME}}) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // createHandler handles POST /{{SERVICE_NAME_LOWER}}
-func (s *{{SERVICE_NAME}}) createHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) createHandler(c echo.Context) error {
 	// TODO: Implement create logic
-	response.Created(c, nil, "Create endpoint")
+	return response.Created(c, nil, "Create endpoint")
 }
 
 // updateHandler handles PUT /{{SERVICE_NAME_LOWER}}/:id
-func (s *{{SERVICE_NAME}}) updateHandler(c *gin.Context) {
+func (s *{{SERVICE_NAME}}) updateHandler(c echo.Context) error {
 	// TODO: Implement update logic
 	id := c.Param("id")
-	response.Success(c, map[string]string{"id": id}, "Update endpoint")
+	return response.Success(c, map[string]string{"id": id}, "Update endpoint")
 }
 
 {{INIT_FUNCTION}}

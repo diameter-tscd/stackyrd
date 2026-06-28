@@ -23,7 +23,7 @@ Tests mirror source structure under a flat `tests/` directory.
 ```go
 import "stackyrd/pkg/testing"
 
-// Create a test Gin context + response recorder
+// Create a test Echo context + response recorder
 c, w := testing.NewTestContext("GET", "/api/v1/users", nil)
 
 // Assert HTTP status
@@ -87,15 +87,16 @@ func TestListUsersPagination(t *testing.T) {
 
 ```go
 func TestCORSMiddleware(t *testing.T) {
-    gin.SetMode(gin.TestMode)
-    r := gin.New()
-    r.Use(corsMiddleware)
-    r.GET("/test", func(c *gin.Context) { c.Status(200) })
+    e := echo.New()
+    e.Use(corsMiddleware)
+    e.GET("/test", func(c echo.Context) error {
+        return c.String(200, "ok")
+    })
 
-    req, _ := http.NewRequest("OPTIONS", "/test", nil)
+    req := httptest.NewRequest(http.MethodOptions, "/test", nil)
     req.Header.Set("Origin", "http://example.com")
     w := httptest.NewRecorder()
-    r.ServeHTTP(w, req)
+    e.ServeHTTP(w, req)
 
     assert.Equal(t, "http://example.com", w.Header().Get("Access-Control-Allow-Origin"))
 }
@@ -217,14 +218,16 @@ func TestUserHandlers(t *testing.T) {
 
     t.Run("get by id", func(t *testing.T) {
         c, w := testing.NewTestContext("GET", "/api/v1/users/1", nil)
-        c.Params = []gin.Param{{Key: "id", Value: "1"}}
+        c.SetParamNames("id")
+        c.SetParamValues("1")
         svc.handleGet(c)
         testing.AssertStatus(t, w, 200)
     })
 
     t.Run("not found", func(t *testing.T) {
         c, w := testing.NewTestContext("GET", "/api/v1/users/999", nil)
-        c.Params = []gin.Param{{Key: "id", Value: "999"}}
+        c.SetParamNames("id")
+        c.SetParamValues("999")
         svc.handleGet(c)
         testing.AssertStatus(t, w, 404)
     })
@@ -248,7 +251,7 @@ func TestServiceWithDependencies(t *testing.T) {
 
     svc := NewMyService(true, logger, deps)
     c, w := testing.NewTestContext("GET", "/api/v1/my-endpoint", nil)
-    svc.RegisterRoutes(gin.New().Group("/api/v1"))
+    svc.RegisterRoutes(echo.New().Group("/api/v1"))
 
     // Verify routes are registered
     assert.NotEmpty(t, svc.Endpoints())

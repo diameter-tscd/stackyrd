@@ -143,10 +143,13 @@ type Page struct {
 ## Integration with Services
 
 ```go
-func (s *UserService) handleList(c *gin.Context) {
+func (s *UserService) handleList(c echo.Context) error {
     // Parse pagination params
-    first, _ := strconv.Atoi(c.DefaultQuery("first", "10"))
-    after := c.Query("after")
+    first, _ := strconv.Atoi(c.QueryParam("first"))
+    if first == 0 {
+        first = 10
+    }
+    after := c.QueryParam("after")
     p, _ := pagination.NewCursorPagination(first, 0, after, "")
 
     // Query with over-fetch
@@ -175,7 +178,7 @@ func (s *UserService) handleList(c *gin.Context) {
     }
 
     page := pagination.CreatePage(edges, hasNext, false, int(total))
-    response.SuccessWithMeta(c, page.Edges, map[string]interface{}{
+    return response.SuccessWithMeta(c, page.Edges, map[string]interface{}{
         "page_info":     page.PageInfo,
         "total_count":   page.TotalCount,
     })

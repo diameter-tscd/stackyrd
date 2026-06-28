@@ -18,7 +18,7 @@ Every script is `package main`, single-file, run with `go run scripts/<name>/`.
 | Swagger | `swagger/swagger.go` | `go run scripts/swagger/swagger.go` | Generate OpenAPI docs |
 | Service | `service/service.go` | `go run scripts/service/service.go` | Scaffold service from templates |
 
-Deep docs: `.kilo/skills/scripts/{NAME}_SCRIPT.md`.
+Deep docs: `.agent/skills/scripts/{NAME}_SCRIPT.md`.
 
 ## Core Patterns
 
@@ -30,7 +30,7 @@ Deep docs: `.kilo/skills/scripts/{NAME}_SCRIPT.md`.
 
 ## Duplication Rule
 
-2 copies → note it, leave both, add `ponytail:` comment. 3rd copy → extract to `pkg/scriptutil/` and update all callers. Current candidates at 3+ copies: `findProjectRoot()`, `ClearScreen()`, Logger + colors.
+2 copies → note it, leave both, add `ponytail:` comment. 3rd copy → extract to `pkg/scriptutil/` and update all callers. Current candidates at 3+ copies: `ClearScreen()` (4 copies), Logger (5 copies). `pkg/scriptutil/` doesn't exist yet.
 
 ## Testing
 

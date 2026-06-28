@@ -38,7 +38,7 @@ Add annotations directly above handler functions:
 // @Success 200 {object} response.Response{data=[]User} "Success"
 // @Failure 400 {object} response.Response "Bad request"
 // @Router /users [get]
-func (s *UsersService) ListUsers(c *gin.Context) {
+func (s *UsersService) ListUsers(c echo.Context) error {
     // handler
 }
 ```

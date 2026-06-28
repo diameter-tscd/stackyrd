@@ -1,7 +1,7 @@
 # stackyrd
 
 **Language:** Go 1.25.3 — **Module:** `github.com/diameter-tscd/stackyrd`
-**Purpose:** Modular service framework built on Gin with auto-discovered services, middleware, and infrastructure.
+**Purpose:** Modular service framework built on Echo v4 with auto-discovered services, middleware, and infrastructure.
 
 ## Quick Reference
 
@@ -22,9 +22,9 @@ go run scripts/build/build.go  # Build (output: dist/)
 | Infrastructure | `pkg/infrastructure/{name}.go` | `init()` → `RegisterComponent` | _(managed by registry)_ |
 
 **Interfaces:**
-- `Service`: `Name()`, `WireName()`, `Enabled()`, `Endpoints()`, `RegisterRoutes(gin.RouterGroup)`, `Get()`
+- `Service`: `Name()`, `WireName()`, `Enabled()`, `Endpoints()`, `RegisterRoutes(echo.Group)`, `Get()`
 - `InfrastructureComponent`: `Name()`, `Close()`, `GetStatus()`
-- `MiddlewareFactory`: `func(cfg, logger) (gin.HandlerFunc, error)`
+- `MiddlewareFactory`: `func(cfg, logger) (echo.MiddlewareFunc, error)`
 
 **Naming:** `{name}_service.go`, `{name}.go` (infra), `{package}_test.go`
 
@@ -35,7 +35,7 @@ cmd/app/           # Entry point, CLI flags, bootstrap
 config/            # Viper config structs (config.yaml is source of truth)
 internal/
   middleware/      # HTTP middleware (auto-registered via init())
-  server/          # Gin server, health endpoints, graceful shutdown
+  server/          # Echo server, health endpoints, graceful shutdown
   services/modules/ # Business logic services
 pkg/
   assets/          # Embedded assets (banner.txt)

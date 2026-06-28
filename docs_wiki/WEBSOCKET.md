@@ -33,10 +33,10 @@ go hub.Run() // event loop (blocking)
 ### Registering the WebSocket Endpoint
 
 ```go
-engine := gin.Default()
-engine.GET("/ws", func(c *gin.Context) {
-    // Convert gin to http.ResponseWriter + *http.Request
-    websocket.HandleWebSocket(hub)(c.Writer, c.Request)
+e := echo.New()
+e.GET("/ws", func(c echo.Context) error {
+    websocket.HandleWebSocket(hub)(c.Response().Writer, c.Request())
+    return nil
 })
 ```
 
@@ -136,16 +136,15 @@ type BroadcastService struct {
     hub     *websocket.Hub
 }
 
-func (s *BroadcastService) handleEvent(c *gin.Context) {
+func (s *BroadcastService) handleEvent(c echo.Context) error {
     var event Event
-    if err := c.ShouldBindJSON(&event); err != nil {
-        response.BadRequest(c, err.Error())
-        return
+    if err := c.Bind(&event); err != nil {
+        return response.BadRequest(c, err.Error())
     }
 
     // Broadcast to all connected WebSocket clients
     websocket.BroadcastMessage(s.hub, event.Type, event.Data)
-    response.Success(c, map[string]string{"status": "broadcasted"})
+    return response.Success(c, map[string]string{"status": "broadcasted"})
 }
 ```
 
@@ -153,9 +152,10 @@ func (s *BroadcastService) handleEvent(c *gin.Context) {
 
 ```go
 // In RegisterRoutes:
-func (s *WebSocketService) RegisterRoutes(g *gin.RouterGroup) {
-    g.GET("/ws", func(c *gin.Context) {
-        websocket.HandleWebSocket(s.hub)(c.Writer, c.Request)
+func (s *WebSocketService) RegisterRoutes(g *echo.Group) {
+    g.GET("/ws", func(c echo.Context) error {
+        websocket.HandleWebSocket(s.hub)(c.Response().Writer, c.Request())
+        return nil
     })
     g.POST("/ws/broadcast", s.handleBroadcast)
 }

@@ -23,4 +23,4 @@ Keep `docs_wiki/` accurate and in sync with code. `docs_wiki/README.md` is the i
 4. Check cross-references in other docs
 5. Update `AGENTS.md` if a file was added/removed
 
-Cross-ref: `stackyrd-dev` skill for extension patterns before writing about them.
+Cross-ref: `.agent/skills/stackyrd-dev/SKILL.md` for extension patterns before writing about them.

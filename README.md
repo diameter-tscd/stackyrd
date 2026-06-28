@@ -12,7 +12,7 @@
 </div>
 <br>
 
-**stackyrd** is an open-source, modular service framework for Go built on [Gin](https://github.com/gin-gonic/gin). It provides a layered architecture with auto-discovered services, middleware, infrastructure components, and a multi-language plugin system - so you can focus on business logic while the framework handles wiring, observability, and lifecycle.
+**stackyrd** is an open-source, modular service framework for Go built on [Echo](https://github.com/labstack/echo). It provides a layered architecture with auto-discovered services, middleware, infrastructure components, and a multi-language plugin system - so you can focus on business logic while the framework handles wiring, observability, and lifecycle.
 
 ### Core Architecture
 

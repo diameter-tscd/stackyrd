@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**stackyrd** is an enterprise-grade modular Go framework built on **Gin** with auto-discovery patterns, async infrastructure initialization, a plugin system (TS/Go/Python/Lua), TUI dashboard, and Prometheus metrics.
+**stackyrd** is an enterprise-grade modular Go framework built on **Echo v4** with auto-discovery patterns, async infrastructure initialization, a plugin system (TS/Go/Python/Lua), TUI dashboard, and Prometheus metrics.
 
 ## Key Concepts
 
@@ -62,7 +62,7 @@ flowchart TD
     A --> D[config.yaml]
     A --> E[internal/]
     E --> F[middleware/<br/>Auto-registered HTTP middleware]
-    E --> G[server/<br/>Gin setup, health endpoints]
+    E --> G[server/<br/>Echo setup, health endpoints]
     A --> H[internal/services/modules/<br/>Auto-discovered business services]
     A --> I[pkg/]
     I --> J[assets/<br/>Embedded application assets (banner.txt)]
@@ -102,7 +102,7 @@ type Service interface {
     WireName() string
     Enabled() bool
     Endpoints() []string
-    RegisterRoutes(*gin.RouterGroup)
+    RegisterRoutes(*echo.Group)
     Get() interface{}
 }
 
@@ -153,10 +153,10 @@ flowchart TD
 
 ## Middleware Pattern
 ```go
-type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error)
+type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
 
 func init() {
-    middleware.RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (gin.HandlerFunc, error) {
+    middleware.RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
         return corsMiddleware, nil
     })
 }

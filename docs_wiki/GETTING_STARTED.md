@@ -1,6 +1,6 @@
 # Getting Started
 
-Quick setup guide for **stackyrd** — an enterprise-grade modular Go service framework built on **Gin**.
+Quick setup guide for **stackyrd** — an enterprise-grade modular Go service framework built on **Echo v4**.
 
 ## Prerequisites
 
@@ -60,7 +60,7 @@ import (
     "stackyrd/pkg/logger"
     "stackyrd/pkg/registry"
     "stackyrd/pkg/response"
-    "github.com/gin-gonic/gin"
+    "github.com/labstack/echo/v4"
 )
 
 type HelloService struct {
@@ -78,12 +78,12 @@ func (s *HelloService) Enabled() bool       { return s.enabled }
 func (s *HelloService) Endpoints() []string { return []string{"GET /hello"} }
 func (s *HelloService) Get() interface{}    { return s }
 
-func (s *HelloService) RegisterRoutes(g *gin.RouterGroup) {
+func (s *HelloService) RegisterRoutes(g *echo.Group) {
     g.GET("/hello", s.handleHello)
 }
 
-func (s *HelloService) handleHello(c *gin.Context) {
-    response.Success(c, map[string]string{"msg": "Hello!"})
+func (s *HelloService) handleHello(c echo.Context) error {
+    return response.Success(c, map[string]string{"msg": "Hello!"})
 }
 
 func init() {

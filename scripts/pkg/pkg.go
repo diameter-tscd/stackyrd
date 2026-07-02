@@ -255,7 +255,7 @@ func parseIndexLines(body string, logger *Logger) []*PackageInfo {
 }
 
 func fetchIndex(logger *Logger) ([]*PackageInfo, error) {
-	logger.Info("Fetching index from %s", INDEX_URL)
+	logger.Info("Fetching package index...")
 	resp, err := http.Get(INDEX_URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download index: %w", err)
@@ -368,28 +368,45 @@ func promptUserByName(packages []*PackageInfo, logger *Logger) (*PackageInfo, er
 			logger.Info("Selected package: %s", matches[0].Name)
 			return matches[0], nil
 		}
-		fmt.Printf("\n%sMatching packages:%s\n", B_PURPLE, RESET)
-		for _, pkg := range matches {
-			fmt.Printf("  %s%s%s\n", B_WHITE, pkg.Name, RESET)
-		}
+		const pageSize = 30
+		totalPages := (len(matches) + pageSize - 1) / pageSize
+		currentPage := 1
 		for {
-			fmt.Printf("\n%sEnter the exact package name from the list (or 'search' to search again, 'cancel' to exit):%s ", B_YELLOW, RESET)
+			fmt.Printf("\n%sMatching packages (page %d/%d):%s\n", B_PURPLE, currentPage, totalPages, RESET)
+			start := (currentPage - 1) * pageSize
+			end := start + pageSize
+			if end > len(matches) {
+				end = len(matches)
+			}
+			for i, pkg := range matches[start:end] {
+				fmt.Printf("  %s%d.%s %s%s%s\n", P_CYAN, start+i+1, RESET, B_WHITE, pkg.Name, RESET)
+			}
+			nextHint := ""
+			if currentPage < totalPages {
+				nextHint = ", enter 'n' for next page"
+			}
+			fmt.Printf("\n%sSelect package by number (or 0 to search again%s, 'cancel' to exit):%s ", B_YELLOW, nextHint, RESET)
 			choice, _ := reader.ReadString('\n')
 			choice = strings.TrimSpace(choice)
 			if strings.EqualFold(choice, "cancel") {
 				fmt.Println("Installation cancelled.")
 				os.Exit(0)
 			}
-			if strings.EqualFold(choice, "search") {
-				break
+			if strings.EqualFold(choice, "n") && currentPage < totalPages {
+				currentPage++
+				continue
 			}
-			for _, pkg := range matches {
-				if pkg.Name == choice {
-					logger.Info("Selected package: %s", pkg.Name)
-					return pkg, nil
+			idx := 0
+			if _, err := fmt.Sscanf(choice, "%d", &idx); err == nil {
+				if idx == 0 {
+					break
+				}
+				if idx >= 1 && idx <= len(matches) {
+					logger.Info("Selected package: %s", matches[idx-1].Name)
+					return matches[idx-1], nil
 				}
 			}
-			fmt.Printf("%sInvalid package name. Please choose exactly from the list above.%s\n", P_RED, RESET)
+			fmt.Printf("%sInvalid choice. Enter a number between 1 and %d (or 0 to search again%s):%s ", P_RED, len(matches), nextHint, RESET)
 		}
 	}
 }
@@ -1073,7 +1090,7 @@ func cmdUpdate(logger *Logger) {
 	if err != nil {
 		manifest = &Manifest{Meta: ManifestMeta{IndexURL: INDEX_URL}, Packages: make(map[string]InstalledPackage)}
 	}
-	logger.Info("Fetching index from %s", INDEX_URL)
+	logger.Info("Fetching package index...")
 	resp, err := http.Get(INDEX_URL)
 	if err != nil {
 		logger.Error("Failed to fetch index: %v", err)

@@ -35,31 +35,31 @@ func TextEffect(text string, colors []string) string {
 var (
 	// Success box
 	SuccessBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#50FA7B")).
-			Foreground(lipgloss.Color("#50FA7B")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#50FA7B")).
+		Foreground(lipgloss.Color("#50FA7B")).
+		Padding(0, 2)
 
 	// Warning box
 	WarningBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#F1FA8C")).
-			Foreground(lipgloss.Color("#F1FA8C")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#F1FA8C")).
+		Foreground(lipgloss.Color("#F1FA8C")).
+		Padding(0, 2)
 
 	// Error box
 	ErrorBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF5555")).
-			Foreground(lipgloss.Color("#FF5555")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#FF5555")).
+		Foreground(lipgloss.Color("#FF5555")).
+		Padding(0, 2)
 
 	// Info box
 	InfoBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#8BE9FD")).
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#8BE9FD")).
+		Foreground(lipgloss.Color("#8BE9FD")).
+		Padding(0, 2)
 
 	// Primary box with double border
 	PrimaryBoxStyle = lipgloss.NewStyle().

@@ -64,9 +64,9 @@ var (
 			Padding(0, 2)
 
 	dashBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#6272A4")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#6272A4")).
+		Padding(0, 2)
 
 	dashHeaderStyle = lipgloss.NewStyle().
 			Bold(true).

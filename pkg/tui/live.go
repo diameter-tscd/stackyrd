@@ -479,7 +479,7 @@ func (m *LiveModel) View() string {
 	}
 
 	// Wrap entire content with minimal padding
-	containerStyle := lipgloss.NewStyle().Padding(1)
+	containerStyle := lipgloss.NewStyle().Padding(7, 7, 0, 7)
 	return containerStyle.Render(b.String())
 }
 

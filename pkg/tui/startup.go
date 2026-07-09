@@ -47,6 +47,9 @@ var (
 		Bold(true).
 		Foreground(lipgloss.Color("#8daea5")).
 		MarginBottom(2)
+		Bold(true).
+		Foreground(lipgloss.Color("#8daea5")).
+		MarginBottom(2)
 
 	subtitleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#8BE9FD")).
@@ -54,12 +57,16 @@ var (
 
 	// Banner style with gradient effect
 	bannerStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8daea5")).
+		Foreground(lipgloss.Color("#BD93F9")).
 		Bold(true).
 		MarginBottom(2)
 
 	// Box styles
 	boxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#6272A4")).
+		Padding(1, 3).
+		MarginTop(1)
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#6272A4")).
 		Padding(1, 3).
@@ -254,8 +261,8 @@ func (m StartupModel) View() string {
 	footer := "Press 'q' to continue..."
 	b.WriteString(footerStyle.Render(footer))
 
-	// Wrap entire content
-	containerStyle := lipgloss.NewStyle().Padding(4, 4, 2, 4)
+	// Wrap entire content with padding
+	containerStyle := lipgloss.NewStyle().Padding(3)
 	return containerStyle.Render(b.String())
 }
 
@@ -264,7 +271,7 @@ func (m StartupModel) renderServices() string {
 
 	header := labelStyle.Render("◆ Services Initialization")
 	lines = append(lines, header)
-	lines = append(lines, DividerLine.Render(strings.Repeat("─", 50)))
+	lines = append(lines, strings.Repeat("─", 50))
 
 	for i, s := range m.services {
 		var icon, status string
@@ -301,6 +308,7 @@ func (m StartupModel) renderServices() string {
 
 		line := fmt.Sprintf("  %s %s %s %s",
 			icon,
+			lipgloss.NewStyle().Width(25).Render(name),
 			lipgloss.NewStyle().Width(25).Render(name),
 			iconArrow,
 			style.Render(status),

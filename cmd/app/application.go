@@ -222,9 +222,9 @@ func (app *Application) runWithConsole() {
 	app.handleConsoleShutdown(srv)
 }
 
-// createLiveTUI creates and configures the Live TUI
-func (app *Application) createLiveTUI() *tui.LiveTUI {
-	return tui.NewLiveTUI(tui.LiveConfig{
+// createLiveTUI creates and configures the runtime dashboard TUI
+func (app *Application) createLiveTUI() *tui.TerminalTUI {
+	return tui.NewTerminalTUI(tui.LiveConfig{
 		AppName:    app.config.App.Name,
 		AppVersion: app.config.App.Version,
 		Banner:     app.bannerText,
@@ -235,7 +235,7 @@ func (app *Application) createLiveTUI() *tui.LiveTUI {
 }
 
 // handleShutdown handles graceful shutdown for TUI mode
-func (app *Application) handleShutdown(liveTUI *tui.LiveTUI, srv *server.Server) {
+func (app *Application) handleShutdown(liveTUI *tui.TerminalTUI, srv *server.Server) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 

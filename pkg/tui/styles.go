@@ -175,6 +175,64 @@ func KeyValue(key, value string) string {
 	return keyStyle.Render(key+":") + " " + valueStyle.Render(value)
 }
 
+// Sidebar / main-panel styles for the opencode-style terminal dashboard
+var (
+	// Sidebar container: black background (matches the main panel), 4-cell padding
+	sidebarStyle = lipgloss.NewStyle().
+			Padding(0, 4).
+			Align(lipgloss.Left)
+
+	// Main panel container with 2-cell left/right padding
+	mainPanelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F8F8F2")).
+			Padding(0, 2).
+			Align(lipgloss.Left)
+
+	// Sidebar header (app name + version, brand accent)
+	sidebarHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#8daea5"))
+
+	// Sidebar section divider label (e.g. "─── Resources ───")
+	sidebarSectionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#6272A4")).
+				Bold(true)
+
+	// Sidebar key label (e.g. "CPU:")
+	sidebarLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D3DAD9"))
+
+	// Sidebar plain value
+	sidebarValueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D3DAD9"))
+
+	// Sidebar dim text
+	sidebarDimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6272A4"))
+
+	// Command input box — flat, opencode-style (no border)
+	commandBoxStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#37353E")).
+			Foreground(lipgloss.Color("#D3DAD9")).
+			Padding(0, 2)
+
+	// Active command input box (focused)
+	commandBoxActiveStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#37353E")).
+				Foreground(lipgloss.Color("#D3DAD9")).
+				Padding(0, 2)
+
+	// ":" prompt in command input
+	commandPromptStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#8daea5")).
+				Bold(true)
+
+	// Focus indicator for the current focus target
+	focusIndicatorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#8daea5")).
+				Bold(true)
+)
+
 // ProgressBar creates a simple text-based progress bar
 func ProgressBar(percent float64, width int, showPercent bool) string {
 	if percent > 100 {

@@ -569,6 +569,8 @@ Run '%scommand -h%s' for subcommand-specific flags.
 }
 
 func main() {
+	fmt.Print("\033[?1049l\033[0m\033[H\033[2J\033[3J")
+
 	flag.Usage = func() {
 		printUsage()
 	}

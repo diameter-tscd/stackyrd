@@ -214,16 +214,23 @@ func GetNetworkInfo() (map[string]string, error) {
 	}, nil
 }
 
-// ClearScreen clears the terminal screen (cross-platform)
-func ClearScreen() {
-	var cmd *exec.Cmd
+// ResetTerminal restores terminal to main screen buffer and resets attributes
+// Useful after bubbletea alt-screen exits abnormally
+func ResetTerminal() {
+	os.Stdout.WriteString("\033[?1049l\033[0m\033[H")
+}
 
+// ClearScreen clears the terminal screen (cross-platform)
+// Also resets terminal state: restores main screen buffer, cursor, and text attributes.
+func ClearScreen() {
+	ResetTerminal()
+	os.Stdout.WriteString("\033[2J\033[3J")
+
+	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		// Windows: use cmd /c cls
 		cmd = exec.Command("cmd", "/c", "cls")
 	default:
-		// Linux, macOS, and others: use clear command
 		cmd = exec.Command("clear")
 	}
 

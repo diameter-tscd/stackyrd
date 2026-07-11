@@ -500,8 +500,7 @@ func askVerbose(logger *DockerLogger) bool {
 
 // main function
 func main() {
-	// Clear the terminal screen
-	fmt.Print("\033[H\033[2J")
+	fmt.Print("\033[?1049l\033[0m\033[H\033[2J\033[3J")
 
 	// Initialize a temporary logger for interactive prompts
 	tempLogger := NewDockerLogger(false)

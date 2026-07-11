@@ -135,16 +135,16 @@ func (ctx *BuildContext) checkPath(logger *Logger) error {
 	return ctx.ensureProjectRoot(logger)
 }
 
-// clear console screen
+// clear console screen and reset terminal state
 func ClearScreen() {
+	fmt.Print("\033[?1049l\033[0m\033[H\033[2J\033[3J")
+
 	var cmd *exec.Cmd
 
 	switch runtime.GOOS {
 	case "windows":
-		// Windows: use cmd /c cls
 		cmd = exec.Command("cmd", "/c", "cls")
 	default:
-		// Linux, macOS, and others: use clear command
 		cmd = exec.Command("clear")
 	}
 
@@ -1060,7 +1060,7 @@ func isTerminal() bool {
 // runTUIBuild runs the build with the bubbletea TUI
 func runTUIBuild(ctx *BuildContext, logger *Logger) {
 	defer func() {
-		fmt.Print("\033[?25h\033[0m") // ensure cursor visible and attributes reset
+		fmt.Print("\033[?1049l\033[?25h\033[0m") // restore main buffer, show cursor, reset attrs
 	}()
 
 	_, err := RunBuildTUI(ctx, logger)

@@ -62,6 +62,17 @@ func (r *MiddlewareRegistry) IsEnabled(name string) bool {
 	return true
 }
 
+// GetNames returns all registered middleware names.
+func (r *MiddlewareRegistry) GetNames() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.factories))
+	for name := range r.factories {
+		names = append(names, name)
+	}
+	return names
+}
+
 func (r *MiddlewareRegistry) ApplyConfig(cfg *config.Config) {
 	if cfg.Middleware == nil {
 		return

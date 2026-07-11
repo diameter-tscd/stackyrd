@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/tui/template"
@@ -46,6 +47,11 @@ type ServiceEntry struct {
 	Running bool
 }
 
+type MiddlewareEntry struct {
+	Name    string
+	Enabled bool
+}
+
 type TerminalModel struct {
 	spinner      spinner.Model
 	commandInput textinput.Model
@@ -78,13 +84,21 @@ type TerminalModel struct {
 	goroutines int
 	hostname   string
 
-	infraEntries   []InfraEntry
-	serviceEntries []ServiceEntry
+	infraEntries      []InfraEntry
+	serviceEntries    []ServiceEntry
+	middlewareEntries []MiddlewareEntry
+
+	cpuModel  string
+	pid       int
+	appMem    uint64
+	pluginLoaded int
+	pluginTotal  int
 
 	sidebarWidth         int
 	sidebarContentWidth  int
 	mainWidth            int
 	logWidth             int
+	sidebarHidden        bool
 }
 
 type terminalTickMsg time.Time
@@ -102,8 +116,8 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 
 	ti := textinput.New()
 	ti.Placeholder = "Type :command... (ctrl+p to activate)"
-	ti.CharLimit = 200
-	ti.Width = 40
+	ti.CharLimit = 500
+	ti.Width = 60
 	ti.Prompt = ": "
 	ti.PromptStyle = commandPromptStyle
 	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
@@ -127,6 +141,7 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 		filterDialog:    filterDialog,
 		mode:            modeNormal,
 		focus:           focusLogs,
+		pid:             os.Getpid(),
 	}
 
 	m.calculateWidths()
@@ -253,7 +268,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.maxVisibleLines < 5 {
 			m.maxVisibleLines = 5
 		}
-		m.commandInput.Width = m.mainWidth - 20
+		m.commandInput.Width = m.mainWidth - 10
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -303,9 +318,16 @@ func (m *TerminalModel) View() string {
 		return m.filterDialog.View(m.width, m.height)
 	}
 
-	sidebarContent := m.renderSidebar()
 	mainContent := m.renderMainPanel()
+	mainBlock := mainPanelStyle.
+		Width(m.mainWidth).
+		Render(mainContent)
 
+	if m.sidebarHidden {
+		return mainBlock
+	}
+
+	sidebarContent := m.renderSidebar()
 	sidebarBlock := sidebarStyle.
 		Width(m.sidebarContentWidth).
 		Render(sidebarContent)
@@ -313,10 +335,6 @@ func (m *TerminalModel) View() string {
 	sep := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#44475A")).
 		Render("│")
-
-	mainBlock := mainPanelStyle.
-		Width(m.mainWidth).
-		Render(mainContent)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarBlock, sep, mainBlock)
 }
@@ -326,7 +344,7 @@ func (m *TerminalModel) renderSidebar() string {
 	if cw < 8 {
 		cw = 8
 	}
-	divider := strings.Repeat("─", cw)
+	divider := DividerLine.Render(strings.Repeat("─", cw))
 
 	var b strings.Builder
 
@@ -369,7 +387,7 @@ func (m *TerminalModel) renderSidebar() string {
 	b.WriteString("\n")
 
 	// Divider
-	b.WriteString(sidebarDimStyle.Render(divider))
+	b.WriteString(divider)
 	b.WriteString("\n")
 
 	// spacing
@@ -404,30 +422,78 @@ func (m *TerminalModel) renderResourcesSection() string {
 	}
 	lines = append(lines, sidebarSectionStyle.Render(sectionTitle))
 
-	cpuBar := m.termProgressBar(m.cpuPercent, 10)
-	cpuLine := fmt.Sprintf("%s %s %s",
-		sidebarLabelStyle.Render("CPU"),
-		cpuBar,
-		m.percentStyle(m.cpuPercent).Render(fmt.Sprintf("%.1f%%", m.cpuPercent)),
-	)
-	lines = append(lines, cpuLine)
+	barW := m.sidebarContentWidth - 20
+	if barW < 4 {
+		barW = 4
+	}
 
-	ramBar := m.termProgressBar(m.memPercent, 10)
-	ramLine := fmt.Sprintf("%s %s %s",
-		sidebarLabelStyle.Render("RAM"),
-		ramBar,
-		m.percentStyle(m.memPercent).Render(fmt.Sprintf("%.1f%%", m.memPercent)),
-	)
-	lines = append(lines, ramLine)
+	cpuBar := m.termProgressBar(m.cpuPercent, barW)
+	cpuPct := m.percentStyle(m.cpuPercent).Render(fmt.Sprintf("%5.1f%%", m.cpuPercent))
+	lines = append(lines, fmt.Sprintf(" %s %s %s", sidebarLabelStyle.Render("CPU"), cpuBar, cpuPct))
 
-	memDetail := fmt.Sprintf("     %d MiB / %d MiB", m.memUsed, m.memTotal)
-	lines = append(lines, sidebarDimStyle.Render(memDetail))
+	memBar := m.termProgressBar(m.memPercent, barW)
+	memPct := m.percentStyle(m.memPercent).Render(fmt.Sprintf("%5.1f%%", m.memPercent))
+	lines = append(lines, fmt.Sprintf(" %s %s %s", sidebarLabelStyle.Render("RAM"), memBar, memPct))
 
-	goLine := fmt.Sprintf("%s %s",
-		sidebarLabelStyle.Render("Goroutines:"),
+	// Mem detail in GiB
+	memUsedGiB := fmt.Sprintf("%.1f", float64(m.memUsed)/1024)
+	memTotalGiB := fmt.Sprintf("%.1f", float64(m.memTotal)/1024)
+	lines = append(lines, fmt.Sprintf("     %s / %s GiB", sidebarValueStyle.Render(memUsedGiB), sidebarDimStyle.Render(memTotalGiB)))
+
+	// Cores + load
+	ncpu := runtime.NumCPU()
+	lines = append(lines, fmt.Sprintf(" %s %s %s", sidebarLabelStyle.Render("Cores"),
+		sidebarValueStyle.Render(fmt.Sprintf("%d", ncpu)),
+		m.percentStyle(m.cpuPercent).Render("●")))
+
+	// Goroutines
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		sidebarLabelStyle.Render("Goroutines"),
 		sidebarValueStyle.Render(fmt.Sprintf("%d", m.goroutines)),
-	)
-	lines = append(lines, goLine)
+	))
+
+	// App memory
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		sidebarLabelStyle.Render("App Mem"),
+		sidebarValueStyle.Render(fmt.Sprintf("%d MiB", m.appMem)),
+	))
+
+	// Plugins loaded/total
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		sidebarLabelStyle.Render("Plugins"),
+		sidebarValueStyle.Render(fmt.Sprintf("%d/%d", m.pluginLoaded, m.pluginTotal)),
+	))
+
+	// Hostname
+	if m.hostname != "" {
+		hn := m.hostname
+		// truncate to fit sidebar
+		if len(hn) > 24 {
+			hn = hn[:24]
+		}
+		lines = append(lines, fmt.Sprintf(" %s %s",
+			sidebarLabelStyle.Render("Host"),
+			sidebarValueStyle.Render(hn),
+		))
+	}
+
+	// CPU model
+	if m.cpuModel != "" {
+		cm := m.cpuModel
+		if len(cm) > 28 {
+			cm = cm[:25] + "..."
+		}
+		lines = append(lines, fmt.Sprintf(" %s %s",
+			sidebarLabelStyle.Render("CPU"),
+			sidebarValueStyle.Render(cm),
+		))
+	}
+
+	// PID
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		sidebarLabelStyle.Render("PID"),
+		sidebarValueStyle.Render(fmt.Sprintf("%d", m.pid)),
+	))
 
 	return strings.Join(lines, "\n")
 }
@@ -501,6 +567,41 @@ func (m *TerminalModel) renderComponentsSection() string {
 		lines = append(lines, line)
 	}
 
+	// spacing between services and middlewares
+	lines = append(lines, "")
+
+	mwTitle := "Middlewares"
+	if cw >= 16 {
+		mwTitle = "─── Middlewares ───"
+	}
+	lines = append(lines, sidebarSectionStyle.Render(mwTitle))
+
+	if len(m.middlewareEntries) == 0 {
+		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
+	}
+	for _, mw := range m.middlewareEntries {
+		color := "#50FA7B"
+		icon := "◐"
+		status := "on"
+		if !mw.Enabled {
+			color = "#6272A4"
+			icon = "○"
+			status = "off"
+		}
+		name := mw.Name
+		if len(name) > cw-12 {
+			name = name[:cw-12]
+		}
+		iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+		line := fmt.Sprintf("%s %s %s",
+			iconStyle.Render(icon),
+			sidebarLabelStyle.Render(name),
+			statusStyle.Render(status),
+		)
+		lines = append(lines, line)
+	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -515,7 +616,7 @@ func (m *TerminalModel) renderMainPanel() string {
 	b.WriteString(mainPanelStyle.Render("▪ Live Logs"))
 	b.WriteString("\n")
 
-	b.WriteString(sidebarDimStyle.Render(strings.Repeat("─", m.mainWidth-4)))
+	b.WriteString(DividerLine.Render(strings.Repeat("─", m.mainWidth-4)))
 	b.WriteString("\n")
 
 	logLines := m.renderLogEntries()
@@ -605,15 +706,15 @@ func (m *TerminalModel) renderLogEntries() []string {
 		logsToShow = m.allLogs
 	}
 
-	if len(logsToShow) == 0 {
+		if len(logsToShow) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  Waiting for logs..."))
 	} else {
 		for _, log := range logsToShow {
 			ls := m.levelStyle(log.Level)
 			timeStr := log.Time.Format("15:04:05")
-			levelStr := fmt.Sprintf("[%-5s]", strings.ToUpper(log.Level))
+			icon := m.levelIcon(log.Level)
 
-			maxMsgLen := lw - 20
+			maxMsgLen := lw - 22
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
@@ -622,9 +723,11 @@ func (m *TerminalModel) renderLogEntries() []string {
 				msg = msg[:maxMsgLen-3] + "..."
 			}
 
-			line := fmt.Sprintf("  %s %s %s",
+			levelPad := ""
+			line := fmt.Sprintf("  %s %s%s %s",
 				sidebarDimStyle.Render(timeStr),
-				ls.Render(levelStr),
+				ls.Render(icon),
+				levelPad,
 				lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2")).Render(msg),
 			)
 			lines = append(lines, line)
@@ -632,6 +735,23 @@ func (m *TerminalModel) renderLogEntries() []string {
 	}
 
 	return lines
+}
+
+func (m *TerminalModel) levelIcon(level string) string {
+	switch strings.ToLower(level) {
+	case "debug":
+		return "⚙"
+	case "info":
+		return "●"
+	case "warn", "warning":
+		return "⚠"
+	case "error":
+		return "✗"
+	case "fatal":
+		return "‼"
+	default:
+		return "•"
+	}
 }
 
 func (m *TerminalModel) levelStyle(level string) lipgloss.Style {
@@ -792,24 +912,34 @@ func (m *TerminalModel) clearLogs() {
 }
 
 func (m *TerminalModel) calculateWidths() {
-	sidebarWidth := m.width * 30 / 100
-	if sidebarWidth < 34 {
-		sidebarWidth = 34
-	}
-	if sidebarWidth > m.width/2 {
-		sidebarWidth = m.width / 2
-	}
-	// Flat sidebar: sidebarContentWidth is the column width passed to Width()
-	// (no border; padding is inside the content area).
-	m.sidebarWidth = sidebarWidth
-	m.sidebarContentWidth = sidebarWidth
-	if m.sidebarContentWidth < 16 {
-		m.sidebarContentWidth = 16
-	}
-	// -1 reserves the thin "│" separator column between sidebar and main panel
-	m.mainWidth = m.width - m.sidebarWidth - 1
-	if m.mainWidth < 40 {
-		m.mainWidth = 40
+	// Auto-hide sidebar when terminal is too narrow for comfortable side-by-side layout
+	m.sidebarHidden = m.width < 100
+
+	if m.sidebarHidden {
+		m.sidebarWidth = 0
+		m.sidebarContentWidth = 0
+		m.mainWidth = m.width
+		if m.mainWidth < 40 {
+			m.mainWidth = 40
+		}
+	} else {
+		sidebarWidth := m.width * 30 / 100
+		if sidebarWidth < 34 {
+			sidebarWidth = 34
+		}
+		if sidebarWidth > m.width/2 {
+			sidebarWidth = m.width / 2
+		}
+		m.sidebarWidth = sidebarWidth
+		m.sidebarContentWidth = sidebarWidth
+		if m.sidebarContentWidth < 16 {
+			m.sidebarContentWidth = 16
+		}
+		// -1 reserves the thin "│" separator column between sidebar and main panel
+		m.mainWidth = m.width - m.sidebarWidth - 1
+		if m.mainWidth < 40 {
+			m.mainWidth = 40
+		}
 	}
 	m.logWidth = m.mainWidth - 4
 	if m.logWidth < 40 {
@@ -834,6 +964,14 @@ func (m *TerminalModel) refreshStats() {
 		}
 	}
 
+	if m.cpuModel == "" {
+		if info, err := cpu.Info(); err == nil && len(info) > 0 {
+			m.cpuModel = info[0].ModelName
+		}
+	}
+
+	m.appMem = utils.GetMemSelf()
+
 	reg := infrastructure.GetGlobalRegistry()
 	all := reg.GetAll()
 	infraEntries := make([]InfraEntry, 0, len(all))
@@ -846,6 +984,27 @@ func (m *TerminalModel) refreshStats() {
 		return infraEntries[i].Name < infraEntries[j].Name
 	})
 	m.infraEntries = infraEntries
+
+	if comp, ok := reg.Get("plugins"); ok {
+		status := comp.GetStatus()
+		if t, ok := status["total"].(int); ok {
+			m.pluginTotal = t
+		}
+		if l, ok := status["loaded"].(int); ok {
+			m.pluginLoaded = l
+		}
+	}
+
+	mwNames := middleware.GetGlobalMiddlewareRegistry().GetNames()
+	sort.Strings(mwNames)
+	mwEntries := make([]MiddlewareEntry, 0, len(mwNames))
+	for _, name := range mwNames {
+		mwEntries = append(mwEntries, MiddlewareEntry{
+			Name:    name,
+			Enabled: middleware.GetGlobalMiddlewareRegistry().IsEnabled(name),
+		})
+	}
+	m.middlewareEntries = mwEntries
 
 	factories := registry.GetServiceFactories()
 	svcNames := make([]string, 0, len(factories))
@@ -878,14 +1037,15 @@ func (m *TerminalModel) termProgressBar(percent float64, width int) string {
 	return bar
 }
 
+// ponytail: pastel progress stops at 3 thresholds — add more if smoother gradient needed
 func (m *TerminalModel) percentStyle(percent float64) lipgloss.Style {
 	switch {
 	case percent < 50:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B"))
+		return dashPastelGood
 	case percent < 80:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F1FA8C"))
+		return dashPastelWarn
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+		return dashPastelBad
 	}
 }
 

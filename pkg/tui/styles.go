@@ -95,14 +95,15 @@ const (
 	IconFire     = "🔥"
 )
 
+// DividerLine style for horizontal separators
+var DividerLine = lipgloss.NewStyle().Foreground(lipgloss.Color("#191919"))
+
 // Divider creates a styled horizontal divider
 func Divider(width int, char string) string {
 	if char == "" {
 		char = "─"
 	}
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#44475A")).
-		Render(strings.Repeat(char, width))
+	return DividerLine.Render(strings.Repeat(char, width))
 }
 
 // Header creates a styled header with decorations
@@ -248,11 +249,11 @@ func ProgressBar(percent float64, width int, showPercent bool) string {
 	var color string
 	switch {
 	case percent < 50:
-		color = "#50FA7B"
+		color = "#b0ffc4ff"
 	case percent < 80:
-		color = "#F1FA8C"
+		color = "#ffdab3ff"
 	default:
-		color = "#FF5555"
+		color = "#ffaeaeff"
 	}
 
 	filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))

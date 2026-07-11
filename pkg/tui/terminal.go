@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/evertras/bubble-table/table"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
 )
@@ -413,6 +414,62 @@ func (m *TerminalModel) renderSidebar() string {
 	return b.String()
 }
 
+// noSidebarBorder is a bubble-table Border with all glyphs set to space,
+// producing invisible borders while keeping column alignment.
+var noSidebarBorder = table.Border{
+	Top:    " ",
+	Bottom: " ",
+	Left:   " ",
+	Right:  " ",
+	TopRight:    " ",
+	TopLeft:     " ",
+	BottomRight: " ",
+	BottomLeft:  " ",
+	TopJunction:    " ",
+	LeftJunction:   " ",
+	RightJunction:  " ",
+	BottomJunction: " ",
+	InnerJunction:  " ",
+	InnerDivider:   " ",
+}
+
+// sidebarTable2 renders a borderless 2-column table for key-value info.
+func (m *TerminalModel) sidebarTable2(labelW int, rows []table.Row) string {
+	cw := m.sidebarContentWidth - 8
+	valW := cw - labelW - 1
+	if valW < 8 {
+		valW = 8
+	}
+	cols := []table.Column{
+		table.NewColumn("k", "", labelW).WithStyle(sidebarLabelStyle),
+		table.NewColumn("v", "", valW).WithStyle(sidebarValueStyle),
+	}
+	t := table.New(cols).WithRows(rows).
+		WithHeaderVisibility(false).
+		Border(noSidebarBorder).
+		WithBaseStyle(lipgloss.NewStyle())
+	return t.View()
+}
+
+// sidebarTable3 renders a borderless 3-column table for icon/name/status lists.
+func (m *TerminalModel) sidebarTable3(iconW, nameW int, rows []table.Row) string {
+	cw := m.sidebarContentWidth - 8
+	statusW := cw - iconW - nameW - 2
+	if statusW < 6 {
+		statusW = 6
+	}
+	cols := []table.Column{
+		table.NewColumn("i", "", iconW),
+		table.NewColumn("n", "", nameW),
+		table.NewColumn("s", "", statusW),
+	}
+	t := table.New(cols).WithRows(rows).
+		WithHeaderVisibility(false).
+		Border(noSidebarBorder).
+		WithBaseStyle(lipgloss.NewStyle())
+	return t.View()
+}
+
 func (m *TerminalModel) renderResourcesSection() string {
 	var lines []string
 
@@ -440,60 +497,42 @@ func (m *TerminalModel) renderResourcesSection() string {
 	memTotalGiB := fmt.Sprintf("%.1f", float64(m.memTotal)/1024)
 	lines = append(lines, fmt.Sprintf("     %s / %s GiB", sidebarValueStyle.Render(memUsedGiB), sidebarDimStyle.Render(memTotalGiB)))
 
-	// Cores + load
+	// Separator
+	lines = append(lines, DividerLine.Render(strings.Repeat("─", 38)))
+
+	// Key-value info as 2-column table for proper alignment
+	var kvRows []table.Row
 	ncpu := runtime.NumCPU()
-	lines = append(lines, fmt.Sprintf(" %s %s %s", sidebarLabelStyle.Render("Cores"),
-		sidebarValueStyle.Render(fmt.Sprintf("%d", ncpu)),
-		m.percentStyle(m.cpuPercent).Render("●")))
-
-	// Goroutines
-	lines = append(lines, fmt.Sprintf(" %s %s",
-		sidebarLabelStyle.Render("Goroutines"),
-		sidebarValueStyle.Render(fmt.Sprintf("%d", m.goroutines)),
-	))
-
-	// App memory
-	lines = append(lines, fmt.Sprintf(" %s %s",
-		sidebarLabelStyle.Render("App Mem"),
-		sidebarValueStyle.Render(fmt.Sprintf("%d MiB", m.appMem)),
-	))
-
-	// Plugins loaded/total
-	lines = append(lines, fmt.Sprintf(" %s %s",
-		sidebarLabelStyle.Render("Plugins"),
-		sidebarValueStyle.Render(fmt.Sprintf("%d/%d", m.pluginLoaded, m.pluginTotal)),
-	))
-
-	// Hostname
+	kvRows = append(kvRows, table.NewRow(table.RowData{
+		"k": "Cores", "v": fmt.Sprintf("%d %s", ncpu, m.percentStyle(m.cpuPercent).Render("●")),
+	}))
+	kvRows = append(kvRows, table.NewRow(table.RowData{
+		"k": "Goroutines", "v": fmt.Sprintf("%d", m.goroutines),
+	}))
+	kvRows = append(kvRows, table.NewRow(table.RowData{
+		"k": "App Mem", "v": fmt.Sprintf("%d MiB", m.appMem),
+	}))
+	kvRows = append(kvRows, table.NewRow(table.RowData{
+		"k": "Plugins", "v": fmt.Sprintf("%d/%d", m.pluginLoaded, m.pluginTotal),
+	}))
 	if m.hostname != "" {
 		hn := m.hostname
-		// truncate to fit sidebar
 		if len(hn) > 24 {
 			hn = hn[:24]
 		}
-		lines = append(lines, fmt.Sprintf(" %s %s",
-			sidebarLabelStyle.Render("Host"),
-			sidebarValueStyle.Render(hn),
-		))
+		kvRows = append(kvRows, table.NewRow(table.RowData{"k": "Host", "v": hn}))
 	}
-
-	// CPU model
 	if m.cpuModel != "" {
 		cm := m.cpuModel
 		if len(cm) > 28 {
 			cm = cm[:25] + "..."
 		}
-		lines = append(lines, fmt.Sprintf(" %s %s",
-			sidebarLabelStyle.Render("CPU"),
-			sidebarValueStyle.Render(cm),
-		))
+		kvRows = append(kvRows, table.NewRow(table.RowData{"k": "CPU", "v": cm}))
 	}
-
-	// PID
-	lines = append(lines, fmt.Sprintf(" %s %s",
-		sidebarLabelStyle.Render("PID"),
-		sidebarValueStyle.Render(fmt.Sprintf("%d", m.pid)),
-	))
+	kvRows = append(kvRows, table.NewRow(table.RowData{
+		"k": "PID", "v": fmt.Sprintf("%d", m.pid),
+	}))
+	lines = append(lines, m.sidebarTable2(10, kvRows))
 
 	return strings.Join(lines, "\n")
 }
@@ -510,29 +549,29 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	if len(m.infraEntries) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
-	}
-	for _, infra := range m.infraEntries {
-		color := "#50FA7B"
-		status := "connected"
-		if !infra.Connected {
-			color = "#FF5555"
-			status = "error"
+	} else {
+		var rows []table.Row
+		for _, infra := range m.infraEntries {
+			color := "#50FA7B"
+			status := "connected"
+			if !infra.Connected {
+				color = "#FF5555"
+				status = "error"
+			}
+			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+			name := infra.Name
+			if len(name) > 20 {
+				name = name[:17] + "..."
+			}
+			rows = append(rows, table.NewRow(table.RowData{
+				"i": table.NewStyledCell("●", cs),
+				"n": name,
+				"s": table.NewStyledCell(status, cs),
+			}))
 		}
-		name := infra.Name
-		if len(name) > cw-12 {
-			name = name[:cw-12]
-		}
-		iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		line := fmt.Sprintf("%s %s %s",
-			iconStyle.Render("●"),
-			sidebarLabelStyle.Render(name),
-			statusStyle.Render(status),
-		)
-		lines = append(lines, line)
+		lines = append(lines, m.sidebarTable3(2, 20, rows))
 	}
 
-	// spacing between components and services
 	lines = append(lines, "")
 
 	svcTitle := "Services"
@@ -543,31 +582,31 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	if len(m.serviceEntries) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
-	}
-	for _, svc := range m.serviceEntries {
-		color := "#50FA7B"
-		icon := "◆"
-		status := "running"
-		if !svc.Running {
-			color = "#6272A4"
-			icon = "◇"
-			status = "disabled"
+	} else {
+		var rows []table.Row
+		for _, svc := range m.serviceEntries {
+			color := "#50FA7B"
+			icon := "◆"
+			status := "running"
+			if !svc.Running {
+				color = "#6272A4"
+				icon = "◇"
+				status = "disabled"
+			}
+			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+			name := svc.Name
+			if len(name) > 20 {
+				name = name[:17] + "..."
+			}
+			rows = append(rows, table.NewRow(table.RowData{
+				"i": table.NewStyledCell(icon, cs),
+				"n": name,
+				"s": table.NewStyledCell(status, cs),
+			}))
 		}
-		name := svc.Name
-		if len(name) > cw-12 {
-			name = name[:cw-12]
-		}
-		iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		line := fmt.Sprintf("%s %s %s",
-			iconStyle.Render(icon),
-			sidebarLabelStyle.Render(name),
-			statusStyle.Render(status),
-		)
-		lines = append(lines, line)
+		lines = append(lines, m.sidebarTable3(2, 20, rows))
 	}
 
-	// spacing between services and middlewares
 	lines = append(lines, "")
 
 	mwTitle := "Middlewares"
@@ -578,28 +617,29 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	if len(m.middlewareEntries) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
-	}
-	for _, mw := range m.middlewareEntries {
-		color := "#50FA7B"
-		icon := "◐"
-		status := "on"
-		if !mw.Enabled {
-			color = "#6272A4"
-			icon = "○"
-			status = "off"
+	} else {
+		var rows []table.Row
+		for _, mw := range m.middlewareEntries {
+			color := "#50FA7B"
+			icon := "◐"
+			status := "on"
+			if !mw.Enabled {
+				color = "#6272A4"
+				icon = "○"
+				status = "off"
+			}
+			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+			name := mw.Name
+			if len(name) > 20 {
+				name = name[:17] + "..."
+			}
+			rows = append(rows, table.NewRow(table.RowData{
+				"i": table.NewStyledCell(icon, cs),
+				"n": name,
+				"s": table.NewStyledCell(status, cs),
+			}))
 		}
-		name := mw.Name
-		if len(name) > cw-12 {
-			name = name[:cw-12]
-		}
-		iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		line := fmt.Sprintf("%s %s %s",
-			iconStyle.Render(icon),
-			sidebarLabelStyle.Render(name),
-			statusStyle.Render(status),
-		)
-		lines = append(lines, line)
+		lines = append(lines, m.sidebarTable3(2, 20, rows))
 	}
 
 	return strings.Join(lines, "\n")

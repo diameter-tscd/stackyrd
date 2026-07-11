@@ -23,7 +23,7 @@ type PostgresManager struct {
 	statusTTL    time.Duration
 	statusExpiry time.Time
 	statusCache  map[string]interface{}
-	statusMu     sync.Mutex
+	statusMu     sync.RWMutex
 }
 
 type PostgresConnectionManager struct {
@@ -181,13 +181,13 @@ func (p *PostgresManager) GetStatus() map[string]interface{} {
 	}
 
 	// Fast path: return cached result when still within TTL.
-	p.statusMu.Lock()
+	p.statusMu.RLock()
 	if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
 		cached := p.statusCache
-		p.statusMu.Unlock()
+		p.statusMu.RUnlock()
 		return cached
 	}
-	p.statusMu.Unlock()
+	p.statusMu.RUnlock()
 
 	// Slow path: actually ping and collect DB stats.
 	err := p.DB.Ping()
@@ -550,7 +550,6 @@ func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []strin
 		for i := range result.Results {
 			result.Results[i].Complete(nil, fmt.Errorf("queries and args length mismatch"))
 		}
-		result.Complete()
 		return result
 	}
 

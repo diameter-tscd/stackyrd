@@ -4,9 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"fmt"
 	"github.com/labstack/echo/v4"
-	"sync/atomic"
 )
 
 type Response struct {
@@ -18,7 +16,7 @@ type Response struct {
 	Meta          *Meta        `json:"meta,omitempty"`
 	Timestamp     int64        `json:"timestamp"`
 	Datetime      string       `json:"datetime"`
-	CorrelationID string       `json:"correlation_id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 type ErrorDetail struct {
@@ -207,24 +205,15 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 }
 
 func getCorrelationID(c echo.Context) string {
-	id := c.Request().Header.Get("X-Request-ID")
-	if id == "" {
-		id = c.Request().Header.Get("X-Correlation-ID")
+	if id := c.Request().Header.Get("X-Request-ID"); id != "" {
+		return id
 	}
-
-	if id == "" {
-		id = genUUID()
+	if id := c.Request().Header.Get("X-Correlation-ID"); id != "" {
+		return id
 	}
-	return id
-}
-
-var uuidCounter uint64
-
-func genUUID() string {
-	hi := atomic.AddUint64(&uuidCounter, 1)
-	lo := atomic.AddUint64(&uuidCounter, 1)
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		uint32(hi>>32), uint16(hi), uint16(lo>>48), uint16(lo>>32), uint32(lo))
+	// No upstream ID: leave it empty and let the omitempty tag drop the field
+	// rather than paying 2 atomic adds + formatting for every response.
+	return ""
 }
 
 func CalculateMeta(page, perPage int, total int64, extra ...map[string]interface{}) *Meta {

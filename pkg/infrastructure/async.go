@@ -110,13 +110,10 @@ func NewBatchAsyncResult[T any](count int, batchSize int) *BatchAsyncResult[T] {
 	}
 }
 
-// Complete is removed: CompleteResult is the sole completer for BatchAsyncResult.
-// Kept for callers that still reference it but no-ops to preserve backward compat.
-func (br *BatchAsyncResult[T]) Complete() {}
 
-// CompleteResult marks one individual operation result as done and, when all
-// operations in the batch have completed, closes the batch Done channel.
-// This is the sole completer for BatchAsyncResult; Close() delegates here.
+// CompleteResult marks one operation done and, when all operations in the
+// batch have completed, closes the batch Done channel. It is the sole
+// completer for BatchAsyncResult; Close() delegates here.
 func (br *BatchAsyncResult[T]) CompleteResult(index int) {
 	br.Results[index].Complete(br.Results[index].Value, br.Results[index].Error)
 	if atomic.AddInt32(&br.pending, -1) == 0 {

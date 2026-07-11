@@ -676,9 +676,9 @@ func parseLogLine(line string) (level, message string) {
 // updateFilteredLogs filters the logs based on filterText
 func (m *LiveModel) updateFilteredLogs() {
 	if m.filterText == "" {
-		// No filter, show all logs
-		m.filteredLogs = make([]LogEntry, len(m.allLogs))
-		copy(m.filteredLogs, m.allLogs)
+		// No filter active: the full slice is already the filtered view, so
+		// alias it directly instead of copying every time AddLog is called.
+		m.filteredLogs = m.allLogs
 		return
 	}
 

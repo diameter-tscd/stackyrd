@@ -62,7 +62,7 @@ type PluginStats struct {
 	ExecuteCount     int64   `json:"execute_count"`
 	LastExecuteMs    float64 `json:"last_execution_ms"`
 	TotalExecuteMs   float64 `json:"total_execution_ms"`
-	MemoryUsageBytes int64   `json:"memory_usage_bytes"`
+	MemoryUsageBytes int64 `json:"memory_usage_bytes"`
 }
 
 type PluginManagerMetrics struct {

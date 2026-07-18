@@ -551,7 +551,11 @@ func (m *TerminalModel) renderComponentsSection() string {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
 	} else {
 		var rows []table.Row
-		for _, infra := range m.infraEntries {
+		maxVisible := 4
+		for i, infra := range m.infraEntries {
+			if i >= maxVisible {
+				break
+			}
 			color := "#50FA7B"
 			status := "connected"
 			if !infra.Connected {
@@ -570,6 +574,10 @@ func (m *TerminalModel) renderComponentsSection() string {
 			}))
 		}
 		lines = append(lines, m.sidebarTable3(2, 20, rows))
+		if len(m.infraEntries) > maxVisible {
+			remaining := len(m.infraEntries) - maxVisible
+			lines = append(lines, sidebarDimStyle.Render(fmt.Sprintf("  +%d more hidden", remaining)))
+		}
 	}
 
 	lines = append(lines, "")
@@ -584,7 +592,11 @@ func (m *TerminalModel) renderComponentsSection() string {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
 	} else {
 		var rows []table.Row
-		for _, svc := range m.serviceEntries {
+		maxVisible := 4
+		for i, svc := range m.serviceEntries {
+			if i >= maxVisible {
+				break
+			}
 			color := "#50FA7B"
 			icon := "◆"
 			status := "running"
@@ -605,6 +617,10 @@ func (m *TerminalModel) renderComponentsSection() string {
 			}))
 		}
 		lines = append(lines, m.sidebarTable3(2, 20, rows))
+		if len(m.serviceEntries) > maxVisible {
+			remaining := len(m.serviceEntries) - maxVisible
+			lines = append(lines, sidebarDimStyle.Render(fmt.Sprintf("  +%d more hidden", remaining)))
+		}
 	}
 
 	lines = append(lines, "")

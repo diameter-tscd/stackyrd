@@ -186,7 +186,7 @@ var (
 	// Main panel container with 2-cell left/right padding
 	mainPanelStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F8F8F2")).
-			Padding(0, 2).
+			Padding(0, 4).
 			Align(lipgloss.Left)
 
 	// Sidebar header (app name + version, brand accent)

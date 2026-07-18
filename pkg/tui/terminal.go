@@ -89,17 +89,17 @@ type TerminalModel struct {
 	serviceEntries    []ServiceEntry
 	middlewareEntries []MiddlewareEntry
 
-	cpuModel  string
-	pid       int
-	appMem    uint64
+	cpuModel     string
+	pid          int
+	appMem       uint64
 	pluginLoaded int
 	pluginTotal  int
 
-	sidebarWidth         int
-	sidebarContentWidth  int
-	mainWidth            int
-	logWidth             int
-	sidebarHidden        bool
+	sidebarWidth        int
+	sidebarContentWidth int
+	mainWidth           int
+	logWidth            int
+	sidebarHidden       bool
 }
 
 type terminalTickMsg time.Time
@@ -308,6 +308,8 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View renders the full TUI composed of three components:
+// Sidebar (left) | LogView + CommandBar (right, stacked vertically)
 func (m *TerminalModel) View() string {
 	if m.quitting {
 		return ""
@@ -319,15 +321,17 @@ func (m *TerminalModel) View() string {
 		return m.filterDialog.View(m.width, m.height)
 	}
 
-	mainContent := m.renderMainPanel()
-	mainBlock := mainPanelStyle.
-		Width(m.mainWidth).
-		Render(mainContent)
+	// ── Right column: LogView on top, CommandBar on bottom ──
+	logBlock := m.renderLogView()
+	cmdBlock := m.renderCommandBar()
+
+	rightBlock := lipgloss.JoinVertical(lipgloss.Top, logBlock, cmdBlock)
 
 	if m.sidebarHidden {
-		return mainBlock
+		return rightBlock
 	}
 
+	// ── Left column: Sidebar ──
 	sidebarContent := m.renderSidebar()
 	sidebarBlock := sidebarStyle.
 		Width(m.sidebarContentWidth).
@@ -337,7 +341,7 @@ func (m *TerminalModel) View() string {
 		Foreground(lipgloss.Color("#44475A")).
 		Render("│")
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarBlock, sep, mainBlock)
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebarBlock, sep, rightBlock)
 }
 
 func (m *TerminalModel) renderSidebar() string {
@@ -345,7 +349,8 @@ func (m *TerminalModel) renderSidebar() string {
 	if cw < 8 {
 		cw = 8
 	}
-	divider := DividerLine.Render(strings.Repeat("─", cw))
+	//divider := DividerLine.Render(strings.Repeat("─", cw))
+	divider := DividerLine.Render()
 
 	var b strings.Builder
 
@@ -401,15 +406,8 @@ func (m *TerminalModel) renderSidebar() string {
 	// spacing
 	b.WriteString("\n")
 
-	// Components + Services sections
+	// Components + Services + Middlewares sections
 	b.WriteString(m.renderComponentsSection())
-
-	// Pad to full height so the border box stretches to the bottom edge
-	targetLines := m.height - 2 // minus top/bottom border
-	currentLines := strings.Count(b.String(), "\n") + 1
-	if currentLines < targetLines {
-		b.WriteString(strings.Repeat("\n", targetLines-currentLines))
-	}
 
 	return b.String()
 }
@@ -417,14 +415,14 @@ func (m *TerminalModel) renderSidebar() string {
 // noSidebarBorder is a bubble-table Border with all glyphs set to space,
 // producing invisible borders while keeping column alignment.
 var noSidebarBorder = table.Border{
-	Top:    " ",
-	Bottom: " ",
-	Left:   " ",
-	Right:  " ",
-	TopRight:    " ",
-	TopLeft:     " ",
-	BottomRight: " ",
-	BottomLeft:  " ",
+	Top:            " ",
+	Bottom:         " ",
+	Left:           " ",
+	Right:          " ",
+	TopRight:       " ",
+	TopLeft:        " ",
+	BottomRight:    " ",
+	BottomLeft:     " ",
 	TopJunction:    " ",
 	LeftJunction:   " ",
 	RightJunction:  " ",
@@ -498,7 +496,7 @@ func (m *TerminalModel) renderResourcesSection() string {
 	lines = append(lines, fmt.Sprintf("     %s / %s GiB", sidebarValueStyle.Render(memUsedGiB), sidebarDimStyle.Render(memTotalGiB)))
 
 	// Separator
-	lines = append(lines, DividerLine.Render(strings.Repeat("─", 38)))
+	lines = append(lines, DividerLine.Render(strings.Repeat("", 38)))
 
 	// Key-value info as 2-column table for proper alignment
 	var kvRows []table.Row
@@ -661,7 +659,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *TerminalModel) renderMainPanel() string {
+func (m *TerminalModel) renderLogView() string {
 	var b strings.Builder
 
 	logArea := m.maxVisibleLines
@@ -672,7 +670,7 @@ func (m *TerminalModel) renderMainPanel() string {
 	b.WriteString(mainPanelStyle.Render("▪ Live Logs"))
 	b.WriteString("\n")
 
-	b.WriteString(DividerLine.Render(strings.Repeat("─", m.mainWidth-4)))
+	//b.WriteString(DividerLine.Render(strings.Repeat("─", m.mainWidth-4)))
 	b.WriteString("\n")
 
 	logLines := m.renderLogEntries()
@@ -700,14 +698,15 @@ func (m *TerminalModel) renderMainPanel() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n")
+	return mainPanelStyle.Width(m.mainWidth).Render(b.String())
+}
 
+func (m *TerminalModel) renderCommandBar() string {
+	var b strings.Builder
 	b.WriteString(m.renderCommandInput())
 	b.WriteString("\n")
-
 	b.WriteString(m.renderFooter())
-
-	return b.String()
+	return mainPanelStyle.Width(m.mainWidth).Render(b.String())
 }
 
 func (m *TerminalModel) renderCommandInput() string {
@@ -762,7 +761,7 @@ func (m *TerminalModel) renderLogEntries() []string {
 		logsToShow = m.allLogs
 	}
 
-		if len(logsToShow) == 0 {
+	if len(logsToShow) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  Waiting for logs..."))
 	} else {
 		for _, log := range logsToShow {

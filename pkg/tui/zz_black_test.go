@@ -14,7 +14,7 @@ func TestSidebarBlack(t *testing.T) {
 		Banner: "  ___ _     \n / __| |_   \n \\__ \\  _|_ \n |___/\\__(_)\n            ",
 	})
 	model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	model.infraEntries = []InfraEntry{{Name: "redis", Connected: true}, {Name: "mongo", Connected: false}}
+	model.infraEntries = []InfraEntry{{Name: "redis", Connected: true, Enabled: true}, {Name: "mongo", Connected: false, Enabled: true}}
 	model.serviceEntries = []ServiceEntry{{Name: "users_service", Running: true}, {Name: "tasks_service", Running: false}}
 
 	view := model.View()

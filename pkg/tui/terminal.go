@@ -41,6 +41,7 @@ const (
 type InfraEntry struct {
 	Name      string
 	Connected bool
+	Enabled   bool
 }
 
 type ServiceEntry struct {
@@ -66,6 +67,7 @@ type TerminalModel struct {
 	logsMutex       sync.RWMutex
 	filterText      string
 	scrollOffset    int
+	sidebarOffset   int
 	maxVisibleLines int
 	autoScroll      bool
 	startTime       time.Time
@@ -242,22 +244,46 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.clearLogs()
 			return m, nil
 		case "up", "k":
-			m.scrollUp()
+			if m.focus == focusSidebar {
+				m.sidebarUp()
+			} else {
+				m.scrollUp()
+			}
 			return m, nil
 		case "down", "j":
-			m.scrollDown()
+			if m.focus == focusSidebar {
+				m.sidebarDown()
+			} else {
+				m.scrollDown()
+			}
 			return m, nil
 		case "pgup":
-			m.pageUp()
+			if m.focus == focusSidebar {
+				m.sidebarPageUp()
+			} else {
+				m.pageUp()
+			}
 			return m, nil
 		case "pgdown", " ":
-			m.pageDown()
+			if m.focus == focusSidebar {
+				m.sidebarPageDown()
+			} else {
+				m.pageDown()
+			}
 			return m, nil
 		case "home", "g":
-			m.scrollToTop()
+			if m.focus == focusSidebar {
+				m.sidebarScrollToTop()
+			} else {
+				m.scrollToTop()
+			}
 			return m, nil
 		case "end", "G":
-			m.scrollToBottom()
+			if m.focus == focusSidebar {
+				m.sidebarScrollToBottom()
+			} else {
+				m.scrollToBottom()
+			}
 			return m, nil
 		}
 
@@ -265,11 +291,30 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.calculateWidths()
-		m.maxVisibleLines = m.height - 8
+		m.maxVisibleLines = m.height - 5
 		if m.maxVisibleLines < 5 {
 			m.maxVisibleLines = 5
 		}
 		m.commandInput.Width = m.mainWidth - 10
+		// clamp scroll offset after height change so logs don't show "weird" empty rows
+		logsToShow := m.filteredLogs
+		if m.filterText == "" {
+			logsToShow = m.allLogs
+		}
+		maxOff := len(logsToShow) - m.maxVisibleLines
+		if maxOff < 0 {
+			maxOff = 0
+		}
+		if m.scrollOffset > maxOff {
+			m.scrollOffset = maxOff
+		}
+		// clamp sidebar offset after height change
+		if m.sidebarOffset > m.height {
+			m.sidebarOffset = m.height
+		}
+		if m.sidebarOffset < 0 {
+			m.sidebarOffset = 0
+		}
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -345,11 +390,32 @@ func (m *TerminalModel) View() string {
 }
 
 func (m *TerminalModel) renderSidebar() string {
+	raw := m.renderSidebarContent()
+	lines := strings.Split(raw, "\n")
+	total := len(lines)
+	maxH := m.height
+	if maxH < 1 {
+		maxH = 1
+	}
+	off := m.sidebarOffset
+	if off > total-maxH {
+		off = total - maxH
+	}
+	if off < 0 {
+		off = 0
+	}
+	end := off + maxH
+	if end > total {
+		end = total
+	}
+	return strings.Join(lines[off:end], "\n")
+}
+
+func (m *TerminalModel) renderSidebarContent() string {
 	cw := m.sidebarContentWidth - 8 // text area inside 4-cell padding on each side
 	if cw < 8 {
 		cw = 8
 	}
-	//divider := DividerLine.Render(strings.Repeat("─", cw))
 	divider := DividerLine.Render()
 
 	var b strings.Builder
@@ -547,30 +613,36 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	if len(m.infraEntries) == 0 {
 		lines = append(lines, sidebarDimStyle.Render("  (checking...)"))
-	} else {
-		var rows []table.Row
-		maxVisible := 4
-		for i, infra := range m.infraEntries {
-			if i >= maxVisible {
-				break
+		} else {
+			var rows []table.Row
+			maxVisible := 4
+			for i, infra := range m.infraEntries {
+				if i >= maxVisible {
+					break
+				}
+				color := "#b0ffc4ff"
+				icon := "●"
+				status := "connected"
+				if !infra.Connected && infra.Enabled {
+					color = "#ffaeaeff"
+					icon = "✗"
+					status = "failed"
+				} else if !infra.Enabled {
+					color = "#6272A4"
+					icon = "○"
+					status = "disabled"
+				}
+				cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+				name := infra.Name
+				if len(name) > 20 {
+					name = name[:17] + "..."
+				}
+				rows = append(rows, table.NewRow(table.RowData{
+					"i": table.NewStyledCell(icon, cs),
+					"n": name,
+					"s": table.NewStyledCell(status, cs),
+				}))
 			}
-			color := "#50FA7B"
-			status := "connected"
-			if !infra.Connected {
-				color = "#FF5555"
-				status = "error"
-			}
-			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-			name := infra.Name
-			if len(name) > 20 {
-				name = name[:17] + "..."
-			}
-			rows = append(rows, table.NewRow(table.RowData{
-				"i": table.NewStyledCell("●", cs),
-				"n": name,
-				"s": table.NewStyledCell(status, cs),
-			}))
-		}
 		lines = append(lines, m.sidebarTable3(2, 20, rows))
 		if len(m.infraEntries) > maxVisible {
 			remaining := len(m.infraEntries) - maxVisible
@@ -595,7 +667,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 			if i >= maxVisible {
 				break
 			}
-			color := "#50FA7B"
+			color := "#b0ffc4ff"
 			icon := "◆"
 			status := "running"
 			if !svc.Running {
@@ -634,7 +706,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 	} else {
 		var rows []table.Row
 		for _, mw := range m.middlewareEntries {
-			color := "#50FA7B"
+			color := "#b0ffc4ff"
 			icon := "◐"
 			status := "on"
 			if !mw.Enabled {
@@ -733,14 +805,14 @@ func (m *TerminalModel) renderFooter() string {
 		parts = []string{"enter: exec", "esc: cancel"}
 	} else {
 		parts = []string{"/: filter", "ctrl+l: scroll", "tab: focus", "F2: clear", "ctrl+c: exit"}
-		if m.focus == focusSidebar {
-			parts = append(parts, "sidebar")
-		} else if m.focus == focusLogs {
-			parts = append(parts, "logs")
-		} else if m.focus == focusCommand {
-			parts = append(parts, "command")
-		}
+	if m.focus == focusSidebar {
+		parts = append(parts, "sidebar")
+	} else if m.focus == focusLogs {
+		parts = append(parts, "logs")
+	} else if m.focus == focusCommand {
+		parts = append(parts, "command")
 	}
+}
 
 	return sidebarDimStyle.Render(strings.Join(parts, " ● "))
 }
@@ -956,6 +1028,54 @@ func (m *TerminalModel) scrollToBottom() {
 	m.autoScroll = true
 }
 
+func (m *TerminalModel) sidebarLines() []string {
+	raw := m.renderSidebarContent()
+	return strings.Split(raw, "\n")
+}
+
+func (m *TerminalModel) sidebarMaxOffset() int {
+	lines := m.sidebarLines()
+	maxOff := len(lines) - m.height + 4
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	return maxOff
+}
+
+func (m *TerminalModel) sidebarUp() {
+	if m.sidebarOffset > 0 {
+		m.sidebarOffset--
+	}
+}
+
+func (m *TerminalModel) sidebarDown() {
+	if m.sidebarOffset < m.sidebarMaxOffset() {
+		m.sidebarOffset++
+	}
+}
+
+func (m *TerminalModel) sidebarPageUp() {
+	m.sidebarOffset -= m.height / 2
+	if m.sidebarOffset < 0 {
+		m.sidebarOffset = 0
+	}
+}
+
+func (m *TerminalModel) sidebarPageDown() {
+	m.sidebarOffset += m.height / 2
+	if m.sidebarOffset > m.sidebarMaxOffset() {
+		m.sidebarOffset = m.sidebarMaxOffset()
+	}
+}
+
+func (m *TerminalModel) sidebarScrollToTop() {
+	m.sidebarOffset = 0
+}
+
+func (m *TerminalModel) sidebarScrollToBottom() {
+	m.sidebarOffset = m.sidebarMaxOffset()
+}
+
 func (m *TerminalModel) clearLogs() {
 	m.logsMutex.Lock()
 	defer m.logsMutex.Unlock()
@@ -1029,11 +1149,20 @@ func (m *TerminalModel) refreshStats() {
 
 	reg := infrastructure.GetGlobalRegistry()
 	all := reg.GetAll()
-	infraEntries := make([]InfraEntry, 0, len(all))
+	infraByName := make(map[string]InfraEntry, len(all))
 	for name, comp := range all {
 		status := comp.GetStatus()
 		connected, _ := status["connected"].(bool)
-		infraEntries = append(infraEntries, InfraEntry{Name: name, Connected: connected})
+		infraByName[name] = InfraEntry{Name: name, Connected: connected, Enabled: true}
+	}
+	// Union with disabled-but-registered components so they show as "disabled"
+	infraEntries := make([]InfraEntry, 0, len(infraByName))
+	for _, name := range reg.RegisteredNames() {
+		if e, ok := infraByName[name]; ok {
+			infraEntries = append(infraEntries, e)
+		} else {
+			infraEntries = append(infraEntries, InfraEntry{Name: name, Enabled: false})
+		}
 	}
 	sort.Slice(infraEntries, func(i, j int) bool {
 		return infraEntries[i].Name < infraEntries[j].Name

@@ -83,6 +83,8 @@ type BuildConfig struct {
 	ArchiveFormat    string
 	SlowMode         bool
 	FastMode         bool
+	NoBackup         bool
+	NoCompression    bool
 	MemoryTotal      uint64
 }
 
@@ -987,6 +989,8 @@ func main() {
 		useUPX         = flag.Bool("upx", false, "Enable UPX compression (skips interactive prompt)")
 		slowMode       = flag.Bool("slow-mode", false, "Force slow build mode (reduces parallelism, skips garble/UPX)")
 		fastMode       = flag.Bool("fast-mode", false, "Force fast build mode (skips garble/UPX/backup-archive for speed)")
+		noBackup       = flag.Bool("no-backup", false, "Skip backing up and archiving old dist files")
+		noCompression  = flag.Bool("no-compression", false, "Skip UPX LZMA compression step")
 		archiveFormat  = flag.String("archive-format", DefaultFormat, "Backup archive format: tar (native LZMA2, default) or 7z (requires 7z binary)")
 		noTUI          = flag.Bool("no-tui", false, "Disable TUI, use plain CLI output")
 	)
@@ -1027,6 +1031,12 @@ func main() {
 		ctx.Config.FastMode = true
 		ctx.Config.UseGarble = false
 		ctx.Config.UseUPX = false
+	}
+	if *noBackup {
+		ctx.Config.NoBackup = true
+	}
+	if *noCompression {
+		ctx.Config.NoCompression = true
 	}
 
 	// Validate archive format with fallback to default
@@ -1098,13 +1108,16 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 		if step.name == "Asking user about garble" && (ctx.Config.UseGarble || ctx.Config.SlowMode || ctx.Config.FastMode) {
 			continue
 		}
-		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.SlowMode || ctx.Config.FastMode) {
+		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.SlowMode || ctx.Config.FastMode || ctx.Config.NoCompression) {
 			continue
 		}
-		if step.name == "Compressing with UPX" && (ctx.Config.SlowMode || ctx.Config.FastMode) {
+		if step.name == "Compressing with UPX" && (ctx.Config.SlowMode || ctx.Config.FastMode || ctx.Config.NoCompression) {
 			continue
 		}
-		if step.name == "Archiving backup" && ctx.Config.FastMode {
+		if step.name == "Archiving backup" && (ctx.Config.FastMode || ctx.Config.NoBackup) {
+			continue
+		}
+		if step.name == "Creating backup" && ctx.Config.NoBackup {
 			continue
 		}
 
@@ -1461,9 +1474,26 @@ func (m *BuildTuiModel) triggerCurrentStep() tea.Cmd {
 			return m.advanceToNext()
 		}
 	}
+	if m.ctx.Config.NoCompression {
+		if step.name == "Compress with UPX" {
+			step.status = statusSkipped
+			step.message = "no-compression"
+			return m.advanceToNext()
+		}
+		if step.isPrompt && step.name == "Configure UPX Compression" {
+			step.status = statusSkipped
+			step.message = "no-compression"
+			return m.advanceToNext()
+		}
+	}
 	if m.ctx.Config.FastMode && step.name == "Archive Backup" {
 		step.status = statusSkipped
 		step.message = "fast mode"
+		return m.advanceToNext()
+	}
+	if m.ctx.Config.NoBackup && (step.name == "Create Backup" || step.name == "Archive Backup") {
+		step.status = statusSkipped
+		step.message = "no-backup"
 		return m.advanceToNext()
 	}
 

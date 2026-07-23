@@ -45,9 +45,7 @@ func (r *SimpleRenderer) PrintHeader(appName, version, env string) {
 
 // PrintDivider prints a styled divider line
 func (r *SimpleRenderer) PrintDivider() {
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#626262ff"))
-	fmt.Println(style.Render(strings.Repeat("─", r.width)))
+	fmt.Println(DividerLine.Render(strings.Repeat("─", r.width)))
 }
 
 // PrintSection prints a section header
@@ -63,7 +61,7 @@ func (r *SimpleRenderer) PrintSection(title string) {
 // PrintServiceStart prints a service starting message
 func (r *SimpleRenderer) PrintServiceStart(name string) {
 	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f5fac0ff")).
+		Foreground(lipgloss.Color("#ffdab3ff")).
 		Render("◐")
 
 	nameStyle := lipgloss.NewStyle().
@@ -71,7 +69,7 @@ func (r *SimpleRenderer) PrintServiceStart(name string) {
 		Foreground(lipgloss.Color("#F8F8F2"))
 
 	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f5fac0ff"))
+		Foreground(lipgloss.Color("#ffdab3ff"))
 
 	fmt.Printf("  %s %s %s %s\n", icon, nameStyle.Render(name), IconArrow, statusStyle.Render("starting..."))
 }
@@ -169,7 +167,7 @@ func (r *SimpleRenderer) PrintInfo(message string) {
 // PrintWarning prints a warning message
 func (r *SimpleRenderer) PrintWarning(message string) {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f5fac0ff"))
+		Foreground(lipgloss.Color("#ffdab3ff"))
 	fmt.Println(style.Render("⚠ " + message))
 }
 

@@ -96,6 +96,13 @@ var (
 			Foreground(lipgloss.Color("#BD93F9"))
 
 	dashPulseColors = []string{"#FF79C6", "#BD93F9", "#8BE9FD", "#50FA7B", "#F1FA8C", "#FFB86C", "#FF5555"}
+
+	dashBannerColor = "#8daea5"
+
+	// Pastel progress-bar palette (matches boot.go pastel taste)
+	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0ffc4ff")) // pastel green
+	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffdab3ff")) // pastel peach
+	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaeaeff")) // pastel red
 )
 
 // Animation frames for the running indicator
@@ -148,6 +155,7 @@ func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []Serv
 }
 
 type dashTickMsg time.Time
+type statsTickMsg time.Time
 
 func dashTickCmd() tea.Cmd {
 	return tea.Every(time.Millisecond*500, func(t time.Time) tea.Msg {
@@ -155,10 +163,17 @@ func dashTickCmd() tea.Cmd {
 	})
 }
 
+func statsTickCmd() tea.Cmd {
+	return tea.Every(time.Second*3, func(t time.Time) tea.Msg {
+		return statsTickMsg(t)
+	})
+}
+
 func (m DashboardModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		dashTickCmd(),
+		statsTickCmd(),
 	)
 }
 
@@ -237,10 +252,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dashTickMsg:
 		m.frame = (m.frame + 1) % len(runningFrames)
+		return m, tea.Batch(m.spinner.Tick, dashTickCmd())
+
+	case statsTickMsg:
 		m.lastUpdate = time.Now()
 		m.goroutines = runtime.NumGoroutine()
 
-		// Update system stats
 		if v, err := mem.VirtualMemory(); err == nil {
 			m.memPercent = v.UsedPercent
 			m.memUsed = v.Used / 1024 / 1024
@@ -250,7 +267,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cpuPercent = c[0]
 		}
 
-		return m, tea.Batch(m.spinner.Tick, dashTickCmd())
+		return m, tea.Batch(m.spinner.Tick, statsTickCmd())
 	}
 
 	return m, cmd
@@ -271,8 +288,8 @@ func (m DashboardModel) View() string {
 		b.WriteString("\n\n")
 	}
 
-	// Header with pulsing color
-	pulseColor := dashPulseColors[m.frame%len(dashPulseColors)]
+	// Header with banner color
+	pulseColor := dashBannerColor
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(pulseColor))
@@ -354,39 +371,43 @@ func (m DashboardModel) renderSystemBox() string {
 	var lines []string
 	lines = append(lines, dashHeaderStyle.Render("⊙ System Resources"))
 
-	// CPU with color-coded bar
-	cpuBar := m.renderProgressBar(m.cpuPercent, 15)
-	cpuLine := fmt.Sprintf("%s %s %s",
-		dashLabelStyle.Render("CPU:"),
-		cpuBar,
-		m.getPercentStyle(m.cpuPercent).Render(fmt.Sprintf("%.1f%%", m.cpuPercent)),
-	)
-	lines = append(lines, cpuLine)
+	barW := 20
 
-	// Memory with color-coded bar
-	memBar := m.renderProgressBar(m.memPercent, 15)
-	memLine := fmt.Sprintf("%s %s %s",
-		dashLabelStyle.Render("RAM:"),
-		memBar,
-		m.getPercentStyle(m.memPercent).Render(fmt.Sprintf("%.1f%%", m.memPercent)),
-	)
-	lines = append(lines, memLine)
+	cpuBar := m.renderProgressBar(m.cpuPercent, barW)
+	cpuPct := m.getPercentStyle(m.cpuPercent).Render(fmt.Sprintf("%5.1f%%", m.cpuPercent))
+	lines = append(lines, fmt.Sprintf(" %s %s %s", dashLabelStyle.Render("CPU"), cpuBar, cpuPct))
 
-	memDetail := fmt.Sprintf("     %s / %s MB",
-		dashValueStyle.Render(fmt.Sprintf("%d", m.memUsed)),
-		dashDimStyle.Render(fmt.Sprintf("%d", m.memTotal)),
-	)
-	lines = append(lines, memDetail)
+	memBar := m.renderProgressBar(m.memPercent, barW)
+	memPct := m.getPercentStyle(m.memPercent).Render(fmt.Sprintf("%5.1f%%", m.memPercent))
+	lines = append(lines, fmt.Sprintf(" %s %s %s", dashLabelStyle.Render("RAM"), memBar, memPct))
+
+	// Separator
+	lines = append(lines, DividerLine.Render(strings.Repeat("─", 38)))
+
+	// Mem detail in GiB
+	memUsedGiB := fmt.Sprintf("%.1f", float64(m.memUsed)/1024)
+	memTotalGiB := fmt.Sprintf("%.1f", float64(m.memTotal)/1024)
+	lines = append(lines, fmt.Sprintf(" %s %s / %s GiB",
+		dashLabelStyle.Render("Mem"),
+		dashValueStyle.Render(memUsedGiB),
+		dashDimStyle.Render(memTotalGiB),
+	))
+
+	// CPU cores
+	ncpu := runtime.NumCPU()
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		dashLabelStyle.Render("Cores"),
+		dashValueStyle.Render(fmt.Sprintf("%d × %s", ncpu, m.getLoadIcon())),
+	))
 
 	// Goroutines
-	goLine := fmt.Sprintf("%s %s",
-		dashLabelStyle.Render("Goroutines:"),
+	lines = append(lines, fmt.Sprintf(" %s %s",
+		dashLabelStyle.Render("Goroutines"),
 		dashValueStyle.Render(fmt.Sprintf("%d", m.goroutines)),
-	)
-	lines = append(lines, goLine)
+	))
 
 	content := strings.Join(lines, "\n")
-	return dashBoxStyle.Width(35).Render(content)
+	return dashBoxStyle.Width(42).Render(content)
 }
 
 func (m DashboardModel) renderInfraBox() string {
@@ -484,14 +505,20 @@ func (m DashboardModel) renderProgressBar(percent float64, width int) string {
 	return bar
 }
 
+func (m DashboardModel) getLoadIcon() string {
+	style := m.getPercentStyle(m.cpuPercent)
+	return style.Render("●")
+}
+
+// ponytail: pastel progress stops at 3 thresholds — add more if smoother gradient needed
 func (m DashboardModel) getPercentStyle(percent float64) lipgloss.Style {
 	switch {
 	case percent < 50:
-		return dashGoodStyle
+		return dashPastelGood
 	case percent < 80:
-		return dashWarnStyle
+		return dashPastelWarn
 	default:
-		return dashBadStyle
+		return dashPastelBad
 	}
 }
 

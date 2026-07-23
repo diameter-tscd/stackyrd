@@ -44,9 +44,9 @@ type StartupModel struct {
 var (
 	// Title styles
 	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#8daea5")).
-			MarginBottom(1)
+		Bold(true).
+		Foreground(lipgloss.Color("#8daea5")).
+		MarginBottom(2)
 
 	subtitleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#8BE9FD")).
@@ -54,29 +54,29 @@ var (
 
 	// Banner style with gradient effect
 	bannerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#BD93F9")).
-			Bold(true).
-			MarginBottom(1)
+		Foreground(lipgloss.Color("#8daea5")).
+		Bold(true).
+		MarginBottom(2)
 
 	// Box styles
 	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#6272A4")).
-			Padding(1, 2).
-			MarginTop(1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#6272A4")).
+		Padding(1, 3).
+		MarginTop(1)
 
 	// Service status styles
 	pendingStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6272A4"))
 
 	loadingStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F1FA8C"))
+			Foreground(lipgloss.Color("#ffdab3ff"))
 
 	successStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#50FA7B"))
+			Foreground(lipgloss.Color("#b0ffc4ff"))
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF5555"))
+			Foreground(lipgloss.Color("#ffaeaeff"))
 
 	skippedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6272A4")).
@@ -94,7 +94,7 @@ var (
 
 	// Highlight style
 	highlightStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFB86C")).
+			Foreground(lipgloss.Color("#8daea5")).
 			Bold(true)
 )
 
@@ -122,7 +122,7 @@ func NewStartupModel(cfg StartupConfig, services []ServiceStatus) StartupModel {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6"))
 
 	p := progress.New(
-		progress.WithDefaultGradient(),
+		progress.WithGradient("#b0ffc4ff", "#ffdab3ff"),
 		progress.WithWidth(40),
 		progress.WithoutPercentage(),
 	)
@@ -254,8 +254,8 @@ func (m StartupModel) View() string {
 	footer := "Press 'q' to continue..."
 	b.WriteString(footerStyle.Render(footer))
 
-	// Wrap entire content with padding
-	containerStyle := lipgloss.NewStyle().Padding(2)
+	// Wrap entire content
+	containerStyle := lipgloss.NewStyle().Padding(4, 4, 2, 4)
 	return containerStyle.Render(b.String())
 }
 
@@ -264,7 +264,7 @@ func (m StartupModel) renderServices() string {
 
 	header := labelStyle.Render("◆ Services Initialization")
 	lines = append(lines, header)
-	lines = append(lines, strings.Repeat("─", 40))
+	lines = append(lines, DividerLine.Render(strings.Repeat("─", 50)))
 
 	for i, s := range m.services {
 		var icon, status string
@@ -301,7 +301,7 @@ func (m StartupModel) renderServices() string {
 
 		line := fmt.Sprintf("  %s %s %s %s",
 			icon,
-			lipgloss.NewStyle().Width(20).Render(name),
+			lipgloss.NewStyle().Width(25).Render(name),
 			iconArrow,
 			style.Render(status),
 		)

@@ -15,6 +15,7 @@ import (
 type ComponentRegistry struct {
 	components     map[string]InfrastructureComponent // write-once after boot
 	factories      map[string]ComponentFactory        // write-once at init
+	allNames       []string                           // all factory names, populated in Initialize
 	componentsMu   sync.RWMutex                       // guards components map
 	factoriesMu    sync.Mutex                         // guards factories map (init phase only)
 	cachedSnapshot map[string]InfrastructureComponent // TTL-cached GetAll copy; nil = stale
@@ -60,6 +61,10 @@ func (r *ComponentRegistry) Initialize(cfg *config.Config, logger *logger.Logger
 	r.factoriesMu.Lock()
 	defer r.factoriesMu.Unlock()
 
+	r.allNames = make([]string, 0, len(r.factories))
+	for name := range r.factories {
+		r.allNames = append(r.allNames, name)
+	}
 	if r.components == nil {
 		r.components = make(map[string]InfrastructureComponent)
 	}
@@ -91,6 +96,13 @@ func (r *ComponentRegistry) SetComponent(name string, component InfrastructureCo
 	r.cachedSnapshot = nil
 	r.cacheExpiry = time.Time{}
 	r.cacheMu.Unlock()
+}
+
+// RegisteredNames returns all component factory names (including disabled).
+// Safe to call concurrently — allNames is populated during Initialize (before
+// any TUI goroutine runs) and read-only afterwards.
+func (r *ComponentRegistry) RegisteredNames() []string {
+	return r.allNames
 }
 
 // Get retrieves a component by name — RLock read path, no interface boxing.

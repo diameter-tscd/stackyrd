@@ -27,7 +27,15 @@ type InfraInitManager struct {
 	doneChan chan struct{}
 	wg       sync.WaitGroup
 	ready    atomic.Bool
+
+	// cacheMu guards GetStatus TTL-snapshot. updateStatus invalidates it.
+	cacheMu       sync.Mutex
+	cacheExpiry   time.Time
+	cachedStatus  map[string]*InfraInitStatus
 }
+
+// statusCacheTTL controls how stale a GetStatus snapshot may be.
+const statusCacheTTL = 500 * time.Millisecond
 
 // NewInfraInitManager creates a new infrastructure initialization manager
 func NewInfraInitManager(logger *logger.Logger) *InfraInitManager {
@@ -100,31 +108,51 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 // updateStatus updates the initialization status of a component
 func (im *InfraInitManager) updateStatus(name string, status *InfraInitStatus) {
 	im.mu.Lock()
-	defer im.mu.Unlock()
 	im.status[name] = status
+	im.mu.Unlock()
+	im.invalidateStatusCache()
+}
+
+func (im *InfraInitManager) invalidateStatusCache() {
+	im.cacheMu.Lock()
+	im.cacheExpiry = time.Time{}
+	im.cacheMu.Unlock()
 }
 
 // updateStatusProgress updates only the progress of a component
 func (im *InfraInitManager) updateStatusProgress(name string, progress float64) {
 	im.mu.Lock()
-	defer im.mu.Unlock()
 	if status, exists := im.status[name]; exists {
 		status.Progress = progress
 	}
+	im.mu.Unlock()
+	im.invalidateStatusCache()
 }
 
-// GetStatus returns the current initialization status of all components
+// GetStatus returns the current initialization status of all components.
+// updateStatus replaces pointers in the source map (never mutates in place),
+// so a shallow snapshot copy is safe to hand back while cached.
 func (im *InfraInitManager) GetStatus() map[string]*InfraInitStatus {
-	im.mu.RLock()
-	defer im.mu.RUnlock()
-
-	// Create a copy to avoid race conditions
-	status := make(map[string]*InfraInitStatus)
-	for k, v := range im.status {
-		status[k] = v
+	im.cacheMu.Lock()
+	if time.Now().Before(im.cacheExpiry) && im.cachedStatus != nil {
+		result := im.cachedStatus
+		im.cacheMu.Unlock()
+		return result
 	}
+	im.cacheMu.Unlock()
 
-	return status
+	im.mu.RLock()
+	result := make(map[string]*InfraInitStatus, len(im.status))
+	for k, v := range im.status {
+		result[k] = v
+	}
+	im.mu.RUnlock()
+
+	im.cacheMu.Lock()
+	im.cachedStatus = result
+	im.cacheExpiry = time.Now().Add(statusCacheTTL)
+	im.cacheMu.Unlock()
+	return result
 }
 
 // IsInitialized checks if a specific component is initialized

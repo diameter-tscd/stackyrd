@@ -404,7 +404,7 @@ func (m *LiveModel) View() string {
 		Render("▪ Live Logs")
 	mainContent.WriteString(stickyLogsHeader)
 	mainContent.WriteString("\n")
-	mainContent.WriteString(liveDimStyle.Render(strings.Repeat("─", logWidth)))
+	mainContent.WriteString(DividerLine.Render(strings.Repeat("─", logWidth)))
 	mainContent.WriteString("\n")
 
 	// SCROLLABLE CONTENT - Only the log entries (no header/border)
@@ -479,7 +479,7 @@ func (m *LiveModel) View() string {
 	}
 
 	// Wrap entire content with minimal padding
-	containerStyle := lipgloss.NewStyle().Padding(1)
+	containerStyle := lipgloss.NewStyle().Padding(7, 7, 0, 7)
 	return containerStyle.Render(b.String())
 }
 
@@ -510,10 +510,10 @@ func (m *LiveModel) renderLogEntriesOnly() []string {
 		for _, log := range logsToShow {
 			levelStyle := m.getLevelStyle(log.Level)
 			timeStr := log.Time.Format("15:04:05")
-			levelStr := fmt.Sprintf("[%-5s]", strings.ToUpper(log.Level))
+			icon := m.getLevelIcon(log.Level)
 
 			// Calculate max message length and truncate before styling
-			maxMsgLen := logWidth - 20 // Account for timestamp (8), level (7), spaces and prefix
+			maxMsgLen := logWidth - 22
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
@@ -525,7 +525,7 @@ func (m *LiveModel) renderLogEntriesOnly() []string {
 			// Build the line with proper formatting
 			line := fmt.Sprintf("  %s %s %s",
 				liveDimStyle.Render(timeStr),
-				levelStyle.Render(levelStr),
+				levelStyle.Render(icon),
 				lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2")).Render(msg),
 			)
 			lines = append(lines, line)
@@ -533,6 +533,23 @@ func (m *LiveModel) renderLogEntriesOnly() []string {
 	}
 
 	return lines
+}
+
+func (m *LiveModel) getLevelIcon(level string) string {
+	switch strings.ToLower(level) {
+	case "debug":
+		return "⚙"
+	case "info":
+		return "●"
+	case "warn", "warning":
+		return "⚠"
+	case "error":
+		return "✗"
+	case "fatal":
+		return "‼"
+	default:
+		return "•"
+	}
 }
 
 func (m *LiveModel) getLevelStyle(level string) lipgloss.Style {
@@ -676,9 +693,9 @@ func parseLogLine(line string) (level, message string) {
 // updateFilteredLogs filters the logs based on filterText
 func (m *LiveModel) updateFilteredLogs() {
 	if m.filterText == "" {
-		// No filter, show all logs
-		m.filteredLogs = make([]LogEntry, len(m.allLogs))
-		copy(m.filteredLogs, m.allLogs)
+		// No filter active: the full slice is already the filtered view, so
+		// alias it directly instead of copying every time AddLog is called.
+		m.filteredLogs = m.allLogs
 		return
 	}
 

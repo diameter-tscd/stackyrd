@@ -90,14 +90,27 @@ func (c *Cache[T]) Delete(key string) {
 }
 
 // Cleanup removes expired items. Run this in a goroutine for periodic cleanup.
+// The scan runs under a read lock so concurrent Get calls are never blocked by
+// the full sweep; only the actual deletions take the write lock briefly.
 func (c *Cache[T]) Cleanup() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	now := time.Now().UnixNano()
+
+	var expired []string
+	c.mu.RLock()
 	for k, v := range c.items {
 		if v.Expiration > 0 && now > v.Expiration {
-			delete(c.items, k)
+			expired = append(expired, k)
 		}
 	}
+	c.mu.RUnlock()
+
+	if len(expired) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	for _, k := range expired {
+		delete(c.items, k)
+	}
+	c.mu.Unlock()
 }

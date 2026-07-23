@@ -24,7 +24,7 @@ type MongoManager struct {
 	statusTTL    time.Duration
 	statusExpiry time.Time
 	statusCache  map[string]interface{}
-	statusMu     sync.Mutex
+	statusMu     sync.RWMutex
 }
 
 // Name returns the display name of the component
@@ -207,13 +207,13 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 	}
 
 	// Fast path: return cached result when still within TTL.
-	m.statusMu.Lock()
+	m.statusMu.RLock()
 	if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
 		cached := m.statusCache
-		m.statusMu.Unlock()
+		m.statusMu.RUnlock()
 		return cached
 	}
-	m.statusMu.Unlock()
+	m.statusMu.RUnlock()
 
 	// Slow path: actually ping the server and collect stats.
 	err := m.Client.Ping(context.Background(), nil)

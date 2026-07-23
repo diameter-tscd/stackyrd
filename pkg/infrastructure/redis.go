@@ -19,7 +19,7 @@ type RedisManager struct {
 	// statusCache avoids re-running Ping + PoolStats on every /health call.
 	statusCache  map[string]interface{}
 	statusExpiry time.Time
-	statusMu     sync.Mutex
+	statusMu     sync.RWMutex
 }
 
 // Name returns the display name of the component
@@ -90,13 +90,13 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 	}
 
 	// Fast path: return cached result when still within TTL.
-	r.statusMu.Lock()
+	r.statusMu.RLock()
 	if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
 		cached := r.statusCache
-		r.statusMu.Unlock()
+		r.statusMu.RUnlock()
 		return cached
 	}
-	r.statusMu.Unlock()
+	r.statusMu.RUnlock()
 
 	// Slow path: actually ping the server.
 	addr := r.Client.Options().Addr

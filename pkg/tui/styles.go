@@ -35,31 +35,31 @@ func TextEffect(text string, colors []string) string {
 var (
 	// Success box
 	SuccessBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#50FA7B")).
-			Foreground(lipgloss.Color("#50FA7B")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#50FA7B")).
+		Foreground(lipgloss.Color("#50FA7B")).
+		Padding(0, 2)
 
 	// Warning box
 	WarningBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#F1FA8C")).
-			Foreground(lipgloss.Color("#F1FA8C")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#F1FA8C")).
+		Foreground(lipgloss.Color("#F1FA8C")).
+		Padding(0, 2)
 
 	// Error box
 	ErrorBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF5555")).
-			Foreground(lipgloss.Color("#FF5555")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#FF5555")).
+		Foreground(lipgloss.Color("#FF5555")).
+		Padding(0, 2)
 
 	// Info box
 	InfoBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#8BE9FD")).
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Padding(0, 1)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#8BE9FD")).
+		Foreground(lipgloss.Color("#8BE9FD")).
+		Padding(0, 2)
 
 	// Primary box with double border
 	PrimaryBoxStyle = lipgloss.NewStyle().
@@ -95,14 +95,15 @@ const (
 	IconFire     = "🔥"
 )
 
+// DividerLine style for horizontal separators
+var DividerLine = lipgloss.NewStyle().Foreground(lipgloss.Color("#191919"))
+
 // Divider creates a styled horizontal divider
 func Divider(width int, char string) string {
 	if char == "" {
 		char = "─"
 	}
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#44475A")).
-		Render(strings.Repeat(char, width))
+	return DividerLine.Render(strings.Repeat(char, width))
 }
 
 // Header creates a styled header with decorations
@@ -175,6 +176,64 @@ func KeyValue(key, value string) string {
 	return keyStyle.Render(key+":") + " " + valueStyle.Render(value)
 }
 
+// Sidebar / main-panel styles for the opencode-style terminal dashboard
+var (
+	// Sidebar container: black background (matches the main panel), 4-cell padding
+	sidebarStyle = lipgloss.NewStyle().
+			Padding(0, 4).
+			Align(lipgloss.Left)
+
+	// Main panel container with 2-cell left/right padding
+	mainPanelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F8F8F2")).
+			Padding(0, 4).
+			Align(lipgloss.Left)
+
+	// Sidebar header (app name + version, brand accent)
+	sidebarHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#8daea5"))
+
+	// Sidebar section divider label (e.g. "─── Resources ───")
+	sidebarSectionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#6272A4")).
+				Bold(true)
+
+	// Sidebar key label (e.g. "CPU:")
+	sidebarLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D3DAD9"))
+
+	// Sidebar plain value
+	sidebarValueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#D3DAD9"))
+
+	// Sidebar dim text
+	sidebarDimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6272A4"))
+
+	// Command input box — flat, opencode-style (no border)
+	commandBoxStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#37353E")).
+			Foreground(lipgloss.Color("#D3DAD9")).
+			Padding(0, 2)
+
+	// Active command input box (focused)
+	commandBoxActiveStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#37353E")).
+				Foreground(lipgloss.Color("#D3DAD9")).
+				Padding(0, 2)
+
+	// ":" prompt in command input
+	commandPromptStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#8daea5")).
+				Bold(true)
+
+	// Focus indicator for the current focus target
+	focusIndicatorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#8daea5")).
+				Bold(true)
+)
+
 // ProgressBar creates a simple text-based progress bar
 func ProgressBar(percent float64, width int, showPercent bool) string {
 	if percent > 100 {
@@ -190,11 +249,11 @@ func ProgressBar(percent float64, width int, showPercent bool) string {
 	var color string
 	switch {
 	case percent < 50:
-		color = "#50FA7B"
+		color = "#b0ffc4ff"
 	case percent < 80:
-		color = "#F1FA8C"
+		color = "#ffdab3ff"
 	default:
-		color = "#FF5555"
+		color = "#ffaeaeff"
 	}
 
 	filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))

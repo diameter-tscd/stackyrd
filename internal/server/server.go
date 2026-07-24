@@ -181,6 +181,7 @@ func (s *Server) registerHealthEndpoints() {
 			"server_ready":            ready,
 			"infrastructure":          s.infraInitManager.GetStatus(),
 			"initialization_progress": s.infraInitManager.GetInitializationProgress(),
+			"init_timeout_seconds":    s.config.Infrastructure.InitTimeout,
 		})
 	})
 

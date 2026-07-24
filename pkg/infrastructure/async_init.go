@@ -55,6 +55,12 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 		logger.Error("Failed to initialize infrastructure components", err)
 	}
 
+	// Resolve per-component timeout
+	compTimeout := 10 * time.Second
+	if cfg.Infrastructure.InitTimeout > 0 {
+		compTimeout = time.Duration(cfg.Infrastructure.InitTimeout) * time.Second
+	}
+
 	// Start async health checks and monitoring (non-blocking)
 	components := registry.GetAll()
 	im.wg.Add(len(components))
@@ -74,7 +80,7 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 			})
 
 			// Perform health check with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), compTimeout)
 			defer cancel()
 
 			done := make(chan map[string]interface{}, 1)

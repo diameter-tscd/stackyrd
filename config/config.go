@@ -37,6 +37,9 @@ func setupViperDefaults() {
 	viper.SetDefault("webhook.timeout_seconds", 30)
 	viper.SetDefault("webhook.max_retries", 3)
 	viper.SetDefault("webhook.endpoint", "/api/v1/webhook")
+	viper.SetDefault("pagination.type", "offset")
+	viper.SetDefault("pagination.max_per_page", 100)
+	viper.SetDefault("infrastructure.init_timeout", 30)
 }
 
 type Config struct {
@@ -56,8 +59,9 @@ type Config struct {
 	Cron                CronConfig          `mapstructure:"cron"`
 	MinIO               MinIOConfig         `mapstructure:"minio"`
 	Encryption          EncryptionConfig    `mapstructure:"encryption"`
+	Pagination          PaginationConfig    `mapstructure:"pagination"`
+	Infrastructure      InfrastructureConfig `mapstructure:"infrastructure"`
 }
-
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.
 type MiddlewareConfig map[string]bool
 
@@ -190,8 +194,20 @@ type MongoConfig struct {
 }
 
 type MetricsConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Path    string `mapstructure:"path"`
+	Enabled    bool   `mapstructure:"enabled"`
+	Path       string `mapstructure:"path"`
+	SampleRate string `mapstructure:"sample_rate"` // fractional rate (e.g. "0.1") or empty for all
+}
+
+// PaginationConfig configures pagination defaults across services
+type PaginationConfig struct {
+	Type       string `mapstructure:"type"`        // "offset" or "cursor"
+	MaxPerPage int    `mapstructure:"max_per_page"` // maximum per_page value (default 100)
+}
+
+// InfrastructureConfig configures async init behavior
+type InfrastructureConfig struct {
+	InitTimeout int `mapstructure:"init_timeout"` // component init timeout (seconds)
 }
 
 type GrafanaConfig struct {

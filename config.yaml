@@ -122,3 +122,8 @@ plugins:
     max_timeout_ms: 30000
     max_memory_bytes: 104857600
   # allowlist: []
+
+tracing:
+  enabled: false
+  sample_rate: 1.0
+  otlp_endpoint: "localhost:4318"

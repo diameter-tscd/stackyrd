@@ -33,29 +33,39 @@ func setupViperDefaults() {
 	viper.SetDefault("swagger.base_path", "/swagger")
 	viper.SetDefault("metrics.enabled", false)
 	viper.SetDefault("metrics.path", "/metrics")
+	viper.SetDefault("metrics.sample_rate", "")
 	viper.SetDefault("webhook.enabled", false)
 	viper.SetDefault("webhook.timeout_seconds", 30)
 	viper.SetDefault("webhook.max_retries", 3)
 	viper.SetDefault("webhook.endpoint", "/api/v1/webhook")
+	viper.SetDefault("pagination.type", "offset")
+	viper.SetDefault("pagination.max_per_page", 100)
+	viper.SetDefault("infrastructure.init_timeout", 30)
+	viper.SetDefault("tracing.enabled", false)
+	viper.SetDefault("tracing.sample_rate", 1.0)
+	viper.SetDefault("tracing.otlp_endpoint", "localhost:4318")
 }
 
 type Config struct {
-	App                 AppConfig           `mapstructure:"app"`
-	Server              ServerConfig        `mapstructure:"server"`
-	Services            ServicesConfig      `mapstructure:"services"`
-	Middleware          MiddlewareConfig    `mapstructure:"middleware"`
-	Auth                AuthConfig          `mapstructure:"auth"`
-	Swagger             SwaggerConfig       `mapstructure:"swagger"`
-	Redis               RedisConfig         `mapstructure:"redis"`
-	Kafka               KafkaConfig         `mapstructure:"kafka"`
-	Postgres            PostgresConfig      `mapstructure:"postgres"`
-	Mongo               MongoConfig         `mapstructure:"mongo"`
-	Webhook             WebhookConfig       `mapstructure:"webhook"`
-	Metrics             MetricsConfig       `mapstructure:"metrics"`
-	Grafana             GrafanaConfig       `mapstructure:"grafana"`
-	Cron                CronConfig          `mapstructure:"cron"`
-	MinIO               MinIOConfig         `mapstructure:"minio"`
-	Encryption          EncryptionConfig    `mapstructure:"encryption"`
+	App               AppConfig           `mapstructure:"app"`
+	Server            ServerConfig        `mapstructure:"server"`
+	Services          ServicesConfig      `mapstructure:"services"`
+	Middleware        MiddlewareConfig    `mapstructure:"middleware"`
+	Auth              AuthConfig          `mapstructure:"auth"`
+	Swagger           SwaggerConfig       `mapstructure:"swagger"`
+	Redis             RedisConfig         `mapstructure:"redis"`
+	Kafka             KafkaConfig         `mapstructure:"kafka"`
+	Postgres          PostgresConfig      `mapstructure:"postgres"`
+	Mongo             MongoConfig         `mapstructure:"mongo"`
+	Webhook           WebhookConfig       `mapstructure:"webhook"`
+	Metrics           MetricsConfig       `mapstructure:"metrics"`
+	Grafana           GrafanaConfig       `mapstructure:"grafana"`
+	Cron              CronConfig          `mapstructure:"cron"`
+	MinIO             MinIOConfig         `mapstructure:"minio"`
+	Encryption        EncryptionConfig    `mapstructure:"encryption"`
+	Pagination        PaginationConfig    `mapstructure:"pagination"`
+	Infrastructure    InfrastructureConfig `mapstructure:"infrastructure"`
+	Tracing           TracingConfig       `mapstructure:"tracing"`
 }
 
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.
@@ -190,8 +200,24 @@ type MongoConfig struct {
 }
 
 type MetricsConfig struct {
-	Enabled bool   `mapstructure:"enabled"`
-	Path    string `mapstructure:"path"`
+	Enabled    bool   `mapstructure:"enabled"`
+	Path       string `mapstructure:"path"`
+	SampleRate string `mapstructure:"sample_rate"` // fractional rate (e.g. "0.1") or empty for all
+}
+
+type PaginationConfig struct {
+	Type       string `mapstructure:"type"`        // "offset" or "cursor"
+	MaxPerPage int    `mapstructure:"max_per_page"` // maximum per_page value (default 100)
+}
+
+type InfrastructureConfig struct {
+	InitTimeout int `mapstructure:"init_timeout"` // component init timeout (seconds)
+}
+
+type TracingConfig struct {
+	Enabled      bool    `mapstructure:"enabled"`
+	SampleRate   float64 `mapstructure:"sample_rate"`   // 0.0–1.0
+	OTLPEndpoint string  `mapstructure:"otlp_endpoint"` // e.g. "otel-collector:4318"
 }
 
 type GrafanaConfig struct {

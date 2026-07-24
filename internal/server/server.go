@@ -18,6 +18,7 @@ import (
 	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
+	"stackyrd/pkg/tracer"
 	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
@@ -130,6 +131,9 @@ func (s *Server) Start() error {
 		s.logger.Info("Registering Prometheus metrics endpoint", "path", s.config.Metrics.Path)
 		s.e.GET(s.config.Metrics.Path, echo.WrapHandler(metrics.GetMetrics().Handler()))
 	}
+
+	// Initialize OpenTelemetry tracing
+	_ = s.initTracing()
 
 	if s.config.Swagger.Enabled {
 		s.logger.Info("Registering Swagger UI documentation...")
@@ -257,5 +261,37 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 	}
 
 	logger.Info("Graceful shutdown completed successfully")
+	return nil
+}
+
+// initTracing initializes OpenTelemetry tracing
+func (s *Server) initTracing() error {
+	cfg := s.config.Tracing
+	if !cfg.Enabled {
+		s.logger.Debug("OpenTelemetry tracing disabled")
+		return nil
+	}
+
+	tracer, err := tracer.New(tracer.Config{
+		ServiceName:    s.config.App.Name,
+		ServiceVersion: s.config.App.Version,
+		Environment:    s.config.App.Env,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+		Enabled:        cfg.Enabled,
+		SampleRate:     cfg.SampleRate,
+	})
+	if err != nil {
+		s.logger.Error("Failed to initialize OpenTelemetry tracer", err)
+		return err
+	}
+
+	tracer.Set(tracer)
+	s.logger.Info("OpenTelemetry tracing initialized",
+		"endpoint", cfg.OTLPEndpoint,
+		"sample_rate", cfg.SampleRate,
+	)
+
+	// Wrap existing server with trace middleware
+	s.e.Use(tracer.TraceMiddleware(s.logger))
 	return nil
 }

@@ -105,28 +105,15 @@ func (rl *RateLimiter) cleanup() {
 }
 
 func (rl *RateLimiter) isAllowed(ip string) bool {
-	now := time.Now()
-
-	rl.mu.RLock()
-	v, exists := rl.visitors[ip]
-	if exists && now.Sub(v.lastSeen) <= rl.window {
-		rl.mu.RUnlock()
-
-		rl.mu.Lock()
-		defer rl.mu.Unlock()
-		if v.count >= rl.rate {
-			return false
-		}
-		v.count++
-		v.lastSeen = now
-		return true
-	}
-	rl.mu.RUnlock()
-
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	if v, exists = rl.visitors[ip]; exists && now.Sub(v.lastSeen) <= rl.window {
+	now := time.Now()
+	v, exists := rl.visitors[ip]
+	if exists && now.Sub(v.lastSeen) <= rl.window {
+		if v.count >= rl.rate {
+			return false
+		}
 		v.count++
 		v.lastSeen = now
 		return true

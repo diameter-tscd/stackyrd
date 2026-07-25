@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -54,91 +53,38 @@ func GenerateToken(userID, username, email, role, secretKey string, expiration t
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secretKey))
 }
 
 func JWTRequired(secretKey string) echo.MiddlewareFunc {
-	config := defaultJWTConfig
-	config.SecretKey = secretKey
-	return JWT(config)
+	return JWT(JWTConfig{SecretKey: secretKey, TokenLookup: "header:Authorization", SigningMethod: jwt.SigningMethodHS256.Name}, false)
 }
 
-func JWT(config JWTConfig) echo.MiddlewareFunc {
+func JWTOptional(secretKey string) echo.MiddlewareFunc {
+	return JWT(JWTConfig{SecretKey: secretKey, TokenLookup: "header:Authorization", SigningMethod: jwt.SigningMethodHS256.Name}, true)
+}
+
+func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			token, err := extractToken(c, config.TokenLookup)
-			if err != nil {
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				if optional {
+					return next(c)
+				}
 				return response.Unauthorized(c, "Missing or invalid token")
 			}
+			token := strings.TrimPrefix(authHeader, "Bearer ")
 
 			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 				return []byte(config.SecretKey), nil
 			})
-
 			if err != nil || !parsedToken.Valid {
+				if optional {
+					return next(c)
+				}
 				return response.Unauthorized(c, "Invalid token")
-			}
-
-			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
-				c.Set("user_id", claims.UserID)
-				c.Set("username", claims.Username)
-				c.Set("email", claims.Email)
-				c.Set("role", claims.Role)
-			}
-
-			return next(c)
-		}
-	}
-}
-
-func extractToken(c echo.Context, tokenLookup string) (string, error) {
-	parts := strings.Split(tokenLookup, ":")
-	if len(parts) != 2 {
-		return c.Request().Header.Get("Authorization"), nil
-	}
-
-	source := parts[0]
-	key := parts[1]
-
-	switch source {
-	case "header":
-		authHeader := c.Request().Header.Get(key)
-		if authHeader == "" {
-			return "", errors.New("authorization header not found")
-		}
-		return strings.TrimPrefix(authHeader, "Bearer "), nil
-
-	case "query":
-		return c.QueryParam(key), nil
-
-	case "cookie":
-		cookie, err := c.Cookie(key)
-		if err != nil {
-			return "", err
-		}
-		return cookie.Value, nil
-
-	default:
-		return c.Request().Header.Get("Authorization"), nil
-	}
-}
-
-func JWTOptional(secretKey string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			token, err := extractToken(c, defaultJWTConfig.TokenLookup)
-			if err != nil {
-				return next(c)
-			}
-
-			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-				return []byte(secretKey), nil
-			})
-
-			if err != nil || !parsedToken.Valid {
-				return next(c)
 			}
 
 			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
@@ -160,18 +106,15 @@ func RequireRole(roles ...string) echo.MiddlewareFunc {
 			if userRole == nil {
 				return response.Forbidden(c, "Insufficient permissions")
 			}
-
 			roleStr, ok := userRole.(string)
 			if !ok {
 				return response.Forbidden(c, "Insufficient permissions")
 			}
-
 			for _, role := range roles {
 				if roleStr == role {
 					return next(c)
 				}
 			}
-
 			return response.Forbidden(c, "Insufficient permissions")
 		}
 	}
@@ -182,28 +125,22 @@ func RequireAdmin() echo.MiddlewareFunc {
 }
 
 func GetUserID(c echo.Context) string {
-	if id := c.Get("user_id"); id != nil {
-		if idStr, ok := id.(string); ok {
-			return idStr
-		}
+	if id, ok := c.Get("user_id").(string); ok {
+		return id
 	}
 	return ""
 }
 
 func GetUsername(c echo.Context) string {
-	if username := c.Get("username"); username != nil {
-		if usernameStr, ok := username.(string); ok {
-			return usernameStr
-		}
+	if username, ok := c.Get("username").(string); ok {
+		return username
 	}
 	return ""
 }
 
 func GetUserRole(c echo.Context) string {
-	if role := c.Get("role"); role != nil {
-		if roleStr, ok := role.(string); ok {
-			return roleStr
-		}
+	if role, ok := c.Get("role").(string); ok {
+		return role
 	}
 	return ""
 }

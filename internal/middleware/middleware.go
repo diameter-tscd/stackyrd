@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,9 +226,8 @@ func matchPath(path, pattern string) bool {
 	if pattern == "" || pattern == "*" {
 		return true
 	}
-	n := len(pattern)
-	if n > 0 && pattern[n-1] == '*' {
-		return len(path) >= n-1 && path[:n-1] == pattern[:n-1]
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 	}
 	return path == pattern
 }

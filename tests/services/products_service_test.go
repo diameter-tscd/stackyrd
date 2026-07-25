@@ -27,12 +27,6 @@ func TestProductsService_Name(t *testing.T) {
 	assert.Equal(t, "Products Service", service.Name())
 }
 
-func TestProductsService_WireName(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewProductsService(true, l)
-	assert.Equal(t, "products", service.WireName())
-}
-
 func TestProductsService_Enabled(t *testing.T) {
 	l := logger.New(false, nil)
 
@@ -41,14 +35,6 @@ func TestProductsService_Enabled(t *testing.T) {
 
 	disabledService := modules.NewProductsService(false, l)
 	assert.False(t, disabledService.Enabled())
-}
-
-func TestProductsService_Endpoints(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewProductsService(true, l)
-	endpoints := service.Endpoints()
-
-	assert.Contains(t, endpoints, "/products")
 }
 
 func TestProductsService_GetProducts(t *testing.T) {

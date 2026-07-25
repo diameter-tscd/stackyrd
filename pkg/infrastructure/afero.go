@@ -134,51 +134,8 @@ func (m *aferoManager) resolveAlias(alias string) (string, error) {
 	return physicalPath, nil
 }
 
-// GetAliases returns a copy of all configured aliases
-// This is useful for debugging or introspection
-func GetAliases() map[string]string {
-	if instance == nil {
-		return make(map[string]string)
-	}
+func (m *aferoManager) Name() string { return "Afero Filesystem" }
 
-	instance.mu.RLock()
-	defer instance.mu.RUnlock()
-
-	// Return a copy to prevent external mutations
-	aliases := make(map[string]string)
-	for alias, path := range instance.aliases {
-		aliases[alias] = path
-	}
-
-	return aliases
-}
-
-// GetFileSystem returns the underlying Afero filesystem
-// This is useful for advanced operations that need direct filesystem access
-func GetFileSystem() afero.Fs {
-	if instance == nil {
-		return nil
-	}
-
-	instance.mu.RLock()
-	defer instance.mu.RUnlock()
-
-	return instance.fs
-}
-
-// ResetForTesting resets the singleton for testing purposes
-// This function should only be used in tests
-func ResetForTesting() {
-	instance = nil
-	once = sync.Once{}
-}
-
-// Name returns the component name
-func (m *aferoManager) Name() string {
-	return "Afero Filesystem"
-}
-
-// GetStatus returns the current status
 func (m *aferoManager) GetStatus() map[string]interface{} {
 	if instance == nil {
 		return map[string]interface{}{"initialized": false}
@@ -191,10 +148,7 @@ func (m *aferoManager) GetStatus() map[string]interface{} {
 	}
 }
 
-// Close cleans up the filesystem manager
-func (m *aferoManager) Close() error {
-	return nil
-}
+func (m *aferoManager) Close() error { return nil }
 
 func init() {
 	// Register as infrastructure component — uses OS filesystem by default.

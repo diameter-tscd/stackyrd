@@ -191,27 +191,6 @@ func TestRetryWithContext_Cancelled(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-func TestRetryWithResult(t *testing.T) {
-	cfg := resilience.DefaultRetryConfig()
-	cfg.MaxAttempts = 2
-
-	result, err := resilience.RetryWithResult(func() (string, error) {
-		return "hello", nil
-	}, cfg)
-	assert.NoError(t, err)
-	assert.Equal(t, "hello", result)
-}
-
-func TestRetryWithResult_Failure(t *testing.T) {
-	cfg := resilience.DefaultRetryConfig()
-	cfg.MaxAttempts = 1
-
-	_, err := resilience.RetryWithResult(func() (string, error) {
-		return "", errors.New("fail")
-	}, cfg)
-	assert.Error(t, err)
-}
-
 func TestTimeout_Success(t *testing.T) {
 	err := resilience.WithTimeout(func() error {
 		return nil

@@ -1,11 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/url"
 	"os"
-
-	"stackyrd/pkg/utils"
 )
 
 // @title stackyrd API
@@ -23,65 +22,31 @@ import (
 // @in header
 // @name Authorization
 
-// main is the entry point of the application
 func main() {
-	// Parse command line flags
-	flags := parseFlags()
+	var configURL, port, env string
+	var verbose bool
+	flag.StringVar(&configURL, "c", "", "URL to load configuration from (YAML format)")
+	flag.StringVar(&port, "port", "", "Server port (overrides config)")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.StringVar(&env, "env", "", "Environment (development/staging/production)")
+	flag.Parse()
 
-	// Create configuration manager
-	configManager := NewConfigManager(flags.ConfigURL)
+	if configURL != "" {
+		if _, err := url.ParseRequestURI(configURL); err != nil {
+			fmt.Fprintf(os.Stderr, "invalid config URL format: %v\n", err)
+			flag.Usage()
+			os.Exit(1)
+		}
+	}
 
-	// Create application with dependency injection
+	_ = verbose
+
+	configManager := NewConfigManager(configURL)
+
 	app := NewApplication(configManager)
 
-	// Run application with error handling
 	if err := app.Run(); err != nil {
 		fmt.Printf("Fatal error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// parseFlags parses command line flags using the parameter utility
-func parseFlags() *utils.ParsedFlags {
-	// Define flag definitions
-	flagDefinitions := []utils.FlagDefinition{
-		{
-			Name:         "c",
-			DefaultValue: "",
-			Description:  "URL to load configuration from (YAML format)",
-			Validator: func(value interface{}) error {
-				if urlStr, ok := value.(string); ok && urlStr != "" {
-					if _, err := url.ParseRequestURI(urlStr); err != nil {
-						return fmt.Errorf("invalid config URL format: %w", err)
-					}
-				}
-				return nil
-			},
-		},
-		{
-			Name:         "port",
-			DefaultValue: "",
-			Description:  "Server port (overrides config)",
-		},
-		{
-			Name:         "verbose",
-			DefaultValue: false,
-			Description:  "Enable verbose logging",
-		},
-		{
-			Name:         "env",
-			DefaultValue: "",
-			Description:  "Environment (development/staging/production)",
-		},
-	}
-
-	// Parse flags using the utility
-	flags, err := utils.ParseFlags(flagDefinitions)
-	if err != nil {
-		fmt.Printf("Error parsing flags: %v\n", err)
-		utils.PrintUsage(flagDefinitions, AppName)
-		os.Exit(1)
-	}
-
-	return flags
 }

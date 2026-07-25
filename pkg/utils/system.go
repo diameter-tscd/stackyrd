@@ -9,134 +9,24 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 var (
-	// GetMemSelf — atomic to avoid data-race on concurrent reads vs background writes
 	runtimeMemStats  atomic.Pointer[runtime.MemStats]
-	statsMutex       sync.Mutex // protects writes via GetRuntimeStats
+	statsMutex       sync.Mutex
 	runtimeStats     bool
 	memSelfInterval  time.Duration
 	memSelfLastFetch time.Time
 	memSelfValue     atomic.Uint64
 
-	// GetRoutine
 	routineLastFetch    time.Time
 	routineInterval     time.Duration
 	routineFirstFetched bool
 	routineValue        atomic.Int32
 )
 
-var (
-	cpuPercentCache     float64
-	cpuPercentCacheTime time.Time
-	cpuPercentMu        sync.Mutex
-)
-
-// GetSystemStats gathers CPU and Memory usage.
-func GetSystemStats() (map[string]interface{}, error) {
-	v, err := mem.VirtualMemory()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get memory info: %w", err)
-	}
-
-	cpuPercentMu.Lock()
-	cpuVal := cpuPercentCache
-	if time.Since(cpuPercentCacheTime) > 2*time.Second {
-		// Refresh in background so the caller doesn't block for 100ms
-		go func() {
-			c, err := cpu.Percent(100*time.Millisecond, false)
-			if err == nil && len(c) > 0 {
-				cpuPercentMu.Lock()
-				cpuPercentCache = c[0]
-				cpuPercentCacheTime = time.Now()
-				cpuPercentMu.Unlock()
-			}
-		}()
-	}
-	cpuPercentMu.Unlock()
-
-	stats := map[string]interface{}{
-		"cpu_percent":         cpuVal,
-		"memory_total_mb":     v.Total / 1024 / 1024,
-		"memory_used_mb":      v.Used / 1024 / 1024,
-		"memory_used_percent": v.UsedPercent,
-		"go_routines":         runtime.NumGoroutine(),
-		"os":                  runtime.GOOS,
-		"arch":                runtime.GOARCH,
-	}
-
-	return stats, nil
-}
-
-// GetProcessInfo gathers info about the current process.
-func GetProcessInfo() (map[string]interface{}, error) {
-	pid := int32(os.Getpid())
-	p, err := process.NewProcess(pid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get process stats: %w", err)
-	}
-
-	memInfo, err := p.MemoryInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get process memory stats: %w", err)
-	}
-
-	cpuPercent, err := p.CPUPercent()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get process cpu stats: %w", err)
-	}
-
-	info := map[string]interface{}{
-		"pid":           pid,
-		"memory_rss_mb": memInfo.RSS / 1024 / 1024,
-		"cpu_percent":   cpuPercent,
-	}
-
-	return info, nil
-}
-
-// GetDiskUsage gathers disk usage info for root path.
-func GetDiskUsage() (map[string]interface{}, error) {
-	parts, err := disk.Partitions(false)
-	if err != nil {
-		return nil, err
-	}
-
-	// Just check the first partition or root usually
-	var usage *disk.UsageStat
-	if runtime.GOOS == "windows" {
-		usage, err = disk.Usage("C:\\")
-	} else {
-		usage, err = disk.Usage("/")
-	}
-
-	if err != nil {
-		// Fallback to first partition if C:\ or / fails?
-		if len(parts) > 0 {
-			usage, err = disk.Usage(parts[0].Mountpoint)
-		}
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return map[string]interface{}{
-		"path":         usage.Path,
-		"total_gb":     usage.Total / 1024 / 1024 / 1024,
-		"used_gb":      usage.Used / 1024 / 1024 / 1024,
-		"used_percent": usage.UsedPercent,
-	}, nil
-}
-
-// GetRuntimeStats gathers runtime.
-func GetRuntimeStats() runtime.MemStats {
+// getRuntimeStats gathers runtime.
+func getRuntimeStats() runtime.MemStats {
 	if !runtimeStats {
 		statsMutex.Lock()
 		defer statsMutex.Unlock()
@@ -165,7 +55,7 @@ func GetRuntimeStats() runtime.MemStats {
 
 // GetMemSelf gathers stackyrd memory usage.
 func GetMemSelf() uint64 {
-	_ = GetRuntimeStats() // ensure background stats goroutine is running
+	_ = getRuntimeStats() // ensure background stats goroutine is running
 
 	if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
 		alloc := runtimeMemStats.Load().Sys
@@ -214,16 +104,14 @@ func GetNetworkInfo() (map[string]string, error) {
 	}, nil
 }
 
-// ResetTerminal restores terminal to main screen buffer and resets attributes
-// Useful after bubbletea alt-screen exits abnormally
-func ResetTerminal() {
+func resetTerminal() {
 	os.Stdout.WriteString("\033[?1049l\033[0m\033[H")
 }
 
 // ClearScreen clears the terminal screen (cross-platform)
 // Also resets terminal state: restores main screen buffer, cursor, and text attributes.
 func ClearScreen() {
-	ResetTerminal()
+	resetTerminal()
 	os.Stdout.WriteString("\033[2J\033[3J")
 
 	var cmd *exec.Cmd

@@ -28,12 +28,6 @@ func TestUsersService_Name(t *testing.T) {
 	assert.Equal(t, "Users Service", service.Name())
 }
 
-func TestUsersService_WireName(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewUsersService(true, l)
-	assert.Equal(t, "users", service.WireName())
-}
-
 func TestUsersService_Enabled(t *testing.T) {
 	l := logger.New(false, nil)
 
@@ -44,15 +38,6 @@ func TestUsersService_Enabled(t *testing.T) {
 	// Test disabled service
 	disabledService := modules.NewUsersService(false, l)
 	assert.False(t, disabledService.Enabled())
-}
-
-func TestUsersService_Endpoints(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewUsersService(true, l)
-	endpoints := service.Endpoints()
-
-	assert.Contains(t, endpoints, "/users")
-	assert.Contains(t, endpoints, "/users/:id")
 }
 
 func TestUsersService_ListUsers(t *testing.T) {

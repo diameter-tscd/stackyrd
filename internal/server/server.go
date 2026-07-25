@@ -3,10 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net/http"
-	"slices"
-	"time"
 
 	_ "stackyrd/internal/services/modules"
 
@@ -18,7 +15,6 @@ import (
 	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
-	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
@@ -70,8 +66,6 @@ func (s *Server) Start() error {
 		s.dependencies.Set(name, component)
 		s.logger.Info("Registered infrastructure component", "name", name, "type", fmt.Sprintf("%T", component))
 	}
-
-	s.setConnectionDefaults()
 
 	s.logger.Info("Initializing Plugin system...")
 	pluginGroup := s.e.Group("/api/v1")
@@ -135,9 +129,9 @@ func (s *Server) Start() error {
 		s.logger.Info("Registering Swagger UI documentation...")
 		middleware.RegisterSwaggerRoutes(s.e, middleware.SwaggerConfig{
 			Enabled:  s.config.Swagger.Enabled,
-			BasePath: "/swagger",
+			BasePath: s.config.Swagger.BasePath,
 		})
-		s.logger.Info("Swagger UI available at /swagger/index.html")
+		s.logger.Info("Swagger UI available at " + s.config.Swagger.BasePath + "/index.html")
 	}
 
 	port := s.config.Server.Port
@@ -145,28 +139,6 @@ func (s *Server) Start() error {
 	s.logger.Info("Infrastructure components initializing in background...")
 
 	return s.e.Start(":" + port)
-}
-
-func (s *Server) setConnectionDefaults() {
-	if pg, ok := s.dependencies.Get("postgres"); ok {
-		switch mgr := pg.(type) {
-		case *infrastructure.PostgresConnectionManager:
-			if defaultConn, exists := mgr.GetDefaultConnection(); exists {
-				s.dependencies.Set("postgres.default", defaultConn)
-				s.logger.Info("PostgreSQL single connection manager detected")
-			}
-		}
-	}
-
-	if mg, ok := s.dependencies.Get("mongo"); ok {
-		switch mgr := mg.(type) {
-		case *infrastructure.MongoConnectionManager:
-			if defaultConn, exists := mgr.GetDefaultConnection(); exists {
-				s.dependencies.Set("mongo.default", defaultConn)
-				s.logger.Info("MongoDB single connection manager detected")
-			}
-		}
-	}
 }
 
 func (s *Server) registerHealthEndpoints() {
@@ -184,31 +156,27 @@ func (s *Server) registerHealthEndpoints() {
 		})
 	})
 
-	s.e.GET("/health/infrastructure", func(c echo.Context) error {
-		return response.Success(c, s.infraInitManager.GetStatus())
-	})
-
 	s.e.GET("/health/dependencies", func(c echo.Context) error {
 		allComponents := s.dependencies.GetAll()
 		allFactories := registry.GetServiceFactories()
+		infraKeys := make([]string, 0, len(allComponents))
+		for k := range allComponents {
+			infraKeys = append(infraKeys, k)
+		}
+		svcKeys := make([]string, 0, len(allFactories))
+		for k := range allFactories {
+			svcKeys = append(svcKeys, k)
+		}
 		return response.Success(c, map[string]interface{}{
 			"total_infrastructure": len(allComponents),
-			"list_infrastructure":  slices.Collect(maps.Keys(allComponents)),
+			"list_infrastructure":  infraKeys,
 			"total_service":        len(allFactories),
-			"list_service":         slices.Collect(maps.Keys(allFactories)),
-		})
-	})
-
-	s.e.GET("/health/resources", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{
-			"memory_usage":    utils.GetMemSelf(),
-			"routine_running": utils.GetRoutine(),
+			"list_service":         svcKeys,
 		})
 	})
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
-	utils.ClearScreen()
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
 	if s.infraInitManager != nil {
@@ -217,35 +185,19 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 
 	var shutdownErrors []error
 
-	shutdownComponent := func(name string, closer interface{}) {
-		if closer == nil {
-			return
+	for name, component := range s.dependencies.GetAll() {
+		if component == nil {
+			continue
 		}
-
 		logger.Info("Shutting down " + name + "...")
-		if c, ok := closer.(interface{ Close() error }); ok {
-			done := make(chan struct{}, 1)
-			go func() {
-				err := c.Close()
-				if err != nil {
-					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
-					logger.Error("Error shutting down "+name, err)
-				} else {
-					logger.Info(name + " shut down successfully")
-				}
-				done <- struct{}{}
-			}()
-			select {
-			case <-done:
-			case <-time.After(10 * time.Second):
-				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s: forced shutdown (timeout)", name))
-				logger.Warn(name + " shutdown timed out after 10s, continuing")
+		if c, ok := component.(interface{ Close() error }); ok {
+			if err := c.Close(); err != nil {
+				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
+				logger.Error("Error shutting down "+name, err)
+			} else {
+				logger.Info(name + " shut down successfully")
 			}
 		}
-	}
-
-	for name, component := range s.dependencies.GetAll() {
-		shutdownComponent(name, component)
 	}
 
 	if len(shutdownErrors) > 0 {

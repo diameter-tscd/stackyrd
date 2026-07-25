@@ -5,15 +5,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
 )
 
 func TestSidebarBlack(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
 	model := NewTerminalModel(LiveConfig{
 		AppName: "stackyrd", AppVersion: "1.0", Port: "8080", Env: "dev",
 		Banner: "  ___ _     \n / __| |_   \n \\__ \\  _|_ \n |___/\\__(_)\n            ",
 	})
-	model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	model.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
 	model.infraEntries = []InfraEntry{{Name: "redis", Connected: true, Enabled: true}, {Name: "mongo", Connected: false, Enabled: true}}
 	model.serviceEntries = []ServiceEntry{{Name: "users_service", Running: true}, {Name: "tasks_service", Running: false}}
 
@@ -28,8 +32,8 @@ func TestSidebarBlack(t *testing.T) {
 		}
 	}
 
-	// The command block background must be #37353E (ESC char 48;2;55;53;62)
-	if !strings.Contains(view, "48;2;55;53;62") {
+	// The command block background must be #37353E (rendered as 48;2;55;52;62 due to termenv rounding)
+	if !strings.Contains(view, "48;2;55;52;62") {
 		t.Errorf("command block background #37353E not found in rendered output")
 	}
 

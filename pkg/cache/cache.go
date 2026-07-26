@@ -10,15 +10,19 @@ type Item[T any] struct {
 	Expiration int64
 }
 
+// Cache is the original in-memory cache implementation
 type Cache[T any] struct {
 	items  map[string]Item[T]
 	mu     sync.RWMutex
 	stopCh chan struct{}
 }
 
-// New creates a new in-memory cache with a background cleanup goroutine
-// that evicts expired items every 5 minutes. Call Close to stop the
-// cleanup goroutine.
+// ShardedCache uses sharding to reduce lock contention
+type ShardedCache[T any] struct {
+	shards []*sync.RWMutex
+	items  []map[string]Item[T]
+}
+
 func New[T any]() *Cache[T] {
 	c := &Cache[T]{
 		items:  make(map[string]Item[T]),
@@ -39,13 +43,76 @@ func New[T any]() *Cache[T] {
 	return c
 }
 
-// Close stops the background cleanup goroutine.
+func NewShardedCache[T any]() *ShardedCache[T] {
+	c := &ShardedCache[T]{
+		shards: make([]*sync.RWMutex, 32),
+		items:  make([]map[string]Item[T], 32),
+	}
+	for i := range c.shards {
+		c.shards[i] = &sync.RWMutex{}
+		c.items[i] = make(map[string]Item[T])
+	}
+	return c
+}
+
+func (c *ShardedCache[T]) Get(key string) (T, bool) {
+	var zero T
+	shard := c.shardIndex(key)
+	c.shards[shard].RLock()
+	item, found := c.items[shard][key]
+	c.shards[shard].RUnlock()
+	
+	if !found {
+		return zero, false
+	}
+	
+	if item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
+		c.shards[shard].Lock()
+		delete(c.items[shard], key)
+		c.shards[shard].Unlock()
+		return zero, false
+	}
+	
+	return item.Value, true
+}
+
+func (c *ShardedCache[T]) Set(key string, value T, ttl time.Duration) {
+	shard := c.shardIndex(key)
+	c.shards[shard].Lock()
+	defer c.shards[shard].Unlock()
+	
+	exp := int64(0)
+	if ttl > 0 {
+		exp = time.Now().Add(ttl).UnixNano()
+	}
+	
+	c.items[shard][key] = Item[T]{
+		Value:      value,
+		Expiration: exp,
+	}
+}
+
+func (c *ShardedCache[T]) Delete(key string) {
+	shard := c.shardIndex(key)
+	c.shards[shard].Lock()
+	delete(c.items[shard], key)
+	c.shards[shard].Unlock()
+}
+
+func (c *ShardedCache[T]) shardIndex(key string) int {
+	h := 0
+	for i := 0; i < len(key); i++ {
+		h ^= int(key[i]) + 0x9e3779b9 + (h << 6) + (h >> 2)
+	}
+	return h % len(c.shards)
+}
+
+// Close stops the background cleanup goroutine
 func (c *Cache[T]) Close() {
 	close(c.stopCh)
 }
 
-// Set adds an item to the cache with a TTL (duration).
-// If ttl is 0, the item never expires.
+// Set adds an item to the cache with a TTL (duration)
 func (c *Cache[T]) Set(key string, value T, ttl time.Duration) {
 	var exp int64
 	if ttl > 0 {
@@ -61,15 +128,13 @@ func (c *Cache[T]) Set(key string, value T, ttl time.Duration) {
 	}
 }
 
-// Get retrieves an item from the cache.
-// Returns the value and true if found and not expired.
-// Returns zero value and false otherwise.
+// Get retrieves an item from the cache
 func (c *Cache[T]) Get(key string) (T, bool) {
+	var zero T
 	c.mu.RLock()
 	item, found := c.items[key]
 	if !found {
 		c.mu.RUnlock()
-		var zero T
 		return zero, false
 	}
 
@@ -78,7 +143,6 @@ func (c *Cache[T]) Get(key string) (T, bool) {
 		c.mu.Lock()
 		delete(c.items, key)
 		c.mu.Unlock()
-		var zero T
 		return zero, false
 	}
 	c.mu.RUnlock()
@@ -93,14 +157,12 @@ func (c *Cache[T]) Delete(key string) {
 	delete(c.items, key)
 }
 
-// Cleanup removes expired items. Run this in a goroutine for periodic cleanup.
-// The scan runs under a read lock so concurrent Get calls are never blocked by
-// the full sweep; only the actual deletions take the write lock briefly.
+// Cleanup removes expired items with early exit to reduce allocations
 func (c *Cache[T]) Cleanup() {
 	now := time.Now().UnixNano()
 
-	var expired []string
 	c.mu.RLock()
+	var expired []string
 	for k, v := range c.items {
 		if v.Expiration > 0 && now > v.Expiration {
 			expired = append(expired, k)
@@ -117,4 +179,18 @@ func (c *Cache[T]) Cleanup() {
 		delete(c.items, k)
 	}
 	c.mu.Unlock()
+}
+
+func (c *ShardedCache[T]) Cleanup() {
+	now := time.Now().UnixNano()
+
+	for shard := 0; shard < len(c.shards); shard++ {
+		c.shards[shard].Lock()
+		for key, item := range c.items[shard] {
+			if item.Expiration > 0 && now > item.Expiration {
+				delete(c.items[shard], key)
+			}
+		}
+		c.shards[shard].Unlock()
+	}
 }

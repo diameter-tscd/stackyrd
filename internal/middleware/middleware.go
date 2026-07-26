@@ -9,7 +9,6 @@ import (
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
-
 	"github.com/labstack/echo/v4"
 	"github.com/spf13/viper"
 )
@@ -63,7 +62,6 @@ func (r *MiddlewareRegistry) IsEnabled(name string) bool {
 	return true
 }
 
-// GetNames returns all registered middleware names.
 func (r *MiddlewareRegistry) GetNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -113,17 +111,6 @@ func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger 
 	return middlewares
 }
 
-type Config struct {
-	AuthType string
-	Logger   *logger.Logger
-}
-
-func InitMiddlewares(e *echo.Echo, cfg Config) {
-	e.Use(RequestID())
-	e.Use(Logger(cfg.Logger))
-	e.Use(PermissionCheck(cfg.Logger))
-}
-
 func init() {
 	RegisterMiddleware("request_id", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return RequestID(), nil
@@ -144,12 +131,21 @@ func init() {
 	})
 }
 
+var reqIDPool = sync.Pool{
+    New: func() any { return &stringsBuilder{} },
+}
+
 func RequestID() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			requestID := c.Request().Header.Get("X-Request-ID")
 			if requestID == "" {
-				requestID = "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+				b := reqIDPool.Get().(*stringsBuilder)
+				b.Reset()
+				b.WriteString("req-")
+				b.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10))
+				requestID = b.String()
+				reqIDPool.Put(b)
 			}
 			c.Set("X-Request-ID", requestID)
 			c.Response().Header().Set("X-Request-ID", requestID)
@@ -170,14 +166,22 @@ func Logger(l *logger.Logger) echo.MiddlewareFunc {
 			method := c.Request().Method
 			path := c.Request().URL.Path
 
-			msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
+			// Use single strings.Builder instead of multiple + operations
+			var sb stringsBuilder
+			sb.WriteString(strconv.Itoa(status))
+			sb.WriteString(" | ")
+			sb.WriteString(method)
+			sb.WriteString(" | ")
+			sb.WriteString(path)
+			sb.WriteString(" | ")
+			sb.WriteString(latency.String())
 
 			if status >= 500 {
-				l.Error(msg, nil)
+				l.Error(sb.String(), nil)
 			} else if status >= 400 {
-				l.Warn(msg)
+				l.Warn(sb.String())
 			} else {
-				l.Info(msg)
+				l.Info(sb.String())
 			}
 
 			return err
@@ -230,4 +234,20 @@ func matchPath(path, pattern string) bool {
 		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 	}
 	return path == pattern
+}
+
+type stringsBuilder struct {
+	builder strings.Builder
+}
+
+func (sb *stringsBuilder) WriteString(s string) {
+	sb.builder.WriteString(s)
+}
+
+func (sb *stringsBuilder) Reset() {
+	sb.builder.Reset()
+}
+
+func (sb *stringsBuilder) String() string {
+	return sb.builder.String()
 }

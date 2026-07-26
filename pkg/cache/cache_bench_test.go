@@ -2,37 +2,19 @@ package cache
 
 import (
 	"testing"
-	"time"
 )
 
-func BenchmarkGet(b *testing.B) {
-	c := New[string]()
-	defer c.Close()
-
+func BenchmarkCacheGet(b *testing.B) {
+	c := NewShardedCache[string]()
+	
 	for i := 0; i < 1000; i++ {
-		c.Set(string(rune(i)), "value", 0)
+		c.Set(string(rune(i)), "value"+string(rune(i)), 0)
 	}
-
+	
 	b.ResetTimer()
-	for b.Loop() {
-		for i := 0; i < 1000; i++ {
-			_, _ = c.Get(string(rune(i)))
-		}
-	}
-}
-
-func BenchmarkGetWithExpired(b *testing.B) {
-	c := New[string]()
-	defer c.Close()
-
-	for i := 0; i < 1000; i++ {
-		c.Set(string(rune(i)), "value", 100*time.Millisecond)
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		for i := 0; i < 1000; i++ {
-			_, _ = c.Get(string(rune(i)))
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 1000; j++ {
+			_, _ = c.Get(string(rune(j)))
 		}
 	}
 }

@@ -2,36 +2,42 @@ package config
 
 import (
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
-// setupViperDefaults configures viper with default values
+// cache control for config reloading
+var (
+	configCache     *Config
+	configCacheMu   sync.RWMutex
+	configCacheTime time.Time
+	configCacheTTL  = 5 * time.Minute
+)
+
 func setupViperDefaults() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	viper.SetDefault("app.theme", "default")
 
-	// Defaults
 	viper.SetDefault("app.name", "Golang App")
 	viper.SetDefault("app.env", "development")
 	viper.SetDefault("app.banner_path", "banner.txt")
-	viper.SetDefault("app.startup_delay", 15)   // 15 seconds default
-	viper.SetDefault("app.quiet_startup", true) // clean console by default
-	viper.SetDefault("app.enable_tui", false)   // TUI enabled by default
+	viper.SetDefault("app.startup_delay", 15)
+	viper.SetDefault("app.quiet_startup", true)
+	viper.SetDefault("app.enable_tui", false)
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.services_endpoint", "/api/v1")
 	viper.SetDefault("auth.type", "none")
-	// Services config uses a dynamic map - no hardcoded defaults needed
-	// Services default to enabled if not specified (see ServicesConfig.IsEnabled)
 
 	viper.SetDefault("redis.enabled", false)
 	viper.SetDefault("kafka.enabled", false)
 	viper.SetDefault("postgres.enabled", false)
 	viper.SetDefault("mongo.enabled", false)
-	viper.SetDefault("swagger.enabled", false) // enable explicitly in config
-	viper.SetDefault("app.debug", false)       // sanitise-by-default
+	viper.SetDefault("swagger.enabled", false)
+	viper.SetDefault("app.debug", false)
 	viper.SetDefault("swagger.base_path", "/swagger")
 	viper.SetDefault("metrics.enabled", false)
 	viper.SetDefault("metrics.path", "/metrics")
@@ -42,22 +48,22 @@ func setupViperDefaults() {
 }
 
 type Config struct {
-	App                 AppConfig           `mapstructure:"app"`
-	Server              ServerConfig        `mapstructure:"server"`
-	Services            ServicesConfig      `mapstructure:"services"`
-	Middleware          MiddlewareConfig    `mapstructure:"middleware"`
-	Auth                AuthConfig          `mapstructure:"auth"`
-	Swagger             SwaggerConfig       `mapstructure:"swagger"`
-	Redis               RedisConfig         `mapstructure:"redis"`
-	Kafka               KafkaConfig         `mapstructure:"kafka"`
-	Postgres            PostgresConfig      `mapstructure:"postgres"`
-	Mongo               MongoConfig         `mapstructure:"mongo"`
-	Webhook             WebhookConfig       `mapstructure:"webhook"`
-	Metrics             MetricsConfig       `mapstructure:"metrics"`
-	Grafana             GrafanaConfig       `mapstructure:"grafana"`
-	Cron                CronConfig          `mapstructure:"cron"`
-	MinIO               MinIOConfig         `mapstructure:"minio"`
-	Encryption          EncryptionConfig    `mapstructure:"encryption"`
+	App        AppConfig           `mapstructure:"app"`
+	Server     ServerConfig        `mapstructure:"server"`
+	Services   ServicesConfig      `mapstructure:"services"`
+	Middleware MiddlewareConfig    `mapstructure:"middleware"`
+	Auth       AuthConfig          `mapstructure:"auth"`
+	Swagger    SwaggerConfig       `mapstructure:"swagger"`
+	Redis      RedisConfig         `mapstructure:"redis"`
+	Kafka      KafkaConfig         `mapstructure:"kafka"`
+	Postgres   PostgresConfig      `mapstructure:"postgres"`
+	Mongo      MongoConfig         `mapstructure:"mongo"`
+	Webhook    WebhookConfig       `mapstructure:"webhook"`
+	Metrics    MetricsConfig       `mapstructure:"metrics"`
+	Grafana    GrafanaConfig       `mapstructure:"grafana"`
+	Cron       CronConfig          `mapstructure:"cron"`
+	MinIO      MinIOConfig         `mapstructure:"minio"`
+	Encryption EncryptionConfig    `mapstructure:"encryption"`
 }
 
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.
@@ -72,13 +78,13 @@ func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
 }
 
 type WebhookConfig struct {
-	Enabled    bool              `mapstructure:"enabled"`
-	URL        string            `mapstructure:"url"`
-	Secret     string            `mapstructure:"secret"`
-	Timeout    int               `mapstructure:"timeout_seconds"`
-	MaxRetries int               `mapstructure:"max_retries"`
+	Enabled    bool            `mapstructure:"enabled"`
+	URL        string          `mapstructure:"url"`
+	Secret     string          `mapstructure:"secret"`
+	Timeout    int             `mapstructure:"timeout_seconds"`
+	MaxRetries int             `mapstructure:"max_retries"`
 	Headers    map[string]string `mapstructure:"headers"`
-	Endpoint   string            `mapstructure:"endpoint"`
+	Endpoint   string          `mapstructure:"endpoint"`
 }
 
 type MinIOConfig struct {
@@ -123,10 +129,10 @@ type AppConfig struct {
 	Debug        bool   `mapstructure:"debug"`
 	Env          string `mapstructure:"env"`
 	BannerPath   string `mapstructure:"banner_path"`
-	StartupDelay int    `mapstructure:"startup_delay"` // seconds to show TUI boot screen (0 to skip)
-	QuietStartup bool   `mapstructure:"quiet_startup"` // suppress console logs at startup (TUI only)
-	EnableTUI    bool   `mapstructure:"enable_tui"`    // enable fancy TUI mode (false = traditional console)
-	Theme        string `mapstructure:"theme"`         // TUI color theme name (default = current colors)
+	StartupDelay int    `mapstructure:"startup_delay"`
+	QuietStartup bool   `mapstructure:"quiet_startup"`
+	EnableTUI    bool   `mapstructure:"enable_tui"`
+	Theme        string `mapstructure:"theme"`
 }
 
 type ServerConfig struct {
@@ -146,7 +152,7 @@ func (s ServicesConfig) IsEnabled(serviceName string) bool {
 }
 
 type AuthConfig struct {
-	Type   string `mapstructure:"type"` // e.g., "jwt", "apikey", "none"
+	Type   string `mapstructure:"type"`
 	Secret string `mapstructure:"secret"`
 }
 
@@ -207,28 +213,32 @@ type GrafanaConfig struct {
 
 // LoadConfig loads configuration from local file or URL
 func LoadConfig() (*Config, error) {
-	return LoadConfigWithURL("")
+	configCacheMu.RLock()
+	if configCache != nil && time.Since(configCacheTime) < configCacheTTL {
+		cached := configCache
+		configCacheMu.RUnlock()
+		return cached, nil
+	}
+	configCacheMu.RUnlock()
+	return loadFromSource()
 }
 
-// LoadConfigWithURL loads configuration from URL (if provided) or local file
-func LoadConfigWithURL(configURL string) (*Config, error) {
+// ForceReloadConfig bypasses the cache and reloads from source
+func ForceReloadConfig() (*Config, error) {
+	return loadFromSource()
+}
+
+func loadFromSource() (*Config, error) {
 	setupViperDefaults()
 
-	if configURL != "" {
-		// Load from URL - viper should already have the config loaded from URL
-		// by the parameter parsing in main.go
-	} else {
-		// Standard local file loading
-		viper.SetConfigName("config") // name of config file (without extension)
-		viper.SetConfigType("yaml")   // REQUIRED if the config file does not have the extension in the name
-		viper.AddConfigPath(".")      // optionally look for config in the working directory
-		viper.AddConfigPath("./config")
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("./config")
 
-		if err := viper.ReadInConfig(); err != nil {
-			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-				return nil, err
-			}
-			// Config file not found; ignore error if desired or return
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, err
 		}
 	}
 
@@ -237,5 +247,18 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 		return nil, err
 	}
 
+	configCacheMu.Lock()
+	configCache = &cfg
+	configCacheTime = time.Now()
+	configCacheMu.Unlock()
+
 	return &cfg, nil
+}
+
+// LoadConfigWithURL loads configuration from URL (if provided) or local file
+func LoadConfigWithURL(configURL string) (*Config, error) {
+	if configURL != "" {
+		return loadFromSource()
+	}
+	return LoadConfig()
 }

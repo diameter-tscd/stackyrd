@@ -81,7 +81,7 @@ func Success(c echo.Context, data interface{}, message ...string) error {
 		Message:       msg,
 		Data:          data,
 		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
+		Datetime:      now.Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -100,7 +100,7 @@ func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...st
 		Data:          data,
 		Meta:          meta,
 		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
+		Datetime:      now.Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -118,7 +118,7 @@ func Created(c echo.Context, data interface{}, message ...string) error {
 		Message:       msg,
 		Data:          data,
 		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
+		Datetime:      now.Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }
@@ -199,7 +199,7 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 			Details: errorDetails,
 		},
 		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
+		Datetime:      now.Format(time.RFC3339),
 		CorrelationID: getCorrelationID(c),
 	})
 }

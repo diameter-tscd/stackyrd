@@ -253,8 +253,8 @@ func (wp *WorkerPool) worker() {
 	}
 }
 
-// Close closes the worker pool
+// Close closes the worker pool. After Close, Submit blocks forever.
+// Callers must ensure no more jobs are submitted after Close.
 func (wp *WorkerPool) Close() {
 	wp.Stop()
-	close(wp.jobQueue)
 }

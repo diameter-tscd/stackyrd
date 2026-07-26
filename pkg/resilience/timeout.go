@@ -2,13 +2,10 @@ package resilience
 
 import (
 	"context"
-	"errors"
 	"time"
 )
 
-var (
-	ErrTimeout = errors.New("operation timed out")
-)
+
 
 // TimeoutConfig holds timeout configuration
 type TimeoutConfig struct {
@@ -42,10 +39,7 @@ func WithContext(ctx context.Context, fn func() error) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			return ErrTimeout
-		}
-		return ctx.Err()
+		return context.DeadlineExceeded
 	}
 }
 
@@ -77,10 +71,7 @@ func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, err
 		return res.result, res.err
 	case <-ctx.Done():
 		var zero T
-		if ctx.Err() == context.DeadlineExceeded {
-			return zero, ErrTimeout
-		}
-		return zero, ctx.Err()
+		return zero, context.DeadlineExceeded
 	}
 }
 

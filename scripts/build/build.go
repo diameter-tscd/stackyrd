@@ -139,17 +139,7 @@ func (ctx *BuildContext) checkPath(logger *Logger) error {
 
 // clear console screen and reset terminal state
 func ClearScreen() {
-	fmt.Print("\033[?1049l\033[0m\033[H\033[2J\033[3J")
-
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "cls")
-	default:
-		cmd = exec.Command("clear")
-	}
-
+	cmd := exec.Command("clear")
 	cmd.Stdout = os.Stdout
 	_ = cmd.Run()
 }

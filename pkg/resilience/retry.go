@@ -2,7 +2,6 @@ package resilience
 
 import (
 	"context"
-	"errors"
 	"math"
 	"math/rand"
 	"sync"
@@ -136,33 +135,4 @@ func calculateDelay(attempt int, config RetryConfig) time.Duration {
 	return time.Duration(delay)
 }
 
-// RetryableError wraps an error to indicate it's retryable
-type RetryableError struct {
-	Err error
-}
 
-func (e *RetryableError) Error() string {
-	return e.Err.Error()
-}
-
-func (e *RetryableError) Unwrap() error {
-	return e.Err
-}
-
-// NewRetryableError creates a new retryable error
-func NewRetryableError(err error) *RetryableError {
-	return &RetryableError{Err: err}
-}
-
-// IsRetryable checks if an error is retryable
-func IsRetryable(err error) bool {
-	var retryableErr *RetryableError
-	return errors.As(err, &retryableErr)
-}
-
-// RetryIfRetryable returns a RetryIf function that retries only retryable errors
-func RetryIfRetryable() func(error) bool {
-	return func(err error) bool {
-		return IsRetryable(err)
-	}
-}

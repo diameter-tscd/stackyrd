@@ -19,6 +19,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+//go:embed builtin
+var pluginBuiltinFS embed.FS
+
 var (
 	builtinFS           embed.FS
 	storeBase           string
@@ -346,5 +349,6 @@ func SetStoreBase(base string) {
 }
 
 func init() {
+	SetBuiltinFS(pluginBuiltinFS)
 	GetGlobalPluginRegistry()
 }

@@ -1,6 +1,6 @@
 app:
   name: "stackyrd"
-  version: "1.0.3-clover"
+  version: "1.0.4-clover"
   debug: true
   env: "development"
   banner_path: "banner.txt"

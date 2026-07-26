@@ -386,32 +386,15 @@ func (p *PostgresManager) GetSessionCount(ctx context.Context) (int, error) {
 }
 
 func (p *PostgresManager) GetDBInfo(ctx context.Context) (map[string]interface{}, error) {
-	var version, dbName, user, sslMode string
+	var version, size, dbName, user, sslMode string
 
-	// Fetch Version
-	if err := p.DB.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Size (formatted)
-	var size string
-	if err := p.DB.QueryRowContext(ctx, "SELECT pg_size_pretty(pg_database_size(current_database()))").Scan(&size); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Name
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_database()").Scan(&dbName); err != nil {
-		return nil, err
-	}
-
-	// Fetch Current User
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_user").Scan(&user); err != nil {
-		return nil, err
-	}
-
-	// Fetch SSL Status
-	// Note: checks if usage of SSL is active for this backend
-	err := p.DB.QueryRowContext(ctx, "SELECT COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')").Scan(&sslMode)
+	err := p.DB.QueryRowContext(ctx, `
+		SELECT version(),
+		       pg_size_pretty(pg_database_size(current_database())),
+		       current_database(),
+		       current_user,
+		       COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')
+	`).Scan(&version, &size, &dbName, &user, &sslMode)
 	if err != nil {
 		sslMode = "unknown"
 	}

@@ -633,11 +633,5 @@ func FlipVertically(img image.Image) image.Image {
 }
 
 func clamp(val, minVal, maxVal int) int {
-	if val < minVal {
-		return minVal
-	}
-	if val > maxVal {
-		return maxVal
-	}
-	return val
+	return max(minVal, min(val, maxVal))
 }

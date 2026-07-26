@@ -66,18 +66,22 @@ func (c *Cache[T]) Set(key string, value T, ttl time.Duration) {
 // Returns zero value and false otherwise.
 func (c *Cache[T]) Get(key string) (T, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	item, found := c.items[key]
 	if !found {
+		c.mu.RUnlock()
 		var zero T
 		return zero, false
 	}
 
 	if item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
+		c.mu.RUnlock()
+		c.mu.Lock()
+		delete(c.items, key)
+		c.mu.Unlock()
 		var zero T
 		return zero, false
 	}
+	c.mu.RUnlock()
 
 	return item.Value, true
 }

@@ -59,50 +59,50 @@ type DashboardModel struct {
 var (
 	dashTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5")).
-			Background(lipgloss.Color("#282A36")).
+			Foreground(lipgloss.Color(TC("primary"))).
+			Background(lipgloss.Color(TC("dim"))).
 			Padding(0, 2)
 
 	dashBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6272A4")).
+		BorderForeground(lipgloss.Color(TC("dim"))).
 		Padding(0, 2)
 
 	dashHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8BE9FD")).
+			Foreground(lipgloss.Color(TC("secondary"))).
 			MarginBottom(1)
 
 	dashLabelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	dashValueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2")).
+			Foreground(lipgloss.Color(TC("text"))).
 			Bold(true)
 
 	dashGoodStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#50FA7B"))
+			Foreground(lipgloss.Color(TC("success")))
 
 	dashWarnStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F1FA8C"))
+			Foreground(lipgloss.Color(TC("warning")))
 
 	dashBadStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF5555"))
+			Foreground(lipgloss.Color(TC("error")))
 
 	dashDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#44475A"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	dashAccentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#BD93F9"))
+			Foreground(lipgloss.Color(TC("accent2")))
 
 	dashPulseColors = []string{"#FF79C6", "#BD93F9", "#8BE9FD", "#50FA7B", "#F1FA8C", "#FFB86C", "#FF5555"}
 
-	dashBannerColor = "#8daea5"
+	dashBannerColor = TC("primary")
 
 	// Pastel progress-bar palette (matches boot.go pastel taste)
-	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0ffc4ff")) // pastel green
-	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffdab3ff")) // pastel peach
-	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaeaeff")) // pastel red
+	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_good"))) // pastel green
+	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_warn"))) // pastel peach
+	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_bad"))) // pastel red
 )
 
 // Animation frames for the running indicator
@@ -127,7 +127,7 @@ var runningFrames = []string{
 func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []ServiceStatus) DashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Points
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("accent")))
 
 	// Initialize viewport
 	vp := viewport.New(80, 20)
@@ -382,7 +382,7 @@ func (m DashboardModel) renderSystemBox() string {
 	lines = append(lines, fmt.Sprintf(" %s %s %s", dashLabelStyle.Render("RAM"), memBar, memPct))
 
 	// Separator
-	lines = append(lines, DividerLine.Render(strings.Repeat("─", 38)))
+	lines = append(lines, DividerLine().Render(strings.Repeat("─", 38)))
 
 	// Mem detail in GiB
 	memUsedGiB := fmt.Sprintf("%.1f", float64(m.memUsed)/1024)

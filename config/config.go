@@ -11,6 +11,8 @@ func setupViperDefaults() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
+	viper.SetDefault("app.theme", "default")
+
 	// Defaults
 	viper.SetDefault("app.name", "Golang App")
 	viper.SetDefault("app.env", "development")
@@ -124,6 +126,7 @@ type AppConfig struct {
 	StartupDelay int    `mapstructure:"startup_delay"` // seconds to show TUI boot screen (0 to skip)
 	QuietStartup bool   `mapstructure:"quiet_startup"` // suppress console logs at startup (TUI only)
 	EnableTUI    bool   `mapstructure:"enable_tui"`    // enable fancy TUI mode (false = traditional console)
+	Theme        string `mapstructure:"theme"`         // TUI color theme name (default = current colors)
 }
 
 type ServerConfig struct {

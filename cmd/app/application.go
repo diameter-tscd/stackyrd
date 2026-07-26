@@ -130,6 +130,8 @@ func (app *Application) startAppStep(ctx *AppContext) error {
 
 // runWithTUI runs the application with fancy TUI interface
 func (app *Application) runWithTUI() {
+	// Set TUI theme from config
+	tui.SetThemeName(app.config.App.Theme)
 
 	// Setup TUI configuration
 	tuiConfig := tui.StartupConfig{

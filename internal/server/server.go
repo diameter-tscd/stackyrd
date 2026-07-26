@@ -12,7 +12,6 @@ import (
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/metrics"
-	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
 
@@ -65,16 +64,6 @@ func (s *Server) Start() error {
 	for name, component := range componentRegistry.GetAll() {
 		s.dependencies.Set(name, component)
 		s.logger.Info("Registered infrastructure component", "name", name, "type", fmt.Sprintf("%T", component))
-	}
-
-	s.logger.Info("Initializing Plugin system...")
-	pluginGroup := s.e.Group("/api/v1")
-	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
-		s.logger.Error("Failed to initialize plugin system", err)
-	}
-	if bridge := plugin.GetGlobalPluginBridge(); bridge != nil {
-		s.dependencies.Set("plugins", bridge)
-		s.logger.Info("PluginBridge registered in service dependencies as 'plugins'")
 	}
 
 	s.logger.Info("Initializing Middleware...")

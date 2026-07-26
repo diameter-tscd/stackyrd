@@ -5,11 +5,10 @@
 | Document | Description |
 |----------|-------------|
 | [**Getting Started**](GETTING_STARTED.md) | Prerequisites, installation, configuration, hello-world service, scripts overview |
-| [**Architecture Overview**](ARCHITECTURE.md) | Boot sequence, request flow, project structure, core abstractions (Service, Infrastructure, Plugin, Middleware) |
-| [**Development Guide**](DEVELOPMENT.md) | Adding services/middleware/infrastructure/plugins, request validation, DI, pagination, resilience patterns, testing |
+| [**Architecture Overview**](ARCHITECTURE.md) | Boot sequence, request flow, project structure, core abstractions (Service, Infrastructure, Middleware) |
+| [**Development Guide**](DEVELOPMENT.md) | Adding services/middleware/infrastructure, request validation, DI, pagination, resilience patterns, testing |
 | [**API Documentation**](API_DOCS.md) | Swagger annotations, response format, helpers reference, doc generation |
-| [**Technical Reference**](REFERENCE.md) | Full config.yaml reference, health endpoints, component registry, plugin system API, middleware list, common commands |
-| [**Plugin System Guide**](../PLUGIN_GUIDE.md) | Complete plugin reference: TypeScript, Lua, Python, Go plugin creation, management API, sandbox, troubleshooting |
+| [**Technical Reference**](REFERENCE.md) | Full config.yaml reference, health endpoints, component registry, middleware list, common commands |
 
 ## Package Deep Dives
 

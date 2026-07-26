@@ -40,7 +40,6 @@ internal/
 pkg/
   assets/          # Embedded assets (banner.txt)
   interfaces/      # Service interface
-  plugin/          # Plugin system (TS/Lua/Python/Go via goja/gRPC)
   registry/        # Service factory registry, DI container
   infrastructure/  # Redis, PG, Mongo, Kafka, MinIO, Grafana, Cron, etc.
   logger/          # Zerolog structured logging
@@ -72,12 +71,8 @@ deployments/       # K8s manifests
 ## Boot Order
 
 ```
-Infra async init → Dependencies → Plugin init → Middleware → AutoDiscoverServices
+Infra async init → Dependencies → Middleware → AutoDiscoverServices
 ```
-
-## Plugin System
-
-See `pkg/plugin/` source for full API. Plugins execute in sandboxed VMs (goja, gopher-lua) or via gRPC subprocesses. `PluginBridge` is an `InfrastructureComponent` (name: `"plugins"`) available in `Dependencies` bag.
 
 ## Never Commit
 

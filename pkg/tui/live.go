@@ -61,31 +61,31 @@ type LiveModel struct {
 var (
 	liveBannerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#ffffffff"))
+			Foreground(lipgloss.Color(TC("text")))
 
 	liveInfoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveStatusStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#626262ff"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	// Single cyan color for progress bar
-	liveProgressColor = "#8daea5"
+	liveProgressColor = TC("primary")
 )
 
 // NewLiveModel creates a new live TUI model
 func NewLiveModel(cfg LiveConfig) *LiveModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 
 	// Initialize text input for filtering
 	ti := textinput.New()
@@ -94,7 +94,7 @@ func NewLiveModel(cfg LiveConfig) *LiveModel {
 	ti.Width = 30
 	// Make sure the text input is visible with a border
 	ti.Prompt = ""
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 
 	// Initialize reusable dialogs
 	exitDialog := template.NewExitConfirmationDialog()
@@ -365,7 +365,6 @@ func (m *LiveModel) View() string {
 
 	// Header with app info (cyan accent)
 	cyanStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(liveProgressColor)).Bold(true)
-
 	header := fmt.Sprintf("%s %s v%s %s",
 		cyanStyle.Render(" "),
 		liveTitleStyle.Render(m.config.AppName),
@@ -400,11 +399,11 @@ func (m *LiveModel) View() string {
 
 	stickyLogsHeader := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#626262ff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Render("▪ Live Logs")
 	mainContent.WriteString(stickyLogsHeader)
 	mainContent.WriteString("\n")
-	mainContent.WriteString(DividerLine.Render(strings.Repeat("─", logWidth)))
+	mainContent.WriteString(DividerLine().Render(strings.Repeat("─", logWidth)))
 	mainContent.WriteString("\n")
 
 	// SCROLLABLE CONTENT - Only the log entries (no header/border)
@@ -526,7 +525,7 @@ func (m *LiveModel) renderLogEntriesOnly() []string {
 			line := fmt.Sprintf("  %s %s %s",
 				liveDimStyle.Render(timeStr),
 				levelStyle.Render(icon),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2")).Render(msg),
+				lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(msg),
 			)
 			lines = append(lines, line)
 		}
@@ -555,17 +554,17 @@ func (m *LiveModel) getLevelIcon(level string) string {
 func (m *LiveModel) getLevelStyle(level string) lipgloss.Style {
 	switch strings.ToLower(level) {
 	case "debug":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#b3ebf8ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_debug")))
 	case "info":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#9af8b1ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_info")))
 	case "warn", "warning":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f5fac0ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_warn")))
 	case "error":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f67373ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_error")))
 	case "fatal":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f82626ff")).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_fatal"))).Bold(true)
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 	}
 }
 

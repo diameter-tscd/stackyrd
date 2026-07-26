@@ -1,28 +1,27 @@
 ---
 name: stackyrd-dev
-description: Extend stackyrd at its four extension points: services, middleware, infrastructure components, and plugins.
+description: Extend stackyrd at its three extension points: services, middleware, infrastructure components.
 ---
 
 # stackyrd Dev Guide
 
-Extend stackyrd at any of four extension points: **services** (API endpoints + business logic), **middleware** (HTTP filters), **infrastructure components** (external system clients), **plugins** (runtime logic). All follow: implement interface → register via `init()` → toggle in `config.yaml`.
+Extend stackyrd at three extension points: **services** (API endpoints + business logic), **middleware** (HTTP filters), **infrastructure components** (external system clients). All follow: implement interface → register via `init()` → toggle in `config.yaml`.
 
 ```
-Boot: main → config → Infra async init → Dependencies → Plugin init → Middleware → Service discovery → Routes
+Boot: main → config → Infra async init → Dependencies → Middleware → Service discovery → Routes
 ```
 
 | Ext Point | Dir | Interface | Factory Sig |
 |-----------|-----|-----------|-------------|
-| Service | `internal/services/modules/` | `interfaces.Service` | `func(*config.Config, *logger.Logger, *registry.Dependencies) interfaces.Service` |
-| Middleware | `internal/middleware/` | `echo.MiddlewareFunc` | `MiddlewareFactory func(*config.Config, *logger.Logger) (echo.MiddlewareFunc, error)` |
-| Infrastructure | `pkg/infrastructure/` | `InfrastructureComponent` | `ComponentFactory func(*config.Config, *logger.Logger) (InfrastructureComponent, error)` |
-| Plugin | `pkg/plugin/builtin/{name}/` | Varies by runtime | See `pkg/plugin/` |
+| Service | `internal/services/modules/{name}_service.go` | `interfaces.Service` | `func(*config.Config, *logger.Logger, *registry.Dependencies) interfaces.Service` |
+| Middleware | `internal/middleware/{name}.go` | `echo.MiddlewareFunc` | `MiddlewareFactory func(*config.Config, *logger.Logger) (echo.MiddlewareFunc, error)` |
+| Infrastructure | `pkg/infrastructure/{name}.go` | `InfrastructureComponent` | `ComponentFactory func(*config.Config, *logger.Logger) (InfrastructureComponent, error)` |
 
 Auto-registered via `init()`. Default: enabled unless `config.yaml` says `false`.
 
 ## Conventions
 
-- **Files:** `{name}_service.go` / `{name}.go` (infra/plugin) / `{name}.go` (middleware)
+- **Files:** `{name}_service.go` / `{name}.go` (infra) / `{name}.go` (middleware)
 - **Tests:** `tests/services/{name}_service_test.go` / `tests/infrastructure/{name}_test.go`
 - **Config key:** underscore_case matching `WireName()`
 - **Logger:** structured key-value pairs

@@ -113,12 +113,6 @@ encryption:
 swagger:
   enabled: false
   base_path: "/swagger"
-
-plugins:
-  enabled: true
-  default_limits:
-    max_timeout_ms: 30000
-    max_memory_bytes: 104857600
 ```
 
 ## API Response Format
@@ -224,45 +218,8 @@ func init() {
 | MinIO | `minio` | `minio` | `minio-go/v7` |
 | Grafana | `grafana` | `grafana` | HTTP client |
 | Cron | `cron` | `cron` | `robfig/cron/v3` |
-| Plugins | `plugins` | `plugins` | PluginBridge |
 
-## Plugin System
-
-### REST API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins` | List all plugins |
-| GET | `/api/v1/plugins/:name` | Plugin details |
-| POST | `/api/v1/plugins/:name/execute` | Execute plugin |
-| PUT | `/api/v1/plugins/:name/scripts/:file` | Upload/replace script |
-| GET | `/api/v1/plugins/:name/scripts` | List plugin scripts |
-| GET | `/api/v1/plugins/:name/scripts/:file` | Get script content |
-| DELETE | `/api/v1/plugins/:name` | Unload plugin |
-| GET | `/api/v1/plugins/manager/status` | Manager health metrics |
-
-### Runtime Types
-
-| Prefix | Runtime | Language |
-|--------|---------|----------|
-| `ts:` | goja (sandboxed) | TypeScript |
-| `ext:` | gRPC subprocess | Python, etc. |
-| `go:` | Native Go | Go |
-
-### Builtin Plugins
-
-| Plugin | Language | Purpose |
-|--------|----------|---------|
-| inspector | TypeScript | System inspection |
-| aggregator | TypeScript | Data aggregation |
-| template_renderer | Python | Template rendering |
-| schema_validator | Python | Schema validation |
-| data_processor | Python | Data processing |
-| metric_computer | Python | Metric computation |
-| webhook_transformer | Python | Webhook transformation |
-| python_demo | Python | Demo plugin |
-| lua_demo | Lua | Lua demo |
-| lua_transformer | Lua | Lua transformation |
+## Middleware
 
 ## Middleware
 

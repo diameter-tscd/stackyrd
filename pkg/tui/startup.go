@@ -45,26 +45,26 @@ var (
 	// Title styles
 	titleStyle = lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5")).
+		Foreground(lipgloss.Color(TC("primary"))).
 		MarginBottom(2)
 		Bold(true).
 		Foreground(lipgloss.Color("#8daea5")).
 		MarginBottom(2)
 
 	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Italic(true)
+		Foreground(lipgloss.Color(TC("secondary"))).
+		Italic(true)
 
 	// Banner style with gradient effect
 	bannerStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8daea5")).
+		Foreground(lipgloss.Color(TC("primary"))).
 		Bold(true).
 		MarginBottom(2)
 
 	// Box styles
 	boxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6272A4")).
+		BorderForeground(lipgloss.Color(TC("dim"))).
 		Padding(1, 3).
 		MarginTop(1)
 		Border(lipgloss.RoundedBorder()).
@@ -74,35 +74,35 @@ var (
 
 	// Service status styles
 	pendingStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
+		Foreground(lipgloss.Color(TC("dim")))
 
 	loadingStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffdab3ff"))
+		Foreground(lipgloss.Color(TC("pastel_warn")))
 
 	successStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#b0ffc4ff"))
+		Foreground(lipgloss.Color(TC("pastel_good")))
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffaeaeff"))
+		Foreground(lipgloss.Color(TC("pastel_bad")))
 
 	skippedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
-			Italic(true)
+		Foreground(lipgloss.Color(TC("dim"))).
+		Italic(true)
 
 	// Info styles
 	labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8BE9FD")).
-			Bold(true)
+		Foreground(lipgloss.Color(TC("secondary"))).
+		Bold(true)
 
 	// Footer style
 	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
-			MarginTop(1)
+		Foreground(lipgloss.Color(TC("dim"))).
+		MarginTop(1)
 
 	// Highlight style
 	highlightStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8daea5")).
-			Bold(true)
+		Foreground(lipgloss.Color(TC("primary"))).
+		Bold(true)
 )
 
 // Icons
@@ -126,10 +126,10 @@ type doneMsg struct{}
 func NewStartupModel(cfg StartupConfig, services []ServiceStatus) StartupModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("accent")))
 
 	p := progress.New(
-		progress.WithGradient("#b0ffc4ff", "#ffdab3ff"),
+		progress.WithGradient(TC("pastel_good"), TC("pastel_warn")),
 		progress.WithWidth(40),
 		progress.WithoutPercentage(),
 	)
@@ -271,7 +271,7 @@ func (m StartupModel) renderServices() string {
 
 	header := labelStyle.Render("◆ Services Initialization")
 	lines = append(lines, header)
-	lines = append(lines, DividerLine.Render(strings.Repeat("─", 50)))
+	lines = append(lines, DividerLine().Render(strings.Repeat("─", 50)))
 
 	for i, s := range m.services {
 		var icon, status string

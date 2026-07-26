@@ -160,31 +160,6 @@ func (s *UserService) create(c echo.Context) error {
 }
 ```
 
-## Plugin System Security
-
-### Sandbox Protections
-
-| Plugin Type | Protection |
-|-------------|------------|
-| TypeScript | goja sandbox (no require, no imports, no fetch) |
-| Lua | Restricted libraries (no io, os, debug) |
-| Python | OS-level process isolation |
-| Go | Same process (trusted only) |
-
-### Plugin Limits
-
-```yaml
-plugins:
-  default_limits:
-    max_timeout_ms: 30000      # 30 second timeout
-    max_memory_bytes: 104857600 # 100 MB memory cap
-  allowlist: ["inspector"]     # restrict to specific plugins
-```
-
-- `default_limits` act as a hard cap (plugin manifests cannot exceed)
-- `allowlist` restricts which plugins load at startup
-- External (Python) plugins run as separate processes
-
 ## Production Checklist
 
 - [ ] Set `auth.type` to `jwt` or `apikey` (not `none`)
@@ -195,6 +170,6 @@ plugins:
 - [ ] Set CORS to specific origins (not `*`)
 - [ ] Enable `permission_check` middleware
 - [ ] Enable `audit` middleware for request logging
-- [ ] Set restrictive plugin `allowlist`
+
 - [ ] Use HTTPS in production (reverse proxy or TLS)
 - [ ] Run as non-root user in Docker

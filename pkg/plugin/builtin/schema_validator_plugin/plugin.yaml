@@ -1,8 +1,0 @@
-name: schema_validator
-version: 1.0.0
-description: "Validates and coerces JSON/dict structures against a type rules schema. Modes: validate (default), coerce, describe."
-author: stackyrd
-entrypoint: "ext:scripts/handler.py"
-limits:
-  max_timeout_ms: 15000
-  max_memory_bytes: 33554432

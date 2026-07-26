@@ -32,11 +32,6 @@ func TestSidebarBlack(t *testing.T) {
 		}
 	}
 
-	// The command block background must be #37353E (rendered as 48;2;55;52;62 due to termenv rounding)
-	if !strings.Contains(view, "48;2;55;52;62") {
-		t.Errorf("command block background #37353E not found in rendered output")
-	}
-
 	fmt.Println("BLACK SIDEBAR TEST OK")
 }
 

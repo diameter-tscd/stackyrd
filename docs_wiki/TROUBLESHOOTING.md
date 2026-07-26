@@ -128,25 +128,6 @@ Error: redis: dial tcp 127.0.0.1:6379: connect: connection refused
     address: "localhost:6379"
   ```
 
-## Plugin Issues
-
-See the [Plugin System Guide](../PLUGIN_GUIDE.md#troubleshooting) for detailed plugin troubleshooting.
-
-### Quick Plugin Checks
-
-```bash
-# List all plugins
-curl -s http://localhost:8080/api/v1/plugins | jq
-
-# Check a specific plugin
-curl -s http://localhost:8080/api/v1/plugins/inspector | jq
-
-# Execute a simple ping
-curl -s -X POST http://localhost:8080/api/v1/plugins/inspector/execute \
-  -H 'Content-Type: application/json' \
-  -d '{"args": {"mode": "ping"}}' | jq
-```
-
 ## TUI Issues
 
 ### TUI Not Displaying

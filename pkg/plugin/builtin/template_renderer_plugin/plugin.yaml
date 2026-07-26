@@ -1,8 +1,0 @@
-name: template_renderer
-version: 1.0.0
-description: "Renders Python string templates with variable substitution, validation, and introspection. Modes: render (default), validate, list_vars."
-author: stackyrd
-entrypoint: "ext:scripts/handler.py"
-limits:
-  max_timeout_ms: 10000
-  max_memory_bytes: 16777216

@@ -1,6 +1,6 @@
 # Development Guide
 
-Learn to add services, middleware, infrastructure components, and plugins to stackyrd.
+Learn to add services, middleware, and infrastructure components to stackyrd.
 
 ## Adding a Service
 
@@ -190,29 +190,6 @@ func init() {
             cache = r.(*infrastructure.RedisManager)
         }
         return &YourService{enabled: true, db: db, cache: cache}
-    })
-}
-```
-
-## Using Plugins from Services
-
-The `PluginBridge` is available in `deps["plugins"]`:
-
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var bridge *plugin.PluginBridge
-        if b, ok := deps.Get("plugins"); ok {
-            bridge = b.(*plugin.PluginBridge)
-        }
-        return NewMyService(true, log, bridge)
-    })
-}
-
-// At runtime:
-if s.bridge != nil && s.bridge.HasPlugin("inspector") {
-    result, err := s.bridge.Execute("inspector", map[string]interface{}{
-        "mode": "ping",
     })
 }
 ```

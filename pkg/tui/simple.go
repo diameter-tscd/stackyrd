@@ -23,7 +23,7 @@ func NewSimpleRenderer() *SimpleRenderer {
 func (r *SimpleRenderer) PrintBanner(text string) {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 	fmt.Println(style.Render(text))
 }
 
@@ -31,10 +31,10 @@ func (r *SimpleRenderer) PrintBanner(text string) {
 func (r *SimpleRenderer) PrintHeader(appName, version, env string) {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 
 	subStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8daea5")).
+		Foreground(lipgloss.Color(TC("primary"))).
 		Italic(true)
 
 	fmt.Println()
@@ -45,14 +45,14 @@ func (r *SimpleRenderer) PrintHeader(appName, version, env string) {
 
 // PrintDivider prints a styled divider line
 func (r *SimpleRenderer) PrintDivider() {
-	fmt.Println(DividerLine.Render(strings.Repeat("─", r.width)))
+	fmt.Println(DividerLine().Render(strings.Repeat("─", r.width)))
 }
 
 // PrintSection prints a section header
 func (r *SimpleRenderer) PrintSection(title string) {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 	fmt.Println()
 	fmt.Println(style.Render("◆ " + title))
 	r.PrintDivider()
@@ -61,15 +61,15 @@ func (r *SimpleRenderer) PrintSection(title string) {
 // PrintServiceStart prints a service starting message
 func (r *SimpleRenderer) PrintServiceStart(name string) {
 	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffdab3ff")).
+		Foreground(lipgloss.Color(TC("pastel_warn"))).
 		Render("◐")
 
 	nameStyle := lipgloss.NewStyle().
 		Width(25).
-		Foreground(lipgloss.Color("#F8F8F2"))
+		Foreground(lipgloss.Color(TC("text")))
 
 	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffdab3ff"))
+		Foreground(lipgloss.Color(TC("pastel_warn")))
 
 	fmt.Printf("  %s %s %s %s\n", icon, nameStyle.Render(name), IconArrow, statusStyle.Render("starting..."))
 }
@@ -77,15 +77,15 @@ func (r *SimpleRenderer) PrintServiceStart(name string) {
 // PrintServiceSuccess prints a service success message
 func (r *SimpleRenderer) PrintServiceSuccess(name, message string) {
 	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9af8b1ff")).
+		Foreground(lipgloss.Color(TC("level_info"))).
 		Render("✓")
 
 	nameStyle := lipgloss.NewStyle().
 		Width(25).
-		Foreground(lipgloss.Color("#F8F8F2"))
+		Foreground(lipgloss.Color(TC("text")))
 
 	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9af8b1ff"))
+		Foreground(lipgloss.Color(TC("level_info")))
 
 	if message == "" {
 		message = "ready"
@@ -96,15 +96,15 @@ func (r *SimpleRenderer) PrintServiceSuccess(name, message string) {
 // PrintServiceError prints a service error message
 func (r *SimpleRenderer) PrintServiceError(name, message string) {
 	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f67373ff")).
+		Foreground(lipgloss.Color(TC("level_error"))).
 		Render("✗")
 
 	nameStyle := lipgloss.NewStyle().
-		Width(25).
-		Foreground(lipgloss.Color("#F8F8F2"))
+			Width(25).
+			Foreground(lipgloss.Color(TC("text")))
 
-	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f67373ff"))
+		statusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(TC("level_error")))
 
 	fmt.Printf("  %s %s %s %s\n", icon, nameStyle.Render(name), IconArrow, statusStyle.Render(message))
 }
@@ -112,16 +112,16 @@ func (r *SimpleRenderer) PrintServiceError(name, message string) {
 // PrintServiceSkipped prints a service skipped message
 func (r *SimpleRenderer) PrintServiceSkipped(name string) {
 	icon := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#626262ff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Render("○")
 
 	nameStyle := lipgloss.NewStyle().
 		Width(25).
-		Foreground(lipgloss.Color("#626262ff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Italic(true)
 
 	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#626262ff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Italic(true)
 
 	fmt.Printf("  %s %s %s %s\n", icon, nameStyle.Render(name), IconArrow, statusStyle.Render("disabled"))
@@ -133,14 +133,14 @@ func (r *SimpleRenderer) PrintServerReady(port string, elapsed time.Duration) {
 
 	successStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#9af8b1ff"))
+		Foreground(lipgloss.Color(TC("pastel_good")))
 
 	highlightStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 
 	infoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 
 	fmt.Println(successStyle.Render(fmt.Sprintf("🚀 Server ready at %s", highlightStyle.Render("http://localhost:"+port))))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("⚡ Started in %s", elapsed.Round(time.Millisecond))))
@@ -160,14 +160,14 @@ func (r *SimpleRenderer) PrintProgressBar(current, total int) {
 // PrintInfo prints an info message
 func (r *SimpleRenderer) PrintInfo(message string) {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 	fmt.Println(style.Render("ℹ " + message))
 }
 
 // PrintWarning prints a warning message
 func (r *SimpleRenderer) PrintWarning(message string) {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffdab3ff"))
+		Foreground(lipgloss.Color(TC("pastel_warn")))
 	fmt.Println(style.Render("⚠ " + message))
 }
 
@@ -175,14 +175,14 @@ func (r *SimpleRenderer) PrintWarning(message string) {
 func (r *SimpleRenderer) PrintError(message string) {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#f67373ff"))
+		Foreground(lipgloss.Color(TC("pastel_bad")))
 	fmt.Println(style.Render("✗ " + message))
 }
 
 // PrintSuccess prints a success message
 func (r *SimpleRenderer) PrintSuccess(message string) {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9af8b1ff"))
+		Foreground(lipgloss.Color(TC("pastel_good")))
 	fmt.Println(style.Render("✓ " + message))
 }
 
@@ -190,12 +190,12 @@ func (r *SimpleRenderer) PrintSuccess(message string) {
 func (r *SimpleRenderer) PrintBox(title, content string) {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#8daea5")).
+		BorderForeground(lipgloss.Color(TC("primary"))).
 		Padding(0, 2)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8daea5"))
+		Foreground(lipgloss.Color(TC("primary")))
 
 	if title != "" {
 		content = titleStyle.Render(title) + "\n" + content
@@ -207,8 +207,8 @@ func (r *SimpleRenderer) PrintBox(title, content string) {
 // AnimatedSpinner shows an animated spinner for a duration
 func (r *SimpleRenderer) AnimatedSpinner(message string, duration time.Duration) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
-	msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2"))
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
+	msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 
 	start := time.Now()
 	i := 0
@@ -222,7 +222,7 @@ func (r *SimpleRenderer) AnimatedSpinner(message string, duration time.Duration)
 
 // WaveAnimation prints a simple wave animation
 func (r *SimpleRenderer) WaveAnimation(duration time.Duration) {
-	waveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9af8b1ff"))
+	waveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_good")))
 
 	start := time.Now()
 	for time.Since(start) < duration {

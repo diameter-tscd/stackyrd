@@ -93,16 +93,16 @@ var (
 			Foreground(lipgloss.Color(TC("dim")))
 
 	dashAccentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color(TC("accent2")))
+			Foreground(lipgloss.Color(TC("secondary")))
 
 	dashPulseColors = []string{"#FF79C6", "#BD93F9", "#8BE9FD", "#50FA7B", "#F1FA8C", "#FFB86C", "#FF5555"}
 
 	dashBannerColor = TC("primary")
 
 	// Pastel progress-bar palette (matches boot.go pastel taste)
-	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_good"))) // pastel green
-	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_warn"))) // pastel peach
-	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_bad"))) // pastel red
+	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))) // pastel green
+	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning"))) // pastel peach
+	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error"))) // pastel red
 )
 
 // Animation frames for the running indicator
@@ -127,7 +127,7 @@ var runningFrames = []string{
 func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []ServiceStatus) DashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Points
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("accent")))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 
 	// Initialize viewport
 	vp := viewport.New(80, 20)

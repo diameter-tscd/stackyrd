@@ -51,8 +51,10 @@ func (bc *BarChart) Render() string {
 	var sb strings.Builder
 
 	if bc.Title != "" {
-		sb.WriteString(bc.Title + "\n")
-		sb.WriteString(strings.Repeat("─", bc.Width) + "\n")
+		sb.WriteString(bc.Title)
+		sb.WriteString("\n")
+		sb.WriteString(strings.Repeat("─", bc.Width))
+		sb.WriteString("\n")
 	}
 
 	maxValue := 0.0
@@ -130,7 +132,8 @@ func (s *Sparkline) Render() string {
 	var sb strings.Builder
 
 	if s.Title != "" {
-		sb.WriteString(s.Title + ": ")
+		sb.WriteString(s.Title)
+		sb.WriteString(": ")
 	}
 
 	values := s.Values
@@ -212,7 +215,8 @@ func (g *Gauge) Render() string {
 	var sb strings.Builder
 
 	if g.Title != "" {
-		sb.WriteString(g.Title + ": ")
+		sb.WriteString(g.Title)
+		sb.WriteString(": ")
 	}
 
 	percentage := g.Value / g.Max
@@ -270,7 +274,8 @@ func (t *Table) Render() string {
 	var sb strings.Builder
 
 	if t.Title != "" {
-		sb.WriteString(t.Title + "\n")
+		sb.WriteString(t.Title)
+		sb.WriteString("\n")
 	}
 
 	if len(t.Headers) == 0 {

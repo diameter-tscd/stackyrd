@@ -36,3 +36,45 @@ Auto-registered via `init()`. Default: enabled unless `config.yaml` says `false`
 - `references/infrastructure.md` — component structure + config setup
 
 Existing services (`users_service.go`, `products_service.go`, `tasks_service.go`) and middleware (`audit.go`, `jwt.go`, `ratelimit.go`) are canonical reference implementations.
+
+## TUI Color Theme System
+
+TUI styles use 7 semantic color keys defined per theme in `pkg/tui/themes.go`:
+
+| Key | Usage |
+|-----|-------|
+| `primary` | Headers, banners, sidebar titles |
+| `secondary` | Info badges, subheaders |
+| `success` | Connected/good status dots, log info |
+| `warning` | Warning badges, log warnings |
+| `error` | Error badges, disconnected status, log errors, log fatal |
+| `dim` | Muted text, dividers, disabled status |
+| `text` | Main body text |
+
+### How it works
+
+- `styles.go` exports functions that call `TC(key)` at call time (not `var` init time)
+- `TC(key)` reads the current theme's color map via `themeMu.RWMutex`
+- `SetThemeName(name)` changes `currentThemeName` then all subsequent renders use the new palette
+- Config key: `app.theme` in `config.yaml` (set in `application.go:runWithTUI()`)
+
+### Adding a theme
+
+One entry in `pkg/tui/themes.go`:
+
+```go
+"my_theme": {
+    Name: "my_theme",
+    Colors: map[string]string{
+        "primary":   "#hex",
+        "secondary": "#hex",
+        "success":   "#hex",
+        "warning":   "#hex",
+        "error":     "#hex",
+        "dim":       "#hex",
+        "text":      "#hex",
+    },
+},
+```
+
+Available themes: default, vintage_purple, vintage_dark, vintage_pinky, blue_ish, slate, charcoal_tea, pastel_light, sunflower_gold, muted_teal.

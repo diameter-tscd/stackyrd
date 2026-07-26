@@ -64,12 +64,12 @@ func bootCompleteStyle() lipgloss.Style {
 func bootErrorStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(TC("pastel_bad")))
+		Foreground(lipgloss.Color(TC("error")))
 }
 
 func bootPhaseStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_warn"))).
+		Foreground(lipgloss.Color(TC("warning"))).
 		Bold(true)
 }
 
@@ -80,13 +80,13 @@ func bootInfoStyle() lipgloss.Style {
 
 func bootSuccessIcon() string {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_good"))).
+		Foreground(lipgloss.Color(TC("success"))).
 		Render("✓")
 }
 
 func bootErrorIcon() string {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_bad"))).
+		Foreground(lipgloss.Color(TC("error"))).
 		Render("✗")
 }
 
@@ -333,7 +333,7 @@ b.WriteString(bootSubStyle().Render(sub))
 		// Countdown timer display
 		countdownStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color(TC("pastel_warn")))
+			Foreground(lipgloss.Color(TC("warning")))
 
 		footerText = fmt.Sprintf("\n  %s Starting server in %s seconds...\n  Press 'q' to skip and continue now",
 			bootFrames[m.animFrame%len(bootFrames)],
@@ -360,7 +360,7 @@ func (m BootModel) renderBootServices() string {
 
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(TC("accent3"))).
+		Foreground(lipgloss.Color(TC("warning"))).
 		Render("◆ Boot Sequence")
 	lines = append(lines, header)
 	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render(strings.Repeat("─", 100)))
@@ -377,11 +377,11 @@ func (m BootModel) renderBootServices() string {
 		case "loading":
 			icon = m.spinner.View()
 			status = r.Message
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_warn")))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 		case "success":
 			icon = bootSuccessIcon()
 			status = r.Message
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_good")))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 		case "error":
 			icon = bootErrorIcon()
 			status = r.Message
@@ -394,7 +394,7 @@ func (m BootModel) renderBootServices() string {
 
 		nameStyle := lipgloss.NewStyle().Width(60)
 		if i == m.current-1 && r.Status == "loading" {
-			nameStyle = nameStyle.Foreground(lipgloss.Color(TC("accent3"))).Bold(true)
+			nameStyle = nameStyle.Foreground(lipgloss.Color(TC("warning"))).Bold(true)
 		} else {
 			nameStyle = nameStyle.Foreground(lipgloss.Color(TC("text")))
 		}

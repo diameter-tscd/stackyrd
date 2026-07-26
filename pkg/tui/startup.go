@@ -77,13 +77,13 @@ var (
 		Foreground(lipgloss.Color(TC("dim")))
 
 	loadingStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_warn")))
+		Foreground(lipgloss.Color(TC("warning")))
 
 	successStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_good")))
+		Foreground(lipgloss.Color(TC("success")))
 
 	errorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("pastel_bad")))
+		Foreground(lipgloss.Color(TC("error")))
 
 	skippedStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color(TC("dim"))).
@@ -126,10 +126,10 @@ type doneMsg struct{}
 func NewStartupModel(cfg StartupConfig, services []ServiceStatus) StartupModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("accent")))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 
 	p := progress.New(
-		progress.WithGradient(TC("pastel_good"), TC("pastel_warn")),
+		progress.WithGradient(TC("success"), TC("warning")),
 		progress.WithWidth(40),
 		progress.WithoutPercentage(),
 	)

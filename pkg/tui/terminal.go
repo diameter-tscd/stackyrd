@@ -614,11 +614,11 @@ func (m *TerminalModel) renderComponentsSection() string {
 				if i >= maxVisible {
 					break
 				}
-				color := TC("pastel_good")
+				color := TC("success")
 				icon := "●"
 				status := "connected"
 				if !infra.Connected && infra.Enabled {
-					color = TC("pastel_bad")
+					color = TC("error")
 					icon = "✗"
 					status = "failed"
 				} else if !infra.Enabled {
@@ -661,7 +661,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 			if i >= maxVisible {
 				break
 			}
-			color := TC("pastel_good")
+			color := TC("success")
 			icon := "◆"
 			status := "running"
 			if !svc.Running {
@@ -700,7 +700,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 	} else {
 		var rows []table.Row
 		for _, mw := range m.middlewareEntries {
-			color := TC("pastel_good")
+			color := TC("success")
 			icon := "◐"
 			status := "on"
 			if !mw.Enabled {
@@ -878,15 +878,15 @@ func (m *TerminalModel) levelIcon(level string) string {
 func (m *TerminalModel) levelStyle(level string) lipgloss.Style {
 	switch strings.ToLower(level) {
 	case "debug":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_debug")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 	case "info":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_info")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 	case "warn", "warning":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_warn")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 	case "error":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_error")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))
 	case "fatal":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_fatal"))).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error"))).Bold(true)
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 	}
@@ -1209,11 +1209,11 @@ func (m *TerminalModel) termProgressBar(percent float64, width int) string {
 func (m *TerminalModel) percentStyle(percent float64) lipgloss.Style {
 	switch {
 	case percent < 50:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_good")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 	case percent < 80:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_warn")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("pastel_bad")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))
 	}
 }
 

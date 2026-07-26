@@ -554,15 +554,15 @@ func (m *LiveModel) getLevelIcon(level string) string {
 func (m *LiveModel) getLevelStyle(level string) lipgloss.Style {
 	switch strings.ToLower(level) {
 	case "debug":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_debug")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 	case "info":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_info")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 	case "warn", "warning":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_warn")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 	case "error":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_error")))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))
 	case "fatal":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("level_fatal"))).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error"))).Bold(true)
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 	}

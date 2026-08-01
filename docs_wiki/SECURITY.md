@@ -31,20 +31,30 @@ middleware:
   cors: true
 ```
 
-Configure allowed origins in application config. By default allows all origins in development.
+The default config allows all origins for development but **never combines a wildcard origin with credentials** — a credentialed request is only answered when the origin matches an explicit allow-list. Configure a specific allow-list for production:
+
+```go
+middleware.CORSWithConfig([]string{"https://app.example.com"})
+```
 
 ### JWT Authentication
 
 ```yaml
 middleware:
-  jwt: false
+  jwt: true
 
 auth:
   type: jwt
-  secret: "your-secret-key"
+  secret: "${AUTH_SECRET}"   # required — must be non-empty
 ```
 
-JWT middleware validates `Authorization: Bearer <token>` headers. Uses `golang-jwt/jwt/v5`.
+The JWT middleware **fails closed**: it refuses to start unless `auth.type` is `jwt` and `auth.secret` is non-empty (no hardcoded fallback secret). Tokens are validated with `golang-jwt/jwt/v5`:
+
+- Signing method pinned to `HS256` (algorithm-confusion blocked)
+- Tokens must carry the `iss=stackyrd` and `aud=stackyrd-api` claims
+- Expiration enforced via registered claims
+
+Issue tokens with `middleware.GenerateToken(userID, username, email, role, secret, ttl)`.
 
 ### API Key Authentication
 
@@ -53,7 +63,7 @@ auth:
   type: apikey
 ```
 
-Validates API key from `X-API-Key` header or `api_key` query parameter.
+> **Note:** `apikey` mode is currently declarative only — no API-key middleware is implemented. Use `jwt` for enforced authentication.
 
 ### Rate Limiting
 
@@ -62,7 +72,7 @@ middleware:
   ratelimit: true
 ```
 
-Prevents abuse by limiting requests per client. Configuration is middleware-internal.
+Prevents abuse by limiting requests per client. On a Redis outage the limiter **fails open** and logs a loud warning; review whether fail-open is acceptable for your deployment.
 
 ### Permission Check
 
@@ -72,15 +82,6 @@ middleware:
 ```
 
 Blocks `DELETE` requests by default as a safety measure. Can be extended for role-based access control.
-
-### Encryption Middleware
-
-```yaml
-middleware:
-  encryption: false
-```
-
-For request/response payload encryption between trusted services.
 
 ## Authentication Modes
 
@@ -109,32 +110,51 @@ auth:
 Use environment variables to override config values:
 
 ```bash
-export AUTH_SECRET="your-secret-key"
-export JWT_SECRET="another-secret-key"
-export POSTGRES_PASSWORD="db-password"
+export AUTH_SECRET="<generate-a-long-random-secret>"
+export POSTGRES_PASSWORD="<db-password>"
 ```
 
-### Encryption Config
+### Encryption Service
+
+The `encryption_service` provides AES-256-GCM payload encryption. The configured `encryption.key` is stretched with SHA-256 to a full 32-byte key — it is **never** zero-padded or truncated. If no key is configured, a random in-memory key is generated (ciphertext becomes undecryptable after restart — configure a key in production).
 
 ```yaml
 encryption:
   enabled: true
   algorithm: aes-256-gcm
-  key: "${ENCRYPTION_KEY}"  # 32-byte hex-encoded key
-  rotate_keys: false
-  key_rotation_interval: "24h"
+  key: "${ENCRYPTION_KEY}"  # stretched via SHA-256; empty => random ephemeral key
 ```
+
+`GET /encryption/status` and `POST /encryption/key-rotate` no longer expose any key material. Rotation requires a new key of at least 32 characters and replaces the in-memory key (existing ciphertext is not re-encrypted — rotate deliberately).
+
+## Server Hardening
+
+The Echo server applies these protections by default:
+
+| Protection | Value |
+|-----------|-------|
+| Request body limit | 2 MB (`BodyLimit`) |
+| Header read timeout | 5s |
+| Read timeout | 15s |
+| Write timeout | 30s |
+| Idle timeout | 60s |
+
+The server listens on plain HTTP by default — terminate TLS at a reverse proxy and never expose it directly to the internet.
 
 ## CORS Configuration
 
-By default, CORS is permissive for development. For production:
+The default CORS allows all origins without credentials. For production, use an explicit allow-list and enable credentials only when the origin is trusted:
 
-```yaml
-middleware:
-  cors: true
-
-# CORS configuration is managed within the middleware factory
+```go
+cfg := middleware.CORSConfig{
+    AllowOrigins:     []string{"https://app.example.com"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+    AllowCredentials: true,
+}
 ```
+
+Credentials are only emitted when the request origin matches the allow-list exactly; wildcard (`*`) never accompanies `Access-Control-Allow-Credentials: true`.
 
 ## Input Validation
 
@@ -150,10 +170,12 @@ type CreateUserRequest struct {
 func (s *UserService) create(c echo.Context) error {
     var req CreateUserRequest
     if err := request.Bind(c, &req); err != nil {
-        if validationErr, ok := err.(*request.ValidationError); ok {
+        var validationErr *request.ValidationError
+        if errors.As(err, &validationErr) {
             return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
         }
-        return response.BadRequest(c, err.Error())
+        // Never echo raw bind errors to clients — they leak internal field/type details.
+        return response.BadRequest(c, "Invalid request data")
     }
     // safe to use req
     return nil
@@ -162,14 +184,15 @@ func (s *UserService) create(c echo.Context) error {
 
 ## Production Checklist
 
-- [ ] Set `auth.type` to `jwt` or `apikey` (not `none`)
+- [ ] Set `auth.type` to `jwt` with a strong `auth.secret` from an environment variable (`none` and `apikey` do not enforce anything)
 - [ ] Enable `security` middleware for HTTP headers
 - [ ] Enable `ratelimit` middleware for abuse protection
-- [ ] Set `encryption` key via environment variable
+- [ ] Set the `encryption.key` environment variable (otherwise a random ephemeral key is used)
 - [ ] Use secrets from environment variables, not config.yaml
-- [ ] Set CORS to specific origins (not `*`)
+- [ ] Set CORS to specific origins (not `*`) whenever credentials are needed
 - [ ] Enable `permission_check` middleware
 - [ ] Enable `audit` middleware for request logging
 
 - [ ] Use HTTPS in production (reverse proxy or TLS)
 - [ ] Run as non-root user in Docker
+- [ ] Restrict `/health` and `/health/dependencies` endpoints to internal networks — they expose infrastructure topology

@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/registry"
@@ -19,6 +20,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
 )
@@ -91,9 +93,9 @@ type TerminalModel struct {
 	serviceEntries    []ServiceEntry
 	middlewareEntries []MiddlewareEntry
 
-	cpuModel     string
-	pid          int
-	appMem       uint64
+	cpuModel            string
+	pid                 int
+	appMem              uint64
 	sidebarWidth        int
 	sidebarContentWidth int
 	mainWidth           int
@@ -115,7 +117,7 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 
 	ti := textinput.New()
-	ti.Placeholder = "Type :command... (ctrl+p to activate)"
+	ti.Placeholder = "Type command (help, themes, theme <name>...; ':' optional)"
 	ti.CharLimit = 500
 	ti.Width = 60
 	ti.Prompt = ": "
@@ -164,6 +166,27 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		// Wheel scrolls the pane under the cursor so sidebar and logs scroll
+		// independently — scrolling one never moves the other.
+		if msg.Type == tea.MouseWheelUp || msg.Type == tea.MouseWheelDown {
+			up := msg.Type == tea.MouseWheelUp
+			if msg.X >= 0 && msg.X < m.sidebarWidth {
+				if up {
+					m.sidebarUp()
+				} else {
+					m.sidebarDown()
+				}
+			} else {
+				if up {
+					m.scrollUp()
+				} else {
+					m.scrollDown()
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.exitDialog.IsActive() {
 			dialogCmd := m.exitDialog.Update(msg)
@@ -294,11 +317,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.commandInput.Width = m.mainWidth - 10
 		// clamp scroll offset after height change so logs don't show "weird" empty rows
-		logsToShow := m.filteredLogs
-		if m.filterText == "" {
-			logsToShow = m.allLogs
-		}
-		maxOff := len(logsToShow) - m.maxVisibleLines
+		maxOff := m.logLineCount() - m.maxVisibleLines
 		if maxOff < 0 {
 			maxOff = 0
 		}
@@ -328,21 +347,6 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.allLogs = m.allLogs[len(m.allLogs)-m.maxLogs:]
 		}
 		m.updateFilteredLogs()
-
-		if m.autoScroll {
-			logsToShow := m.filteredLogs
-			if m.filterText == "" {
-				logsToShow = m.allLogs
-			}
-			logArea := m.maxVisibleLines
-			if logArea < 5 {
-				logArea = 5
-			}
-			m.scrollOffset = len(logsToShow) - logArea
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
-		}
 		m.logsMutex.Unlock()
 		return m, nil
 	}
@@ -607,36 +611,36 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	if len(m.infraEntries) == 0 {
 		lines = append(lines, sidebarDimStyle().Render("  (checking...)"))
-		} else {
-			var rows []table.Row
-			maxVisible := 4
-			for i, infra := range m.infraEntries {
-				if i >= maxVisible {
-					break
-				}
-				color := TC("success")
-				icon := "●"
-				status := "connected"
-				if !infra.Connected && infra.Enabled {
-					color = TC("error")
-					icon = "✗"
-					status = "failed"
-				} else if !infra.Enabled {
-					color = TC("dim")
-					icon = "○"
-					status = "disabled"
-				}
-				cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-				name := infra.Name
-				if len(name) > 20 {
-					name = name[:17] + "..."
-				}
-				rows = append(rows, table.NewRow(table.RowData{
-					"i": table.NewStyledCell(icon, cs),
-					"n": name,
-					"s": table.NewStyledCell(status, cs),
-				}))
+	} else {
+		var rows []table.Row
+		maxVisible := 4
+		for i, infra := range m.infraEntries {
+			if i >= maxVisible {
+				break
 			}
+			color := TC("success")
+			icon := "●"
+			status := "connected"
+			if !infra.Connected && infra.Enabled {
+				color = TC("error")
+				icon = "✗"
+				status = "failed"
+			} else if !infra.Enabled {
+				color = TC("dim")
+				icon = "○"
+				status = "disabled"
+			}
+			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+			name := infra.Name
+			if len(name) > 20 {
+				name = name[:17] + "..."
+			}
+			rows = append(rows, table.NewRow(table.RowData{
+				"i": table.NewStyledCell(icon, cs),
+				"n": name,
+				"s": table.NewStyledCell(status, cs),
+			}))
+		}
 		lines = append(lines, m.sidebarTable3(2, 20, rows))
 		if len(m.infraEntries) > maxVisible {
 			remaining := len(m.infraEntries) - maxVisible
@@ -734,30 +738,38 @@ func (m *TerminalModel) renderLogView() string {
 	}
 
 	b.WriteString(mainPanelStyle().Render("▪ Live Logs"))
-	b.WriteString("\n")
-
-	//b.WriteString(DividerLine().Render(strings.Repeat("─", m.mainWidth-4)))
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 
 	logLines := m.renderLogEntries()
 	if len(logLines) > logArea {
-		start := m.scrollOffset
-		if start < 0 {
-			start = 0
+		if m.autoScroll {
+			// Follow the newest logs: show the last logArea physical lines so
+			// word-wrapped entries never shift the viewport.
+			logLines = logLines[len(logLines)-logArea:]
+		} else {
+			start := m.scrollOffset
+			if start < 0 {
+				start = 0
+			}
+			if start >= len(logLines) {
+				start = len(logLines) - 1
+			}
+			end := start + logArea
+			if end > len(logLines) {
+				end = len(logLines)
+			}
+			logLines = logLines[start:end]
 		}
-		if start >= len(logLines) {
-			start = len(logLines) - 1
-		}
-		end := start + logArea
-		if end > len(logLines) {
-			end = len(logLines)
-		}
-		logLines = logLines[start:end]
 	}
 
-	for _, line := range logLines {
+	// Join log lines without a trailing newline so the panel is exactly
+	// header + blank + logArea lines tall (a trailing "\n" added one extra
+	// line that overflowed the terminal and misaligned the sidebar).
+	for i, line := range logLines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
 		b.WriteString(line)
-		b.WriteString("\n")
 	}
 
 	for i := len(logLines); i < logArea; i++ {
@@ -798,17 +810,44 @@ func (m *TerminalModel) renderFooter() string {
 	if m.mode == modeCommand {
 		parts = []string{"enter: exec", "esc: cancel"}
 	} else {
-		parts = []string{"/: filter", "ctrl+l: scroll", "tab: focus", "F2: clear", "ctrl+c: exit"}
-	if m.focus == focusSidebar {
-		parts = append(parts, "sidebar")
-	} else if m.focus == focusLogs {
-		parts = append(parts, "logs")
-	} else if m.focus == focusCommand {
-		parts = append(parts, "command")
+		parts = []string{"/: filter", "ctrl+l: scroll", "tab: focus", "F2: clear", "ctrl+c: exit", "wheel: scroll pane"}
+		if m.focus == focusSidebar {
+			parts = append(parts, "sidebar")
+		} else if m.focus == focusLogs {
+			parts = append(parts, "logs")
+		} else if m.focus == focusCommand {
+			parts = append(parts, "command")
+		}
 	}
-}
 
 	return sidebarDimStyle().Render(strings.Join(parts, " ● "))
+}
+
+// wrapLogMessage returns the display lines for a log message. Normal messages
+// are word-wrapped for readability; long unbroken tokens (serialized errors,
+// stack traces, URLs) cannot be wrapped and are flattened to a single
+// truncated line so they don't flood the log view.
+func wrapLogMessage(msg string, maxLen int) []string {
+	if maxLen < 20 {
+		maxLen = 20
+	}
+	// A single token longer than the wrap width cannot be word-wrapped (e.g. a
+	// serialized JSON error). Detect it and print the message plainly instead.
+	for _, tok := range strings.Fields(msg) {
+		if len(tok) > maxLen {
+			return []string{flatLogLine(msg, maxLen)}
+		}
+	}
+	return strings.Split(wordwrap.String(msg, maxLen), "\n")
+}
+
+// flatLogLine flattens newlines and truncates to a single log line.
+func flatLogLine(msg string, maxLen int) string {
+	flat := strings.ReplaceAll(msg, "\n", " ")
+	if len(flat) > maxLen {
+		flat = flat[:maxLen-3] + "..."
+	}
+	return flat
 }
 
 func (m *TerminalModel) renderLogEntries() []string {
@@ -839,19 +878,20 @@ func (m *TerminalModel) renderLogEntries() []string {
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
-			msg := log.Message
-			if len(msg) > maxMsgLen {
-				msg = msg[:maxMsgLen-3] + "..."
-			}
+			// Word-wrap instead of truncating so long messages stay readable.
+			// Long error blobs are flattened to one line by wrapLogMessage.
+			msgLines := wrapLogMessage(log.Message, maxMsgLen)
 
-			levelPad := ""
-			line := fmt.Sprintf("  %s %s%s %s",
-				sidebarDimStyle().Render(timeStr),
-				ls.Render(icon),
-				levelPad,
-				lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(msg),
-			)
-			lines = append(lines, line)
+			prefix := fmt.Sprintf("  %s %s", sidebarDimStyle().Render(timeStr), ls.Render(icon))
+			indent := strings.Repeat(" ", 14)
+			for i, ml := range msgLines {
+				styled := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(ml)
+				if i == 0 {
+					lines = append(lines, prefix+" "+styled)
+				} else {
+					lines = append(lines, indent+styled)
+				}
+			}
 		}
 	}
 
@@ -894,19 +934,23 @@ func (m *TerminalModel) levelStyle(level string) lipgloss.Style {
 
 func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	cmd := strings.TrimSpace(raw)
+	// Accept commands with or without the leading colon (":help" or "help").
+	cmd = strings.TrimPrefix(cmd, ":")
 	if cmd == "" {
 		return nil
 	}
 	switch cmd {
-	case ":help":
-		return m.logCmd("info", "Commands: :help :clear :stats :services :infra")
-	case ":clear":
+	case "help":
+		return m.logCmd("info", "Commands: help, clear, stats, gc, services, infra, list, themes, theme <name> (colon optional)")
+	case "clear":
 		m.clearLogs()
 		return nil
-	case ":stats":
+	case "stats":
 		return m.logCmd("info", fmt.Sprintf("CPU %.1f%% | RAM %.1f%% (%d/%d MiB) | Goroutines %d | Host %s",
 			m.cpuPercent, m.memPercent, m.memUsed, m.memTotal, m.goroutines, m.hostname))
-	case ":services":
+	case "gc":
+		return m.runGC()
+	case "services":
 		running := 0
 		for _, s := range m.serviceEntries {
 			if s.Running {
@@ -914,7 +958,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 			}
 		}
 		return m.logCmd("info", fmt.Sprintf("Services: %d total, %d running", len(m.serviceEntries), running))
-	case ":infra":
+	case "infra":
 		connected := 0
 		for _, i := range m.infraEntries {
 			if i.Connected {
@@ -922,9 +966,132 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 			}
 		}
 		return m.logCmd("info", fmt.Sprintf("Infra: %d total, %d connected", len(m.infraEntries), connected))
+	case "list", "ls":
+		return m.listAll()
+	case "themes":
+		return m.listThemes()
 	default:
-		return m.logCmd("warn", "Unknown command: "+cmd+" (try :help)")
+		if name, ok := strings.CutPrefix(cmd, "theme"); ok {
+			return m.handleThemeCommand(strings.TrimSpace(name))
+		}
+		return m.logCmd("warn", "Unknown command: "+cmd+" (try help)")
 	}
+}
+
+// listThemes logs all available theme names.
+func (m *TerminalModel) listThemes() tea.Cmd {
+	available := AvailableThemeNames()
+	sort.Strings(available)
+	return m.logCmd("info", "Themes ("+GetThemeName()+" active): "+strings.Join(available, ", "))
+}
+
+// listAll logs services, infrastructure components, and service endpoints.
+func (m *TerminalModel) listAll() tea.Cmd {
+	var b strings.Builder
+
+	b.WriteString("Services: ")
+	if len(m.serviceEntries) == 0 {
+		b.WriteString("none")
+	}
+	for i, s := range m.serviceEntries {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		mark := "off"
+		if s.Running {
+			mark = "on"
+		}
+		b.WriteString(s.Name + ":" + mark)
+	}
+
+	b.WriteString(" | Components: ")
+	if len(m.infraEntries) == 0 {
+		b.WriteString("none")
+	}
+	for i, e := range m.infraEntries {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		mark := "off"
+		if e.Connected {
+			mark = "on"
+		}
+		b.WriteString(e.Name + ":" + mark)
+	}
+
+	b.WriteString(" | Endpoints: ")
+	factories := registry.GetServiceFactories()
+	names := make([]string, 0, len(factories))
+	for name := range factories {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	first := true
+	for _, name := range names {
+		svc, ok := registry.GetService(name).(endpointProvider)
+		if !ok {
+			continue
+		}
+		for _, ep := range svc.Endpoints() {
+			if !first {
+				b.WriteString(", ")
+			}
+			first = false
+			b.WriteString(svc.Name() + " " + ep)
+		}
+	}
+	if first {
+		b.WriteString("none")
+	}
+
+	return m.logCmd("info", b.String())
+}
+
+// endpointProvider is satisfied by services that expose their routes.
+type endpointProvider interface {
+	Name() string
+	Endpoints() []string
+}
+
+// runGC forces a garbage collection cycle and reports heap before/after.
+func (m *TerminalModel) runGC() tea.Cmd {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+
+	usedBefore := before.HeapAlloc / (1 << 20)
+	usedAfter := after.HeapAlloc / (1 << 20)
+	return m.logCmd("info", fmt.Sprintf("GC forced: heap %d MiB -> %d MiB, cycles %d", usedBefore, usedAfter, after.NumGC))
+}
+
+// handleThemeCommand switches the live theme and persists the change to
+// config.yaml so it survives a restart.
+func (m *TerminalModel) handleThemeCommand(name string) tea.Cmd {
+	if name == "" || name == "list" {
+		return m.listThemes()
+	}
+	if _, ok := themes[name]; !ok {
+		return m.logCmd("warn", "Unknown theme: "+name+" (try :themes)")
+	}
+
+	SetThemeName(name)
+	m.applyTheme()
+
+	msg := "Theme switched to " + name
+	if err := config.SaveTheme(name); err != nil {
+		msg += " (not persisted: " + err.Error() + ")"
+	} else {
+		msg += " (persisted to config.yaml)"
+	}
+	return m.logCmd("info", msg)
+}
+
+// applyTheme re-applies colors that are baked into the model at construction
+// time (spinner, command cursor) after a runtime theme switch.
+func (m *TerminalModel) applyTheme() {
+	m.spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
+	m.commandInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 }
 
 func (m *TerminalModel) logCmd(level, msg string) tea.Cmd {
@@ -963,12 +1130,15 @@ func (m *TerminalModel) updateFilteredLogs() {
 	m.filteredLogs = filtered
 }
 
+// logLineCount returns the number of physical lines the log view renders.
+// Word-wrapped entries occupy more than one line, so scroll bounds must be
+// based on physical lines, not log-entry counts.
+func (m *TerminalModel) logLineCount() int {
+	return len(m.renderLogEntries())
+}
+
 func (m *TerminalModel) scrollDown() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-	if m.scrollOffset < len(logsToShow)-m.maxVisibleLines {
+	if m.scrollOffset < m.logLineCount()-m.maxVisibleLines {
 		m.scrollOffset++
 		m.autoScroll = false
 	}
@@ -982,12 +1152,8 @@ func (m *TerminalModel) scrollUp() {
 }
 
 func (m *TerminalModel) pageDown() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
 	m.scrollOffset += m.maxVisibleLines
-	maxOffset := len(logsToShow) - m.maxVisibleLines
+	maxOffset := m.logLineCount() - m.maxVisibleLines
 	if m.scrollOffset > maxOffset {
 		m.scrollOffset = maxOffset
 	}
@@ -1011,11 +1177,7 @@ func (m *TerminalModel) scrollToTop() {
 }
 
 func (m *TerminalModel) scrollToBottom() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-	m.scrollOffset = len(logsToShow) - m.maxVisibleLines
+	m.scrollOffset = m.logLineCount() - m.maxVisibleLines
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}
@@ -1228,7 +1390,7 @@ func NewTerminalTUI(cfg LiveConfig) *TerminalTUI {
 }
 
 func (t *TerminalTUI) Start() {
-	t.program = tea.NewProgram(t.model, tea.WithAltScreen())
+	t.program = tea.NewProgram(t.model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	t.model.SetProgram(t.program)
 	go func() {
 		_, _ = t.program.Run()

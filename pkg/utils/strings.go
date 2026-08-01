@@ -1,29 +1,26 @@
 package utils
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-var (
-	seededRand   = rand.New(rand.NewSource(time.Now().UnixNano()))
-	seededRandMu sync.Mutex
-)
-
-// RandomString generates a random string of the given length.
+// RandomString generates a cryptographically random string of the given length.
 func RandomString(length int) string {
 	b := make([]byte, length)
-	seededRandMu.Lock()
+	limit := big.NewInt(int64(len(charset)))
 	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
+		n, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			panic("crypto/rand failure: " + err.Error())
+		}
+		b[i] = charset[n.Int64()]
 	}
-	seededRandMu.Unlock()
 	return string(b)
 }
 

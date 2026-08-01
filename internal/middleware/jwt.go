@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,11 +15,10 @@ import (
 
 func init() {
 	RegisterMiddleware("jwt", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		secretKey := "your-secret-key"
-		if cfg.Auth.Type == "jwt" && cfg.Auth.Secret != "" {
-			secretKey = cfg.Auth.Secret
+		if cfg.Auth.Type != "jwt" || cfg.Auth.Secret == "" {
+			return nil, fmt.Errorf("jwt middleware requires auth.type=jwt and a non-empty auth.secret")
 		}
-		return JWTRequired(secretKey), nil
+		return JWTRequired(cfg.Auth.Secret), nil
 	})
 }
 
@@ -42,6 +42,13 @@ var defaultJWTConfig = JWTConfig{
 	SigningMethod: jwt.SigningMethodHS256.Name,
 }
 
+// jwtIssuer and jwtAudience bound tokens to this service so a token minted
+// here is rejected elsewhere even with the same signing secret.
+const (
+	jwtIssuer   = "stackyrd"
+	jwtAudience = "stackyrd-api"
+)
+
 func GenerateToken(userID, username, email, role, secretKey string, expiration time.Duration) (string, error) {
 	claims := JWTClaims{
 		UserID:   userID,
@@ -51,6 +58,8 @@ func GenerateToken(userID, username, email, role, secretKey string, expiration t
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    jwtIssuer,
+			Audience:  jwt.ClaimStrings{jwtAudience},
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -78,8 +87,12 @@ func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 
 			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+				if token.Method != jwt.SigningMethodHS256 {
+					return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
+				}
 				return []byte(config.SecretKey), nil
-			})
+			}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
+				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience))
 			if err != nil || !parsedToken.Valid {
 				if optional {
 					return next(c)

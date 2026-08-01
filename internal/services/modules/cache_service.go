@@ -71,7 +71,7 @@ func (s *CacheService) SetCachedValue(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("cache_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("cache_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewCacheService(config.Services.IsEnabled("cache_service"))
 	})
 }

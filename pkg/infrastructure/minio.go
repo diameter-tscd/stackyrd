@@ -2,9 +2,11 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -205,13 +207,13 @@ func (m *MinIOManager) UploadFile(ctx context.Context, objectName string, reader
 }
 
 // GetFileUrl generates a presigned URL for the object.
-func (m *MinIOManager) GetFileUrl(objectName string) string {
+func (m *MinIOManager) GetFileUrl(objectName string) (string, error) {
 	// Generate a presigned URL (expires in 7 days)
 	url, err := m.Client.PresignedGetObject(context.Background(), m.BucketName, objectName, 7*24*time.Hour, nil)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to presign URL for %s: %w", objectName, err)
 	}
-	return url.String()
+	return url.String(), nil
 }
 
 // Worker Pool Operations
@@ -221,8 +223,7 @@ func (m *MinIOManager) SubmitAsyncJob(job func()) {
 	if m.Pool != nil {
 		m.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

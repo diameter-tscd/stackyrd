@@ -40,7 +40,7 @@ func (sg *SimpleStreamGenerator) Start() {
 		return
 	}
 	sg.running = true
-	go sg.generateEvents()
+	go utils.GoSafe(nil, sg.generateEvents)
 }
 
 func (sg *SimpleStreamGenerator) Stop() {
@@ -290,7 +290,7 @@ func (s *BroadcastService) startDemoStreams() {
 }
 
 func init() {
-	registry.RegisterService("broadcast_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("broadcast_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewBroadcastService(config.Services.IsEnabled("broadcast_service"), logger)
 	})
 }

@@ -11,9 +11,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-type ServiceFactory func(config *config.Config, logger *logger.Logger, deps *Dependencies) interfaces.Service
+type ServiceFactory func(config *config.Config, logger *logger.Logger) interfaces.Service
+
+type ServiceFactoryWithDeps func(config *config.Config, logger *logger.Logger, deps *Dependencies) interfaces.Service
 
 var serviceFactories = &sync.Map{}
+var serviceFactoriesWithDeps = &sync.Map{}
 
 var (
 	serviceDiscovered = &sync.Map{}
@@ -22,6 +25,12 @@ var (
 func RegisterService(name string, factory ServiceFactory) {
 	if _, exist := serviceFactories.Load(name); !exist && factory != nil {
 		serviceFactories.Store(name, factory)
+	}
+}
+
+func RegisterServiceWithDeps(name string, factory ServiceFactoryWithDeps) {
+	if _, exist := serviceFactoriesWithDeps.Load(name); !exist && factory != nil {
+		serviceFactoriesWithDeps.Store(name, factory)
 	}
 }
 
@@ -36,6 +45,24 @@ func AutoDiscoverServices(
 		name := nameObj.(string)
 		factory := factoryObj.(ServiceFactory)
 		logger.Debug("Creating service", "name", name)
+		if config.Services.IsEnabled(name) {
+			if service := factory(config, logger); service != nil {
+				services = append(services, service)
+				logger.Info("Auto-registered service", "service", name)
+				serviceDiscovered.Store(service.Name(), service.Get())
+			} else {
+				logger.Warn("Service factory returned nil", "service", name)
+			}
+		} else {
+			logger.Debug("Service disabled via config", "service", name)
+		}
+		return true
+	})
+
+	serviceFactoriesWithDeps.Range(func(nameObj, factoryObj interface{}) bool {
+		name := nameObj.(string)
+		factory := factoryObj.(ServiceFactoryWithDeps)
+		logger.Debug("Creating service with dependencies", "name", name)
 		if config.Services.IsEnabled(name) {
 			if service := factory(config, logger, deps); service != nil {
 				services = append(services, service)
@@ -65,10 +92,14 @@ func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 	}
 }
 
-func GetServiceFactories() map[string]ServiceFactory {
-	result := make(map[string]ServiceFactory)
+func GetServiceFactories() map[string]interface{} {
+	result := make(map[string]interface{})
 	serviceFactories.Range(func(key, value interface{}) bool {
-		result[key.(string)] = value.(ServiceFactory)
+		result[key.(string)] = value
+		return true
+	})
+	serviceFactoriesWithDeps.Range(func(key, value interface{}) bool {
+		result[key.(string)] = value
 		return true
 	})
 	return result
@@ -89,21 +120,33 @@ func (r *ServiceRegistry) RegisterServiceWithDependencies(
 	deps *Dependencies,
 	serviceName string,
 ) error {
-	factoryObj, exists := serviceFactories.Load(serviceName)
-	if !exists {
-		return fmt.Errorf("service factory not found: %s", serviceName)
-	}
-	factory := factoryObj.(ServiceFactory)
-	if !config.Services.IsEnabled(serviceName) {
-		r.logger.Debug("Service disabled via config", "service", serviceName)
+	if factoryObj, exists := serviceFactories.Load(serviceName); exists {
+		if !config.Services.IsEnabled(serviceName) {
+			r.logger.Debug("Service disabled via config", "service", serviceName)
+			return nil
+		}
+		service := factoryObj.(ServiceFactory)(config, logger)
+		if service == nil {
+			return fmt.Errorf("failed to create service: %s", serviceName)
+		}
+		r.Register(service)
+		r.logger.Info("Service registered", "service", serviceName)
 		return nil
 	}
-	if service := factory(config, logger, deps); service != nil {
+	if factoryObj, exists := serviceFactoriesWithDeps.Load(serviceName); exists {
+		if !config.Services.IsEnabled(serviceName) {
+			r.logger.Debug("Service disabled via config", "service", serviceName)
+			return nil
+		}
+		service := factoryObj.(ServiceFactoryWithDeps)(config, logger, deps)
+		if service == nil {
+			return fmt.Errorf("failed to create service: %s", serviceName)
+		}
 		r.Register(service)
 		r.logger.Info("Service registered with dependencies", "service", serviceName)
 		return nil
 	}
-	return fmt.Errorf("failed to create service: %s", serviceName)
+	return fmt.Errorf("service factory not found: %s", serviceName)
 }
 
 func (r *ServiceRegistry) GetServices() []interfaces.Service {

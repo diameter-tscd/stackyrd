@@ -71,8 +71,8 @@ func (s *GrafanaService) createDashboard(c echo.Context) error {
 
 func (s *GrafanaService) updateDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	var dashboard infrastructure.GrafanaDashboard
@@ -93,8 +93,8 @@ func (s *GrafanaService) updateDashboard(c echo.Context) error {
 
 func (s *GrafanaService) getDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	dashboard, err := s.grafanaManager.GetDashboard(c.Request().Context(), uid)
@@ -108,8 +108,8 @@ func (s *GrafanaService) getDashboard(c echo.Context) error {
 
 func (s *GrafanaService) deleteDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	err := s.grafanaManager.DeleteDashboard(c.Request().Context(), uid)
@@ -119,6 +119,17 @@ func (s *GrafanaService) deleteDashboard(c echo.Context) error {
 	}
 
 	return response.Success(c, nil, "Dashboard deleted successfully")
+}
+
+// validUID rejects anything that could alter the Grafana URL path. Grafana
+// dashboard UIDs are alphanumeric with hyphens/underscores.
+func validUID(uid string) bool {
+	for _, r := range uid {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return uid != ""
 }
 
 func (s *GrafanaService) listDashboards(c echo.Context) error {
@@ -199,18 +210,18 @@ func (s *GrafanaService) getHealth(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterServiceWithDeps("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
 
 		if !helper.IsServiceEnabled("grafana_service") {
 			return nil
 		}
 
-		grafanaManager, ok := registry.GetTyped[infrastructure.GrafanaManager](deps, "grafana")
-		if !helper.RequireDependency("GrafanaManager", ok) {
+		grafanaManager := deps.Grafana()
+		if !helper.RequireDependency("GrafanaManager", grafanaManager != nil) {
 			return nil
 		}
 
-		return NewGrafanaService(&grafanaManager, true, logger)
+		return NewGrafanaService(grafanaManager, true, logger)
 	})
 }

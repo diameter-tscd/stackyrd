@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/spf13/afero"
 )
+
+// ErrNotInitialized is returned when the afero manager is used before Init.
+var ErrNotInitialized = errors.New("afero manager not initialized")
 
 // assets is the global singleton Afero manager
 var (
@@ -25,8 +29,6 @@ type aferoManager struct {
 	aliases map[string]string
 	mu      sync.RWMutex
 }
-
-
 
 // Init initializes the singleton Afero manager with the given configuration
 // This function is safe to call multiple times - subsequent calls will be ignored
@@ -60,7 +62,7 @@ func Init(embedFS embed.FS, aliasMap map[string]string, isDev bool) {
 // Returns the file content as bytes and any error encountered
 func Read(alias string) ([]byte, error) {
 	if instance == nil {
-		return nil, fmt.Errorf("afero manager not initialized. Call Init() first")
+		return nil, fmt.Errorf("afero manager not initialized: %w", ErrNotInitialized)
 	}
 
 	instance.mu.RLock()
@@ -80,7 +82,7 @@ func Read(alias string) ([]byte, error) {
 // The caller is responsible for closing the returned ReadCloser
 func Stream(alias string) (io.ReadCloser, error) {
 	if instance == nil {
-		return nil, fmt.Errorf("afero manager not initialized. Call Init() first")
+		return nil, fmt.Errorf("afero manager not initialized: %w", ErrNotInitialized)
 	}
 
 	instance.mu.RLock()

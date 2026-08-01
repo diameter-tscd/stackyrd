@@ -27,7 +27,7 @@ func init() {
 			if err := client.Ping(context.Background()).Err(); err != nil {
 				return nil, fmt.Errorf("redis rate limiter: failed to connect: %w", err)
 			}
-			return RedisRateLimitWithConfig(client, 60, time.Minute), nil
+			return RedisRateLimitWithConfig(logger, client, 60, time.Minute), nil
 		}
 		logger.Info("Rate limit using in-memory backend")
 		return RateLimit(), nil
@@ -201,7 +201,7 @@ func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, er
 	return count < int64(rl.rate), nil
 }
 
-func RedisRateLimitWithConfig(client *redis.Client, rate int, window time.Duration) echo.MiddlewareFunc {
+func RedisRateLimitWithConfig(log *logger.Logger, client *redis.Client, rate int, window time.Duration) echo.MiddlewareFunc {
 	limiter := NewRedisRateLimiter(client, rate, window)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -209,6 +209,8 @@ func RedisRateLimitWithConfig(client *redis.Client, rate int, window time.Durati
 			ip := c.RealIP()
 			allowed, err := limiter.isAllowed(c.Request().Context(), ip)
 			if err != nil {
+				// Redis outage: fail open and let the request through, but log loudly.
+				log.Warn("Rate limiter failed open", "error", err.Error(), "ip", ip)
 				return next(c)
 			}
 			if !allowed {

@@ -76,7 +76,9 @@ func (h *Hub) Run() {
 			log.Printf("Client disconnected: %s", client.ID)
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			// Write lock: we mutate the map (close + delete) here, and the
+			// unregister path closes client.Send too — RLock would race it.
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.Send <- message:
@@ -85,7 +87,7 @@ func (h *Hub) Run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
@@ -154,6 +156,9 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 // readPump reads messages from the WebSocket connection
 func (c *Client) readPump() {
 	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in readPump: %v", r)
+		}
 		c.Hub.unregister <- c
 		_ = c.Conn.Close()
 	}()
@@ -179,7 +184,12 @@ func (c *Client) readPump() {
 
 // writePump writes messages to the WebSocket connection
 func (c *Client) writePump() {
-	defer func() { _ = c.Conn.Close() }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in writePump: %v", r)
+		}
+		_ = c.Conn.Close()
+	}()
 
 	for message := range c.Send {
 		if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {

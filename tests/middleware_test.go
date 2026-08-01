@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/logger"
 
@@ -32,8 +31,21 @@ func TestMiddleware_CORSAllowAll(t *testing.T) {
 	handler := mw(func(c echo.Context) error { return nil })
 	_ = handler(c)
 
-	assert.Equal(t, "http://example.com", rec.Header().Get("Access-Control-Allow-Origin"))
-	assert.Equal(t, "true", rec.Header().Get("Access-Control-Allow-Credentials"))
+	// Wildcard origin must never be combined with credentials.
+	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
+}
+
+func TestMiddleware_CORSWildcardRefusesCredentials(t *testing.T) {
+	mw := middleware.CORSAllowAll()
+
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Origin", "http://evil.com")
+
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
+
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
 }
 
 func TestMiddleware_CORSBlockedOrigin(t *testing.T) {
@@ -213,21 +225,6 @@ func TestMiddleware_AuditSkipsHealth(t *testing.T) {
 	c, _ := testEchoContext(http.MethodGet, "/health")
 
 	handler := middleware.AuditSkipHealthCheck(l)(func(c echo.Context) error { return nil })
-	_ = handler(c)
-}
-
-func TestMiddleware_EncryptionDisabled(t *testing.T) {
-	cfg := &config.Config{
-		Encryption: config.EncryptionConfig{
-			Enabled: false,
-		},
-	}
-	l := logger.New(false, nil)
-	mw := middleware.EncryptionMiddleware(cfg, l)
-
-	c, _ := testEchoContext(http.MethodGet, "/")
-
-	handler := mw(func(c echo.Context) error { return nil })
 	_ = handler(c)
 }
 

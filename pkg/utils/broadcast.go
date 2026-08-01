@@ -159,10 +159,6 @@ func (eb *EventBroadcaster) Unsubscribe(clientID string) {
 
 // Broadcast sends an event to all clients subscribed to a stream
 func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]interface{}) {
-	eb.mu.RLock()
-	clients := eb.streams[streamID]
-	eb.mu.RUnlock()
-
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
@@ -174,7 +170,10 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 
 	var toUnsubscribe []string
 
-	for _, client := range clients {
+	// Hold RLock across the send so Unsubscribe (which needs Lock to close
+	// Channel) cannot race a send on a closed channel. Sends are non-blocking.
+	eb.mu.RLock()
+	for _, client := range eb.streams[streamID] {
 		select {
 		case client.Channel <- event:
 			// Update last-seen on successful delivery so TTL cleanup keeps
@@ -189,6 +188,7 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 			}
 		}
 	}
+	eb.mu.RUnlock()
 
 	if len(toUnsubscribe) > 0 {
 		eb.mu.Lock()
@@ -201,13 +201,6 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 
 // BroadcastToAll sends an event to all clients across all streams
 func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]interface{}) {
-	eb.mu.RLock()
-	var snapshot []*StreamClient
-	for _, streamClients := range eb.streams {
-		snapshot = append(snapshot, streamClients...)
-	}
-	eb.mu.RUnlock()
-
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
@@ -217,17 +210,22 @@ func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, dat
 	}
 
 	var toUnsubscribe []string
-	for _, client := range snapshot {
-		select {
-		case client.Channel <- event:
-			client.lastSeen.Store(time.Now().Unix())
-		default:
-			client.droppedMessages.Add(1)
-			if client.droppedMessages.Load() > 100 {
-				toUnsubscribe = append(toUnsubscribe, client.ID)
+	eb.mu.RLock()
+	for _, streamClients := range eb.streams {
+		for _, client := range streamClients {
+			select {
+			case client.Channel <- event:
+				client.lastSeen.Store(time.Now().Unix())
+			default:
+				client.droppedMessages.Add(1)
+				if client.droppedMessages.Load() > 100 {
+					toUnsubscribe = append(toUnsubscribe, client.ID)
+				}
 			}
 		}
 	}
+	eb.mu.RUnlock()
+
 	if len(toUnsubscribe) > 0 {
 		eb.mu.Lock()
 		for _, id := range toUnsubscribe {

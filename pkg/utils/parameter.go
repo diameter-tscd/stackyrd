@@ -2,16 +2,51 @@ package utils
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
+// isLoopback reports whether host resolves to a loopback address.
+func isLoopback(host string) bool {
+	if host == "localhost" || host == "" {
+		return true
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ip := net.ParseIP(a)
+		if ip != nil && ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
+}
+
 // LoadConfigFromURL loads configuration from a remote URL using HTTP GET
 func LoadConfigFromURL(configURL string) error {
-	resp, err := http.Get(configURL)
+	// Restrict redirects and time the request so a hostile URL cannot probe
+	// internal services (SSRF) or hang startup indefinitely.
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 2 {
+				return fmt.Errorf("too many redirects")
+			}
+			host := req.URL.Hostname()
+			if isLoopback(host) {
+				return fmt.Errorf("redirect to loopback address blocked: %s", host)
+			}
+			return nil
+		},
+	}
+	resp, err := client.Get(configURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch config from URL %s: %w", configURL, err)
 	}

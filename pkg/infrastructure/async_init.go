@@ -4,6 +4,7 @@ import (
 	"context"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,9 +30,9 @@ type InfraInitManager struct {
 	ready    atomic.Bool
 
 	// cacheMu guards GetStatus TTL-snapshot. updateStatus invalidates it.
-	cacheMu       sync.Mutex
-	cacheExpiry   time.Time
-	cachedStatus  map[string]*InfraInitStatus
+	cacheMu      sync.Mutex
+	cacheExpiry  time.Time
+	cachedStatus map[string]*InfraInitStatus
 }
 
 // statusCacheTTL controls how stale a GetStatus snapshot may be.
@@ -50,10 +51,8 @@ func NewInfraInitManager(logger *logger.Logger) *InfraInitManager {
 func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger *logger.Logger) *ComponentRegistry {
 	registry := GetGlobalRegistry()
 
-	// Initialize all registered components
-	if err := registry.Initialize(cfg, logger); err != nil {
-		logger.Error("Failed to initialize infrastructure components", err)
-	}
+	// Initialize all registered components (registry.Initialize logs per-component failures)
+	_ = registry.Initialize(cfg, logger)
 
 	// Start async health checks and monitoring (non-blocking)
 	components := registry.GetAll()
@@ -63,23 +62,25 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 		component := component
 		go func(compName string, comp InfrastructureComponent) {
 			defer im.wg.Done()
-			startTime := time.Now()
-			// Update status to initialized
-			im.updateStatus(compName, &InfraInitStatus{
-				Name:        compName,
-				Initialized: true,
-				StartTime:   startTime,
-				Duration:    time.Since(startTime),
-				Progress:    1.0,
-			})
+			utils.GoSafe(im.logger, func() {
+				startTime := time.Now()
+				// Update status to initialized
+				im.updateStatus(compName, &InfraInitStatus{
+					Name:        compName,
+					Initialized: true,
+					StartTime:   startTime,
+					Duration:    time.Since(startTime),
+					Progress:    1.0,
+				})
 
-			// Perform health check with timeout
-			status := comp.GetStatus()
-			if connected, ok := status["connected"].(bool); ok && connected {
-				logger.Debug(compName + " health check passed")
-			} else {
-				logger.Warn(compName + " health check failed or not applicable")
-			}
+				// Perform health check with timeout
+				status := comp.GetStatus()
+				if connected, ok := status["connected"].(bool); ok && connected {
+					logger.Debug("Health check passed", "component", compName)
+				} else {
+					logger.Warn("Health check failed or not applicable", "component", compName)
+				}
+			})
 		}(name, component)
 	}
 

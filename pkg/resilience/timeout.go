@@ -2,10 +2,9 @@ package resilience
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
-
-
 
 // TimeoutConfig holds timeout configuration
 type TimeoutConfig struct {
@@ -32,7 +31,14 @@ func WithContext(ctx context.Context, fn func() error) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		errChan <- fn()
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in timed function: %v", r)
+			}
+			errChan <- err
+		}()
+		err = fn()
 	}()
 
 	select {
@@ -59,11 +65,18 @@ func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, err
 	}, 1)
 
 	go func() {
-		result, err := fn()
-		resultChan <- struct {
-			result T
-			err    error
-		}{result, err}
+		var result T
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in timed function: %v", r)
+			}
+			resultChan <- struct {
+				result T
+				err    error
+			}{result, err}
+		}()
+		result, err = fn()
 	}()
 
 	select {

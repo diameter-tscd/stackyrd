@@ -1,6 +1,9 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -48,22 +51,22 @@ func setupViperDefaults() {
 }
 
 type Config struct {
-	App        AppConfig           `mapstructure:"app"`
-	Server     ServerConfig        `mapstructure:"server"`
-	Services   ServicesConfig      `mapstructure:"services"`
-	Middleware MiddlewareConfig    `mapstructure:"middleware"`
-	Auth       AuthConfig          `mapstructure:"auth"`
-	Swagger    SwaggerConfig       `mapstructure:"swagger"`
-	Redis      RedisConfig         `mapstructure:"redis"`
-	Kafka      KafkaConfig         `mapstructure:"kafka"`
-	Postgres   PostgresConfig      `mapstructure:"postgres"`
-	Mongo      MongoConfig         `mapstructure:"mongo"`
-	Webhook    WebhookConfig       `mapstructure:"webhook"`
-	Metrics    MetricsConfig       `mapstructure:"metrics"`
-	Grafana    GrafanaConfig       `mapstructure:"grafana"`
-	Cron       CronConfig          `mapstructure:"cron"`
-	MinIO      MinIOConfig         `mapstructure:"minio"`
-	Encryption EncryptionConfig    `mapstructure:"encryption"`
+	App        AppConfig        `mapstructure:"app"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Services   ServicesConfig   `mapstructure:"services"`
+	Middleware MiddlewareConfig `mapstructure:"middleware"`
+	Auth       AuthConfig       `mapstructure:"auth"`
+	Swagger    SwaggerConfig    `mapstructure:"swagger"`
+	Redis      RedisConfig      `mapstructure:"redis"`
+	Kafka      KafkaConfig      `mapstructure:"kafka"`
+	Postgres   PostgresConfig   `mapstructure:"postgres"`
+	Mongo      MongoConfig      `mapstructure:"mongo"`
+	Webhook    WebhookConfig    `mapstructure:"webhook"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Grafana    GrafanaConfig    `mapstructure:"grafana"`
+	Cron       CronConfig       `mapstructure:"cron"`
+	MinIO      MinIOConfig      `mapstructure:"minio"`
+	Encryption EncryptionConfig `mapstructure:"encryption"`
 }
 
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.
@@ -78,13 +81,13 @@ func (m MiddlewareConfig) IsEnabled(middlewareName string) bool {
 }
 
 type WebhookConfig struct {
-	Enabled    bool            `mapstructure:"enabled"`
-	URL        string          `mapstructure:"url"`
-	Secret     string          `mapstructure:"secret"`
-	Timeout    int             `mapstructure:"timeout_seconds"`
-	MaxRetries int             `mapstructure:"max_retries"`
+	Enabled    bool              `mapstructure:"enabled"`
+	URL        string            `mapstructure:"url"`
+	Secret     string            `mapstructure:"secret"`
+	Timeout    int               `mapstructure:"timeout_seconds"`
+	MaxRetries int               `mapstructure:"max_retries"`
 	Headers    map[string]string `mapstructure:"headers"`
-	Endpoint   string          `mapstructure:"endpoint"`
+	Endpoint   string            `mapstructure:"endpoint"`
 }
 
 type MinIOConfig struct {
@@ -182,7 +185,7 @@ type PostgresConnectionConfig struct {
 }
 
 type PostgresConfig struct {
-	Enabled     bool                     `mapstructure:"enabled"`
+	Enabled     bool                       `mapstructure:"enabled"`
 	Connections []PostgresConnectionConfig `mapstructure:"connections"`
 }
 
@@ -194,7 +197,7 @@ type MongoConnectionConfig struct {
 }
 
 type MongoConfig struct {
-	Enabled     bool                   `mapstructure:"enabled"`
+	Enabled     bool                    `mapstructure:"enabled"`
 	Connections []MongoConnectionConfig `mapstructure:"connections"`
 }
 
@@ -237,14 +240,15 @@ func loadFromSource() (*Config, error) {
 	viper.AddConfigPath("./config")
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, err
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			return nil, fmt.Errorf("failed to read config: %w", err)
 		}
 	}
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	configCacheMu.Lock()
@@ -261,4 +265,48 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 		return loadFromSource()
 	}
 	return LoadConfig()
+}
+
+// SaveTheme persists app.theme back to the local config file so a runtime
+// theme change survives a restart. It edits only the theme line, preserving the
+// rest of the file byte-for-byte. Remote-URL configs have no file to write.
+func SaveTheme(name string) error {
+	viper.Set("app.theme", name)
+
+	path := viper.ConfigFileUsed()
+	if path == "" {
+		return errors.New("no local config file to persist to")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	replaced := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "theme:") {
+			continue
+		}
+		indent := line[:len(line)-len(trimmed)]
+		comment := ""
+		if c := strings.Index(trimmed, "#"); c >= 0 {
+			comment = " " + trimmed[c:]
+			trimmed = trimmed[:c]
+		}
+		lines[i] = indent + "theme: " + fmt.Sprintf("%q", name) + comment
+		replaced = true
+		break
+	}
+	if !replaced {
+		return errors.New("config has no app.theme key")
+	}
+
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), mode)
 }

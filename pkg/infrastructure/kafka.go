@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -120,7 +121,8 @@ func (h *consumerHandler) Cleanup(sarama.ConsumerGroupSession) error { return ni
 func (h *consumerHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for message := range claim.Messages() {
 		if err := h.handler(message.Key, message.Value); err != nil {
-			h.logger.Error("Error handling message", err)
+			h.logger.Error("Error handling message", err, "topic", claim.Topic(), "partition", claim.Partition())
+			return err
 		}
 		session.MarkMessage(message, "")
 	}
@@ -211,8 +213,7 @@ func (k *KafkaManager) SubmitAsyncJob(job func()) {
 	if k.Pool != nil {
 		k.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

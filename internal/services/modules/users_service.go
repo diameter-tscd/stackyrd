@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"strconv"
 	"sync"
 
@@ -129,7 +130,10 @@ func (s *UsersService) listUsers(c echo.Context) error {
 }
 
 func (s *UsersService) getUser(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid user ID")
+	}
 
 	usersMu.RLock()
 	u, ok := usersIdx[id]
@@ -144,11 +148,12 @@ func (s *UsersService) getUser(c echo.Context) error {
 func (s *UsersService) createUser(c echo.Context) error {
 	var user User
 	if err := request.Bind(c, &user); err != nil {
-		if validationErr, ok := err.(*request.ValidationError); ok {
+		var validationErr *request.ValidationError
+		if errors.As(err, &validationErr) {
 			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-		} else {
-			return response.BadRequest(c, err.Error())
 		}
+		s.logger.Warn("Invalid user payload", "error", err.Error())
+		return response.BadRequest(c, "Invalid request data")
 	}
 
 	usersMu.Lock()
@@ -167,15 +172,19 @@ func (s *UsersService) createUser(c echo.Context) error {
 const maxUsers = 10000
 
 func (s *UsersService) updateUser(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid user ID")
+	}
 
 	var user User
 	if err := request.Bind(c, &user); err != nil {
-		if validationErr, ok := err.(*request.ValidationError); ok {
+		var validationErr *request.ValidationError
+		if errors.As(err, &validationErr) {
 			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-		} else {
-			return response.BadRequest(c, err.Error())
 		}
+		s.logger.Warn("Invalid user payload", "error", err.Error())
+		return response.BadRequest(c, "Invalid request data")
 	}
 
 	usersMu.Lock()
@@ -191,7 +200,7 @@ func (s *UsersService) updateUser(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewUsersService(config.Services.IsEnabled("users_service"), logger)
 	})
 }

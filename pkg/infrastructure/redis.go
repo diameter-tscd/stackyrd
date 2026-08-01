@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -257,8 +258,7 @@ func (r *RedisManager) SubmitAsyncJob(job func()) {
 	if r.Pool != nil {
 		r.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

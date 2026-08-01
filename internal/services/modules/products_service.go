@@ -68,7 +68,7 @@ func (s *ProductsService) getProducts(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("products_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("products_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewProductsService(config.Services.IsEnabled("products_service"), logger)
 	})
 }

@@ -101,15 +101,16 @@ type Service interface {
 
 // Auto-registration with dependency injection
 func init() {
-    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        helper := registry.NewServiceHelper(cfg, log, deps)
-        if !helper.IsServiceEnabled("service_name") {
+    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
+        if !cfg.Services.IsEnabled("service_name") {
             return nil
         }
         return NewService(true, log)
     })
 }
 ```
+
+Services that need infrastructure use `RegisterServiceWithDeps` and read typed getters (`deps.Postgres()`, `deps.Redis()`, ...) instead of raw map access.
 
 ## Infrastructure Component Pattern
 ```go
@@ -143,7 +144,7 @@ func init() {
 ```
 
 ## Key Features
-- **Dependency Injection**: Dynamic `Dependencies` container with TTL-cached GetAll()
+- **Dependency Injection**: Two factory types — plain `RegisterService(cfg, logger)` and `RegisterServiceWithDeps(cfg, logger, deps)`; sealed `Dependencies` bag with typed getters (`Redis()`, `Postgres()`, ...) and TTL-cached GetAll()
 - **Async Initialization**: All infrastructure components init in parallel
 - **Multi-connection DB**: Postgres + MongoDB with named connection managers
 

@@ -3,6 +3,8 @@ package infrastructure
 import (
 	"context"
 	"fmt"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -70,7 +72,15 @@ var asyncSemaphore = make(chan struct{}, 1000) // global cap on concurrent async
 func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *AsyncResult[T] {
 	result := NewAsyncResult[T]()
 
-	asyncSemaphore <- struct{}{}
+	// Acquire a semaphore slot without blocking the caller indefinitely: if the
+	// global cap is saturated, honor cancellation instead of hanging handlers.
+	select {
+	case asyncSemaphore <- struct{}{}:
+	case <-ctx.Done():
+		var zero T
+		result.Complete(zero, ctx.Err())
+		return result
+	}
 	go func() {
 		defer func() { <-asyncSemaphore }()
 		defer func() {
@@ -109,7 +119,6 @@ func NewBatchAsyncResult[T any](count int, batchSize int) *BatchAsyncResult[T] {
 		pending:   int32(count),
 	}
 }
-
 
 // CompleteResult marks one operation done and, when all operations in the
 // batch have completed, closes the batch Done channel. It is the sole
@@ -187,15 +196,23 @@ type WorkerPool struct {
 	workers  int
 	jobQueue chan func()
 	stopChan chan struct{}
+	stopOnce sync.Once
 	wg       sync.WaitGroup
+	logger   *logger.Logger
 }
 
-// NewWorkerPool creates a new worker pool
-func NewWorkerPool(workers int) *WorkerPool {
+// NewWorkerPool creates a new worker pool. An optional logger enables
+// structured panic logging; without one, panics log to stderr.
+func NewWorkerPool(workers int, log ...*logger.Logger) *WorkerPool {
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
+	}
 	return &WorkerPool{
 		workers:  workers,
 		jobQueue: make(chan func(), workers*2),
 		stopChan: make(chan struct{}),
+		logger:   l,
 	}
 }
 
@@ -207,15 +224,13 @@ func (wp *WorkerPool) Start() {
 	}
 }
 
-// Stop stops the worker pool, draining any queued jobs first.
+// Stop stops the worker pool. Workers finish any in-flight job and drain
+// remaining queued jobs before exiting — no jobs are dropped.
 func (wp *WorkerPool) Stop() {
-	// Drain buffered jobs before signalling workers to stop so that Submit
-	// never races with close (only Stop ever closes stopChan).
-	for len(wp.jobQueue) > 0 {
-		<-wp.jobQueue
-	}
-	close(wp.stopChan)
-	wp.wg.Wait()
+	wp.stopOnce.Do(func() {
+		close(wp.stopChan)
+		wp.wg.Wait()
+	})
 }
 
 // Submit submits a job to the worker pool.  Blocks if the queue is full;
@@ -237,18 +252,22 @@ func (wp *WorkerPool) SubmitOrDrop(job func()) bool {
 
 func (wp *WorkerPool) worker() {
 	defer wp.wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			_ = r
-		}
-	}()
 
 	for {
 		select {
 		case job := <-wp.jobQueue:
-			job()
+			utils.GoSafe(wp.logger, job)
 		case <-wp.stopChan:
-			return
+			// Drain remaining queued jobs before exiting so shutdown does not
+			// silently discard accepted work.
+			for {
+				select {
+				case job := <-wp.jobQueue:
+					utils.GoSafe(wp.logger, job)
+				default:
+					return
+				}
+			}
 		}
 	}
 }

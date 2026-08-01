@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"strconv"
 
 	"stackyrd/config"
@@ -65,7 +66,8 @@ func (s *TasksService) listTasks(c echo.Context) error {
 
 	result := s.db.ORM.WithContext(c.Request().Context()).Find(&tasks)
 	if result.Error != nil {
-		return response.InternalServerError(c, result.Error.Error())
+		s.logger.Error("Failed to list tasks", result.Error)
+		return response.InternalServerError(c, "Failed to list tasks")
 	}
 
 	return response.Success(c, tasks)
@@ -79,19 +81,27 @@ func (s *TasksService) createTask(c echo.Context) error {
 
 	result := s.db.ORM.WithContext(c.Request().Context()).Create(task)
 	if result.Error != nil {
-		return response.InternalServerError(c, result.Error.Error())
+		s.logger.Error("Failed to create task", result.Error)
+		return response.InternalServerError(c, "Failed to create task")
 	}
 
 	return response.Created(c, task)
 }
 
 func (s *TasksService) updateTask(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid task ID")
+	}
 	var task Task
 
 	result := s.db.ORM.WithContext(c.Request().Context()).First(&task, id)
 	if result.Error != nil {
-		return response.NotFound(c, "Task not found")
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return response.NotFound(c, "Task not found")
+		}
+		s.logger.Error("Failed to fetch task", result.Error, "id", id)
+		return response.InternalServerError(c, "Failed to fetch task")
 	}
 
 	if err := request.Bind(c, &task); err != nil {
@@ -100,36 +110,47 @@ func (s *TasksService) updateTask(c echo.Context) error {
 
 	result = s.db.ORM.WithContext(c.Request().Context()).Model(&task).Updates(task)
 	if result.Error != nil {
-		return response.InternalServerError(c, result.Error.Error())
+		s.logger.Error("Failed to update task", result.Error, "id", id)
+		return response.InternalServerError(c, "Failed to update task")
 	}
 
 	return response.Success(c, task)
 }
 
 func (s *TasksService) deleteTask(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid task ID")
+	}
 
 	result := s.db.ORM.WithContext(c.Request().Context()).Delete(&Task{}, "id = ?", id)
 	if result.Error != nil {
-		return response.InternalServerError(c, result.Error.Error())
+		s.logger.Error("Failed to delete task", result.Error, "id", id)
+		return response.InternalServerError(c, "Failed to delete task")
 	}
 
 	return response.Success(c, nil, "Task deleted")
 }
 
 func init() {
-	registry.RegisterService("tasks_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterServiceWithDeps("tasks_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
 
 		if !helper.IsServiceEnabled("tasks_service") {
 			return nil
 		}
 
-		postgresManager, ok := registry.GetTyped[infrastructure.PostgresManager](deps, "postgres")
-		if !helper.RequireDependency("PostgresManager", ok) {
+		pgConnManager := deps.Postgres()
+		if !helper.RequireDependency("Postgres Connection Manager", pgConnManager != nil) {
 			return nil
 		}
 
-		return NewTasksService(&postgresManager, true, logger)
+		db, ok := pgConnManager.GetDefaultConnection()
+		if !ok {
+			logger.Warn("Postgres default connection not available")
+			return nil
+		}
+
+		return NewTasksService(db, true, logger)
 	})
 }

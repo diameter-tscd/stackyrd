@@ -1,14 +1,19 @@
 package infrastructure
 
 import (
+	"errors"
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
 )
+
+// ErrJobNotFound is returned when a job ID does not exist.
+var ErrJobNotFound = errors.New("job not found")
 
 type CronJob struct {
 	ID       int       `json:"id"`
@@ -65,7 +70,7 @@ func (c *CronManager) AddJob(name, schedule string, cmd func()) (int, error) {
 
 	// Wrap cmd to update LastRun
 	wrappedCmd := func() {
-		cmd()
+		utils.GoSafe(nil, cmd)
 	}
 
 	id, err := c.cron.AddFunc(schedule, wrappedCmd)
@@ -145,7 +150,7 @@ func (c *CronManager) RunJobNow(jobID int) error {
 	job, ok := c.jobs[cron.EntryID(jobID)]
 	if !ok {
 		c.mu.Unlock()
-		return fmt.Errorf("job with ID %d not found", jobID)
+		return fmt.Errorf("job with ID %d: %w", jobID, ErrJobNotFound)
 	}
 	// Take a copy of the closure while we hold the lock
 	cmd := job.cmd
@@ -227,7 +232,11 @@ func (c *CronManager) SubmitAsyncJob(job func()) {
 
 // GetPoolStatus returns the status of the worker pool
 func (c *CronManager) GetPoolStatus() map[string]interface{} {
-	if c.pool == nil {
+	c.poolMu.Lock()
+	pool := c.pool
+	c.poolMu.Unlock()
+
+	if pool == nil {
 		return map[string]interface{}{
 			"available": false,
 			"workers":   0,

@@ -8,11 +8,11 @@ import (
 )
 
 type ComponentRegistry struct {
-	components     map[string]InfrastructureComponent
-	factories      map[string]ComponentFactory
-	allNames       []string
-	componentsMu   sync.RWMutex
-	factoriesMu    sync.Mutex
+	components   map[string]InfrastructureComponent
+	factories    map[string]ComponentFactory
+	allNames     []string
+	componentsMu sync.RWMutex
+	factoriesMu  sync.Mutex
 }
 
 var (
@@ -54,7 +54,7 @@ func (r *ComponentRegistry) Initialize(cfg *config.Config, logger *logger.Logger
 	for name, factory := range r.factories {
 		component, err := factory(cfg, logger)
 		if err != nil {
-			logger.Error("Failed to initialize "+name, err)
+			logger.Error("Failed to initialize infrastructure component", err, "component", name)
 			continue
 		}
 		if component != nil {

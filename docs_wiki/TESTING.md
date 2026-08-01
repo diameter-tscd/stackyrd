@@ -88,19 +88,21 @@ func TestListUsersPagination(t *testing.T) {
 ```go
 func TestCORSMiddleware(t *testing.T) {
     e := echo.New()
-    e.Use(corsMiddleware)
+    e.Use(middleware.CORSWithConfig([]string{"https://app.example.com"}))
     e.GET("/test", func(c echo.Context) error {
         return c.String(200, "ok")
     })
 
     req := httptest.NewRequest(http.MethodOptions, "/test", nil)
-    req.Header.Set("Origin", "http://example.com")
+    req.Header.Set("Origin", "https://app.example.com")
     w := httptest.NewRecorder()
     e.ServeHTTP(w, req)
 
-    assert.Equal(t, "http://example.com", w.Header().Get("Access-Control-Allow-Origin"))
+    assert.Equal(t, "https://app.example.com", w.Header().Get("Access-Control-Allow-Origin"))
 }
 ```
+
+Note: the default `CORSAllowAll()` responds `Access-Control-Allow-Origin: *` **without** `Access-Control-Allow-Credentials` — a wildcard origin must never be paired with credentials.
 
 ## Writing Infrastructure Tests
 
@@ -247,9 +249,14 @@ func TestServiceWithDependencies(t *testing.T) {
     deps.Set("postgres", testPostgresManager)
 
     cfg := config.LoadConfig()
-    logger := logger.NewLogger(cfg)
+    l := logger.New(false, nil)
 
-    svc := NewMyService(true, logger, deps)
+    // Resolve through the factory so real typed getters are exercised
+    reg := registry.NewServiceRegistry(l)
+    err := reg.RegisterServiceWithDependencies(cfg, l, deps, "my_service")
+    require.NoError(t, err)
+    svc := reg.GetServices()[0]
+
     c, w := testing.NewTestContext("GET", "/api/v1/my-endpoint", nil)
     svc.RegisterRoutes(echo.New().Group("/api/v1"))
 

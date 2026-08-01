@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
 	"github.com/labstack/echo/v4"
 	"github.com/spf13/viper"
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
 )
 
 type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
@@ -132,15 +132,20 @@ func init() {
 }
 
 var reqIDPool = sync.Pool{
-    New: func() any { return &stringsBuilder{} },
+	New: func() any { return &strings.Builder{} },
 }
 
 func RequestID() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			requestID := c.Request().Header.Get("X-Request-ID")
+			// Only honor well-formed client-supplied IDs; anything else gets a
+			// fresh server-generated ID so headers/logs can't be poisoned.
+			if requestID != "" && !validRequestID(requestID) {
+				requestID = ""
+			}
 			if requestID == "" {
-				b := reqIDPool.Get().(*stringsBuilder)
+				b := reqIDPool.Get().(*strings.Builder)
 				b.Reset()
 				b.WriteString("req-")
 				b.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10))
@@ -152,6 +157,20 @@ func RequestID() echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+// validRequestID restricts client-supplied request IDs to a safe charset and
+// length, preventing header injection and unbounded log entries.
+func validRequestID(s string) bool {
+	if len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func Logger(l *logger.Logger) echo.MiddlewareFunc {
@@ -166,22 +185,12 @@ func Logger(l *logger.Logger) echo.MiddlewareFunc {
 			method := c.Request().Method
 			path := c.Request().URL.Path
 
-			// Use single strings.Builder instead of multiple + operations
-			var sb stringsBuilder
-			sb.WriteString(strconv.Itoa(status))
-			sb.WriteString(" | ")
-			sb.WriteString(method)
-			sb.WriteString(" | ")
-			sb.WriteString(path)
-			sb.WriteString(" | ")
-			sb.WriteString(latency.String())
-
 			if status >= 500 {
-				l.Error(sb.String(), nil)
+				l.Error("request failed", nil, "status", status, "method", method, "path", path, "latency", latency.String())
 			} else if status >= 400 {
-				l.Warn(sb.String())
+				l.Warn("request", "status", status, "method", method, "path", path, "latency", latency.String())
 			} else {
-				l.Info(sb.String())
+				l.Info("request", "status", status, "method", method, "path", path, "latency", latency.String())
 			}
 
 			return err
@@ -234,20 +243,4 @@ func matchPath(path, pattern string) bool {
 		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 	}
 	return path == pattern
-}
-
-type stringsBuilder struct {
-	builder strings.Builder
-}
-
-func (sb *stringsBuilder) WriteString(s string) {
-	sb.builder.WriteString(s)
-}
-
-func (sb *stringsBuilder) Reset() {
-	sb.builder.Reset()
-}
-
-func (sb *stringsBuilder) String() string {
-	return sb.builder.String()
 }

@@ -76,7 +76,7 @@ func executeSteps(ctx *AppContext, steps []AppStep) error {
 func (app *Application) loadConfigStep(ctx *AppContext) error {
 	cfg, err := app.configManager.LoadConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 	app.config = cfg
 	return nil
@@ -91,7 +91,7 @@ func (app *Application) validateConfigStep(ctx *AppContext) error {
 func (app *Application) loadBannerStep(ctx *AppContext) error {
 	bannerText, err := app.configManager.LoadBanner(app.config)
 	if err != nil {
-		return err
+		return fmt.Errorf("load banner: %w", err)
 	}
 	app.bannerText = bannerText
 	return nil

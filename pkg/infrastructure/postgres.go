@@ -3,9 +3,11 @@ package infrastructure
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -78,9 +80,14 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 	}, nil
 }
 
-func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectionManager, error) {
+func NewPostgresConnectionManager(cfg config.PostgresConfig, log ...*logger.Logger) (*PostgresConnectionManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
+	}
+
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
 	}
 
 	manager := &PostgresConnectionManager{
@@ -96,6 +103,9 @@ func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectio
 		if err != nil {
 			// Log error but continue with other connections
 			// Don't fail the entire manager initialization
+			if l != nil {
+				l.Warn("Skipping postgres connection", "name", connCfg.Name, "error", err.Error())
+			}
 			continue
 		}
 
@@ -160,15 +170,15 @@ func (m *PostgresConnectionManager) CloseAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var errors []error
+	var errs []error
 	for name, conn := range m.connections {
 		if err := conn.DB.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close connection '%s': %w", name, err))
+			errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("errors closing connections: %v", errors)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -554,8 +564,7 @@ func (p *PostgresManager) SubmitAsyncJob(job func()) {
 	if p.Pool != nil {
 		p.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 
@@ -575,6 +584,6 @@ func init() {
 		if !cfg.Postgres.Enabled {
 			return nil, nil
 		}
-		return NewPostgresConnectionManager(cfg.Postgres)
+		return NewPostgresConnectionManager(cfg.Postgres, log)
 	})
 }

@@ -95,14 +95,14 @@ func (f *EmbedFile) ReadAt(b []byte, off int64) (int, error) {
 	if r, ok := f.File.(io.ReaderAt); ok {
 		return r.ReadAt(b, off)
 	}
-	return 0, fmt.Errorf("ReadAt not supported")
+	return 0, fmt.Errorf("embedded file does not support ReadAt")
 }
 
 func (f *EmbedFile) Seek(offset int64, whence int) (int64, error) {
 	if s, ok := f.File.(io.Seeker); ok {
 		return s.Seek(offset, whence)
 	}
-	return 0, fmt.Errorf("Seek not supported")
+	return 0, fmt.Errorf("embedded file does not support Seek")
 }
 
 func (f *EmbedFile) Write(b []byte) (int, error) {
@@ -135,7 +135,7 @@ func (f *EmbedFile) Readdir(count int) ([]os.FileInfo, error) {
 		}
 		return infos, nil
 	}
-	return nil, fmt.Errorf("Readdir not supported")
+	return nil, fmt.Errorf("embedded file does not support Readdir")
 }
 
 func (f *EmbedFile) Readdirnames(n int) ([]string, error) {
@@ -150,7 +150,7 @@ func (f *EmbedFile) Readdirnames(n int) ([]string, error) {
 		}
 		return names, nil
 	}
-	return nil, fmt.Errorf("Readdirnames not supported")
+	return nil, fmt.Errorf("embedded file does not support Readdirnames")
 }
 
 func (f *EmbedFile) Sync() error {

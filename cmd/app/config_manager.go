@@ -8,6 +8,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/utils"
+	"strings"
 )
 
 // ConfigManager handles all configuration loading and validation
@@ -92,9 +93,15 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 	if !filepath.IsAbs(bannerPath) {
 		bannerPath = filepath.Join(".", bannerPath)
 	}
+	// Confine relative banner paths to the working directory; reject traversal.
+	bannerPath = filepath.Clean(bannerPath)
+	if strings.Contains(bannerPath, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("banner path escapes working directory")
+	}
 
 	banner, err := os.ReadFile(bannerPath)
 	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warn: banner not found at %s: %v\n", bannerPath, err)
 		return "", nil
 	}
 

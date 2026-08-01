@@ -16,6 +16,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
 )
@@ -98,7 +99,7 @@ func (wm *WebhookManager) Trigger(event WebhookEvent) {
 		wm.semaphore <- struct{}{}
 		go func(fn func(WebhookEvent)) {
 			defer func() { <-wm.semaphore }()
-			fn(event)
+			utils.GoSafe(nil, func() { fn(event) })
 		}(handler)
 	}
 }

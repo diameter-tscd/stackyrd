@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	_ "stackyrd/internal/services/modules"
 
@@ -33,6 +35,12 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 	e.HidePort = true
 
 	e.Use(echomiddleware.Recover())
+	// Cap request bodies (memory DoS) and slowloris-style idle connections.
+	e.Use(echomiddleware.BodyLimit("2M"))
+	e.Server.ReadHeaderTimeout = 5 * time.Second
+	e.Server.ReadTimeout = 15 * time.Second
+	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.IdleTimeout = 60 * time.Second
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
 		l.Warn("Endpoint not found", "path", c.Request().URL.Path, "method", c.Request().Method)
@@ -65,6 +73,9 @@ func (s *Server) Start() error {
 		s.dependencies.Set(name, component)
 		s.logger.Info("Registered infrastructure component", "name", name, "type", fmt.Sprintf("%T", component))
 	}
+
+	s.dependencies.Seal()
+	s.logger.Info("Dependencies sealed — no further infrastructure registration allowed")
 
 	s.logger.Info("Initializing Middleware...")
 
@@ -178,23 +189,19 @@ func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
 		if component == nil {
 			continue
 		}
-		logger.Info("Shutting down " + name + "...")
+		logger.Info("Shutting down component", "component", name)
 		if c, ok := component.(interface{ Close() error }); ok {
 			if err := c.Close(); err != nil {
 				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
-				logger.Error("Error shutting down "+name, err)
 			} else {
-				logger.Info(name + " shut down successfully")
+				logger.Info("Component shut down", "component", name)
 			}
 		}
 	}
 
 	if len(shutdownErrors) > 0 {
 		logger.Warn("Graceful shutdown completed with errors", "error_count", len(shutdownErrors))
-		for _, err := range shutdownErrors {
-			logger.Error("Shutdown error", err)
-		}
-		return fmt.Errorf("shutdown completed with %d errors", len(shutdownErrors))
+		return errors.Join(shutdownErrors...)
 	}
 
 	logger.Info("Graceful shutdown completed successfully")

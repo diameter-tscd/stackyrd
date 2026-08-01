@@ -220,19 +220,17 @@ func (s *UserService) GetUser(c echo.Context) error {
 
 ### Auto-Registration with Dependencies
 
-The `CachingManager` is available via the `Dependencies` bag as `"caching"`:
+For a Redis-backed cache, access the shared connection via the typed `deps.Redis()` getter:
 
 ```go
 func init() {
-    registry.RegisterService("users", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var manager *cache.CachingManager
-        if m, ok := deps.Get("caching"); ok {
-            manager, _ = m.(*cache.CachingManager)
-        }
-        return NewUserService(cfg.Services.IsEnabled("users"), log, manager)
+    registry.RegisterServiceWithDeps("users", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        return NewUserService(cfg.Services.IsEnabled("users"), log, deps.Redis())
     })
 }
 ```
+
+For an in-memory cache, instantiate `cache.New[string]()` directly in the service constructor — no DI needed.
 
 ## Best Practices
 

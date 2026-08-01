@@ -2,9 +2,12 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,12 +45,28 @@ func (m *MongoConnectionManager) Name() string {
 	return "MongoDB Connection Manager"
 }
 
+// redactURI strips the password out of a mongodb connection URI before it is
+// written to logs.
+func redactURI(uri string) string {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return "<unparseable uri>"
+	}
+	if parsed.User != nil {
+		if _, hasPwd := parsed.User.Password(); hasPwd {
+			parsed.User = url.UserPassword(parsed.User.Username(), "***")
+		}
+	}
+	return parsed.String()
+}
+
+// NewMongoDB connects to a MongoDB instance
 func NewMongoDB(cfg config.MongoConnectionConfig, l *logger.Logger) (*MongoManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
 
-	l.Info("Connecting to MongoDB", "uri", cfg.URI, "database", cfg.Database)
+	l.Info("Connecting to MongoDB", "uri", redactURI(cfg.URI), "database", cfg.Database)
 
 	// Create context with timeout for connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -69,7 +88,6 @@ func NewMongoDB(cfg config.MongoConnectionConfig, l *logger.Logger) (*MongoManag
 	// Connect to MongoDB with timeout
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		l.Error("Failed to connect to MongoDB", err, "timeout", "10s")
 		return nil, fmt.Errorf("failed to connect to MongoDB (timeout: 10s): %w", err)
 	}
 
@@ -80,7 +98,6 @@ func NewMongoDB(cfg config.MongoConnectionConfig, l *logger.Logger) (*MongoManag
 	if err := client.Ping(pingCtx, readpref.Primary()); err != nil {
 		// Close connection on ping failure
 		_ = client.Disconnect(context.Background())
-		l.Error("Failed to ping MongoDB", err, "timeout", "5s")
 		return nil, fmt.Errorf("failed to ping MongoDB (timeout: 5s): %w", err)
 	}
 
@@ -186,15 +203,15 @@ func (m *MongoConnectionManager) CloseAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var errors []error
+	var errs []error
 	for name, conn := range m.connections {
 		if err := conn.Client.Disconnect(context.Background()); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close connection '%s': %w", name, err))
+			errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("errors closing connections: %v", errors)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -350,7 +367,9 @@ func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]interface{}, e
 	serverStatus := m.Client.Database("admin").RunCommand(ctx, map[string]interface{}{"serverStatus": 1})
 	var serverInfo map[string]interface{}
 	if serverStatus.Err() == nil {
-		_ = serverStatus.Decode(&serverInfo)
+		if err := serverStatus.Decode(&serverInfo); err != nil {
+			return nil, fmt.Errorf("failed to decode server status: %w", err)
+		}
 	}
 
 	// Get list of collections
@@ -572,8 +591,7 @@ func (m *MongoManager) SubmitAsyncJob(job func()) {
 	if m.Pool != nil {
 		m.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

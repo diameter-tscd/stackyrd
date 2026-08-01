@@ -49,8 +49,10 @@ type InfraEntry struct {
 }
 
 type ServiceEntry struct {
-	Name    string
-	Running bool
+	Name     string
+	Running  bool
+	Failed   bool // enabled by config but could not start (missing infra dep)
+	Disabled bool // disabled by config
 }
 
 type MiddlewareEntry struct {
@@ -83,7 +85,6 @@ type TerminalModel struct {
 
 	exitDialog   *template.DialogModel
 	filterDialog *template.DialogModel
-	infoDialog   *template.DialogModel
 
 	cpuPercent float64
 	memPercent float64
@@ -115,18 +116,6 @@ func terminalTickCmd() tea.Cmd {
 }
 
 // infoDialogMsg requests the info dialog to be shown with styled content.
-type infoDialogMsg struct {
-	title   string
-	content string
-}
-
-// showInfoDialog returns a cmd that opens the info overlay on the next Update.
-func showInfoDialog(title, content string) tea.Cmd {
-	return func() tea.Msg {
-		return infoDialogMsg{title: title, content: content}
-	}
-}
-
 func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -142,7 +131,6 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 
 	exitDialog := template.NewExitConfirmationDialog()
 	filterDialog := template.NewFilterDialog("")
-	infoDialog := template.NewDialog(template.DialogConfig{Type: template.DialogTypeConfirmation, Width: 42})
 
 	m := &TerminalModel{
 		spinner:         s,
@@ -158,7 +146,6 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 		maxLogs:         1000,
 		exitDialog:      exitDialog,
 		filterDialog:    filterDialog,
-		infoDialog:      infoDialog,
 		mode:            modeNormal,
 		focus:           focusLogs,
 		pid:             os.Getpid(),
@@ -231,14 +218,6 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterText = ""
 					m.updateFilteredLogs()
 				}
-			}
-			return m, dialogCmd
-		}
-
-		if m.infoDialog.IsActive() {
-			dialogCmd := m.infoDialog.Update(msg)
-			if m.infoDialog.GetResult() != nil {
-				m.infoDialog.Hide()
 			}
 			return m, dialogCmd
 		}
@@ -375,16 +354,6 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateFilteredLogs()
 		m.logsMutex.Unlock()
 		return m, nil
-
-	case infoDialogMsg:
-		m.infoDialog = template.NewDialog(template.DialogConfig{
-			Type:    template.DialogTypeConfirmation,
-			Title:   msg.title,
-			Content: msg.content,
-			Width:   m.width,
-		})
-		m.infoDialog.Show()
-		return m, nil
 	}
 
 	return m, cmd
@@ -401,9 +370,6 @@ func (m *TerminalModel) View() string {
 	}
 	if m.filterDialog.IsActive() {
 		return m.filterDialog.View(m.width, m.height)
-	}
-	if m.infoDialog.IsActive() {
-		return m.infoDialog.View(m.width, m.height)
 	}
 
 	// ── Right column: LogView on top, CommandBar on bottom ──
@@ -707,10 +673,19 @@ func (m *TerminalModel) renderComponentsSection() string {
 			color := TC("success")
 			icon := "◆"
 			status := "running"
-			if !svc.Running {
+			switch {
+			case svc.Failed:
+				color = TC("error")
+				icon = "✗"
+				status = "failed"
+			case svc.Disabled:
 				color = TC("dim")
 				icon = "◇"
 				status = "disabled"
+			case !svc.Running:
+				color = TC("dim")
+				icon = "◇"
+				status = "stopped"
 			}
 			cs := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 			name := svc.Name
@@ -983,7 +958,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, services, infra, list, themes, theme <name> (colon optional)")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name> (colon optional)")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -992,14 +967,25 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 			m.cpuPercent, m.memPercent, m.memUsed, m.memTotal, m.goroutines, m.hostname))
 	case "gc":
 		return m.runGC()
+	case "version":
+		return m.logCmd("info", fmt.Sprintf("%s v%s | env: %s | http://localhost:%s | up %s",
+			m.config.AppName, m.config.AppVersion, m.config.Env, m.config.Port,
+			time.Since(m.startTime).Round(time.Second)))
+	case "uptime":
+		return m.logCmd("info", "Uptime: "+time.Since(m.startTime).Round(time.Second).String())
 	case "services":
 		running := 0
+		failed := 0
 		for _, s := range m.serviceEntries {
 			if s.Running {
 				running++
 			}
+			if s.Failed {
+				failed++
+			}
 		}
-		return m.logCmd("info", fmt.Sprintf("Services: %d total, %d running", len(m.serviceEntries), running))
+		return m.logCmd("info", fmt.Sprintf("Services: %d total, %d running, %d failed",
+			len(m.serviceEntries), running, failed))
 	case "infra":
 		connected := 0
 		for _, i := range m.infraEntries {
@@ -1008,83 +994,179 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 			}
 		}
 		return m.logCmd("info", fmt.Sprintf("Infra: %d total, %d connected", len(m.infraEntries), connected))
+	case "mw", "middleware", "middlewares":
+		return m.listMiddleware()
+	case "deps":
+		return m.listDeps()
+	case "endpoints":
+		return m.listEndpoints()
 	case "list", "ls":
 		return m.listAll()
 	case "themes":
 		return m.listThemes()
+	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
+		return m.infraStatus(cmd)
 	default:
 		if name, ok := strings.CutPrefix(cmd, "theme"); ok {
 			return m.handleThemeCommand(strings.TrimSpace(name))
+		}
+		if name, ok := strings.CutPrefix(cmd, "infra"); ok && strings.TrimSpace(name) != "" {
+			return m.infraStatus(strings.TrimSpace(name))
 		}
 		return m.logCmd("warn", "Unknown command: "+cmd+" (try help)")
 	}
 }
 
-// listThemes shows the theme picker as a styled overlay.
+// listMiddleware prints middleware names and their enabled state.
+func (m *TerminalModel) listMiddleware() tea.Cmd {
+	reg := middleware.GetGlobalMiddlewareRegistry()
+	names := reg.GetNames()
+	sort.Strings(names)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Middleware (%d):", len(names)))
+	for _, n := range names {
+		state := "enabled"
+		if !reg.IsEnabled(n) {
+			state = "disabled"
+		}
+		sb.WriteString("\n  " + n + " (" + state + ")")
+	}
+	return m.logCmd("info", sb.String())
+}
+
+// listDeps prints a one-line dependency summary across all three layers.
+func (m *TerminalModel) listDeps() tea.Cmd {
+	infraConnected := 0
+	for _, i := range m.infraEntries {
+		if i.Connected {
+			infraConnected++
+		}
+	}
+	svcRunning := 0
+	svcFailed := 0
+	for _, s := range m.serviceEntries {
+		if s.Running {
+			svcRunning++
+		}
+		if s.Failed {
+			svcFailed++
+		}
+	}
+	mwReg := middleware.GetGlobalMiddlewareRegistry()
+	mwNames := mwReg.GetNames()
+	mwEnabled := 0
+	for _, n := range mwNames {
+		if mwReg.IsEnabled(n) {
+			mwEnabled++
+		}
+	}
+	return m.logCmd("info", fmt.Sprintf(
+		"Infra %d/%d connected | Services %d/%d running (%d failed) | Middleware %d/%d enabled",
+		infraConnected, len(m.infraEntries), svcRunning, len(m.serviceEntries), svcFailed,
+		mwEnabled, len(mwNames)))
+}
+
+// listEndpoints prints every service endpoint as plain text.
+func (m *TerminalModel) listEndpoints() tea.Cmd {
+	factories := registry.GetServiceFactories()
+	names := make([]string, 0, len(factories))
+	for name := range factories {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var sb strings.Builder
+	sb.WriteString("Endpoints:")
+	any := false
+	for _, name := range names {
+		svc, ok := registry.GetService(name).(endpointProvider)
+		if !ok {
+			continue
+		}
+		for _, ep := range svc.Endpoints() {
+			any = true
+			sb.WriteString("\n  " + svc.Name() + " " + ep)
+		}
+	}
+	if !any {
+		sb.WriteString("\n  none")
+	}
+	return m.logCmd("info", sb.String())
+}
+
+// infraStatus prints the full status map of one infrastructure component.
+func (m *TerminalModel) infraStatus(name string) tea.Cmd {
+	comp, ok := infrastructure.GetGlobalRegistry().Get(name)
+	if !ok {
+		return m.logCmd("warn", "No infrastructure component '"+name+"' (try infra)")
+	}
+
+	status := comp.GetStatus()
+	var sb strings.Builder
+	sb.WriteString("Component: " + name)
+	for k, v := range status {
+		sb.WriteString(fmt.Sprintf("\n  %s=%v", k, v))
+	}
+	return m.logCmd("info", sb.String())
+}
+
+// listThemes prints available themes as plain log text.
 func (m *TerminalModel) listThemes() tea.Cmd {
 	available := AvailableThemeNames()
 	sort.Strings(available)
 	current := GetThemeName()
 
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(TC("primary"))).
-		Render("Themes  (" + current + " active)")
-
-	var b strings.Builder
-	bulletActive := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))).Render("★")
-	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render("○")
-	activeName := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(TC("secondary")))
+	var sb strings.Builder
+	sb.WriteString("Available themes (" + current + " active):")
 	for _, name := range available {
 		if name == current {
-			b.WriteString("  " + bulletActive + " " + activeName.Render(name) + "  (active)\n")
+			sb.WriteString("\n  " + name + " (active)")
 		} else {
-			b.WriteString("  " + bullet + " " + name + "\n")
+			sb.WriteString("\n  " + name)
 		}
 	}
-	return showInfoDialog(title, strings.TrimSuffix(b.String(), "\n"))
+	sb.WriteString("\nUsage: theme <name>")
+	return m.logCmd("info", sb.String())
 }
 
-// listAll shows services, infrastructure components, and service endpoints as
-// a styled overlay, grouped into sections.
+// listAll prints services, infrastructure components, and endpoints as plain
+// log text.
 func (m *TerminalModel) listAll() tea.Cmd {
-	section := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(TC("primary"))).
-		Render
-	on := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))).Render("●")
-	off := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render("○")
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
+	var sb strings.Builder
 
-	var b strings.Builder
-
-	b.WriteString(section("Services"))
+	sb.WriteString("Services:")
 	if len(m.serviceEntries) == 0 {
-		b.WriteString("\n  " + dim.Render("none"))
+		sb.WriteString("\n  none")
 	} else {
 		for _, s := range m.serviceEntries {
-			icon := off
-			if s.Running {
-				icon = on
+			status := "stopped"
+			switch {
+			case s.Running:
+				status = "running"
+			case s.Failed:
+				status = "failed"
+			case s.Disabled:
+				status = "disabled"
 			}
-			b.WriteString("\n  " + icon + " " + s.Name)
+			sb.WriteString("\n  " + s.Name + " (" + status + ")")
 		}
 	}
 
-	b.WriteString("\n\n" + section("Components"))
+	sb.WriteString("\n\nComponents:")
 	if len(m.infraEntries) == 0 {
-		b.WriteString("\n  " + dim.Render("none"))
+		sb.WriteString("\n  none")
 	} else {
 		for _, e := range m.infraEntries {
-			icon := off
+			status := "disconnected"
 			if e.Connected {
-				icon = on
+				status = "connected"
 			}
-			b.WriteString("\n  " + icon + " " + e.Name)
+			sb.WriteString("\n  " + e.Name + " (" + status + ")")
 		}
 	}
 
-	b.WriteString("\n\n" + section("Endpoints"))
+	sb.WriteString("\n\nEndpoints:")
 	factories := registry.GetServiceFactories()
 	names := make([]string, 0, len(factories))
 	for name := range factories {
@@ -1099,14 +1181,14 @@ func (m *TerminalModel) listAll() tea.Cmd {
 		}
 		for _, ep := range svc.Endpoints() {
 			any = true
-			b.WriteString("\n  " + dim.Render(svc.Name()) + " " + ep)
+			sb.WriteString("\n  " + svc.Name() + " " + ep)
 		}
 	}
 	if !any {
-		b.WriteString("\n  " + dim.Render("none"))
+		sb.WriteString("\n  none")
 	}
 
-	return showInfoDialog(section("List"), strings.TrimSuffix(b.String(), "\n"))
+	return m.logCmd("info", sb.String())
 }
 
 // endpointProvider is satisfied by services that expose their routes.
@@ -1382,8 +1464,26 @@ func (m *TerminalModel) refreshStats() {
 			infraEntries = append(infraEntries, InfraEntry{Name: name, Enabled: false})
 		}
 	}
+	// Sort: connected first, then enabled-but-disconnected, then disabled,
+	// each group alphabetically.
 	sort.Slice(infraEntries, func(i, j int) bool {
-		return infraEntries[i].Name < infraEntries[j].Name
+		a, b := infraEntries[i], infraEntries[j]
+		rankA := 0
+		if a.Connected {
+			rankA = 2
+		} else if a.Enabled {
+			rankA = 1
+		}
+		rankB := 0
+		if b.Connected {
+			rankB = 2
+		} else if b.Enabled {
+			rankB = 1
+		}
+		if rankA != rankB {
+			return rankA > rankB
+		}
+		return a.Name < b.Name
 	})
 	m.infraEntries = infraEntries
 
@@ -1406,9 +1506,25 @@ func (m *TerminalModel) refreshStats() {
 	sort.Strings(svcNames)
 	serviceEntries := make([]ServiceEntry, 0, len(svcNames))
 	for _, name := range svcNames {
-		running := registry.GetService(name) != nil
-		serviceEntries = append(serviceEntries, ServiceEntry{Name: name, Running: running})
+		switch registry.GetServiceState(name) {
+		case "running":
+			serviceEntries = append(serviceEntries, ServiceEntry{Name: name, Running: true})
+		case "failed":
+			serviceEntries = append(serviceEntries, ServiceEntry{Name: name, Failed: true})
+		case "disabled":
+			serviceEntries = append(serviceEntries, ServiceEntry{Name: name, Disabled: true})
+		default:
+			serviceEntries = append(serviceEntries, ServiceEntry{Name: name})
+		}
 	}
+	// Sort: running services first, then stopped, each group alphabetically.
+	sort.Slice(serviceEntries, func(i, j int) bool {
+		a, b := serviceEntries[i], serviceEntries[j]
+		if a.Running != b.Running {
+			return a.Running
+		}
+		return a.Name < b.Name
+	})
 	m.serviceEntries = serviceEntries
 }
 

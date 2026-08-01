@@ -59,12 +59,15 @@ func AutoDiscoverServices(
 			if service := factory(config, logger); service != nil {
 				services = append(services, service)
 				logger.Info("Auto-registered service", "service", name)
-				storeDiscovered(service)
+				storeDiscovered(name, service)
+				setServiceState(name, "running")
 			} else {
 				logger.Warn("Service factory returned nil", "service", name)
+				setServiceState(name, "failed")
 			}
 		} else {
 			logger.Debug("Service disabled via config", "service", name)
+			setServiceState(name, "disabled")
 		}
 		return true
 	})
@@ -80,12 +83,15 @@ func AutoDiscoverServices(
 			if service := factory(config, logger, deps); service != nil {
 				services = append(services, service)
 				logger.Info("Auto-registered service", "service", name)
-				storeDiscovered(service)
+				storeDiscovered(name, service)
+				setServiceState(name, "running")
 			} else {
 				logger.Warn("Service factory returned nil", "service", name)
+				setServiceState(name, "failed")
 			}
 		} else {
 			logger.Debug("Service disabled via config", "service", name)
+			setServiceState(name, "disabled")
 		}
 		return true
 	})
@@ -93,8 +99,12 @@ func AutoDiscoverServices(
 	return services
 }
 
-func storeDiscovered(service interfaces.Service) {
+// storeDiscovered indexes a service instance under both its registration key
+// (e.g. "broadcast_service") and its display name ("Broadcast Service") so
+// lookups by either identifier succeed.
+func storeDiscovered(name string, service interfaces.Service) {
 	if get := service.Get(); get != nil {
+		serviceDiscovered.Store(name, get)
 		serviceDiscovered.Store(service.Name(), get)
 	}
 }
@@ -134,6 +144,36 @@ func GetService(name string) interface{} {
 	return val
 }
 
+// Service states recorded during discovery. Values: "running" (instance
+// created), "failed" (enabled by config but factory returned nil — typically a
+// missing infrastructure dependency), "disabled" (disabled by config).
+var serviceStates = &sync.Map{}
+
+func setServiceState(name, state string) {
+	serviceStates.Store(name, state)
+}
+
+// GetServiceState returns the recorded state of a service:
+// "running", "failed", "disabled", or "" if the service is unknown.
+func GetServiceState(name string) string {
+	state, _ := serviceStates.Load(name)
+	s, _ := state.(string)
+	return s
+}
+
+// GetServiceStates returns a copy of all recorded service states.
+func GetServiceStates() map[string]string {
+	result := make(map[string]string)
+	serviceStates.Range(func(key, value interface{}) bool {
+		if k, ok := key.(string); ok {
+			s, _ := value.(string)
+			result[k] = s
+		}
+		return true
+	})
+	return result
+}
+
 func (r *ServiceRegistry) Register(s interfaces.Service) {
 	if s == nil {
 		return
@@ -160,9 +200,12 @@ func (r *ServiceRegistry) RegisterServiceWithDependencies(
 		}
 		service := factory(config, logger)
 		if service == nil {
+			setServiceState(serviceName, "failed")
 			return fmt.Errorf("failed to create service: %s", serviceName)
 		}
 		r.Register(service)
+		storeDiscovered(serviceName, service)
+		setServiceState(serviceName, "running")
 		r.logger.Info("Service registered", "service", serviceName)
 		return nil
 	}
@@ -177,9 +220,12 @@ func (r *ServiceRegistry) RegisterServiceWithDependencies(
 		}
 		service := factory(config, logger, deps)
 		if service == nil {
+			setServiceState(serviceName, "failed")
 			return fmt.Errorf("failed to create service: %s", serviceName)
 		}
 		r.Register(service)
+		storeDiscovered(serviceName, service)
+		setServiceState(serviceName, "running")
 		r.logger.Info("Service registered with dependencies", "service", serviceName)
 		return nil
 	}

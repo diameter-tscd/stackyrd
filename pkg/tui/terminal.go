@@ -81,6 +81,7 @@ type TerminalModel struct {
 
 	exitDialog   *template.DialogModel
 	filterDialog *template.DialogModel
+	infoDialog   *template.DialogModel
 
 	cpuPercent float64
 	memPercent float64
@@ -111,6 +112,19 @@ func terminalTickCmd() tea.Cmd {
 	})
 }
 
+// infoDialogMsg requests the info dialog to be shown with styled content.
+type infoDialogMsg struct {
+	title   string
+	content string
+}
+
+// showInfoDialog returns a cmd that opens the info overlay on the next Update.
+func showInfoDialog(title, content string) tea.Cmd {
+	return func() tea.Msg {
+		return infoDialogMsg{title: title, content: content}
+	}
+}
+
 func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -126,6 +140,7 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 
 	exitDialog := template.NewExitConfirmationDialog()
 	filterDialog := template.NewFilterDialog("")
+	infoDialog := template.NewDialog(template.DialogConfig{Type: template.DialogTypeConfirmation, Width: 42})
 
 	m := &TerminalModel{
 		spinner:         s,
@@ -139,8 +154,10 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 		width:           80,
 		height:          24,
 		maxLogs:         1000,
+		program:         nil,
 		exitDialog:      exitDialog,
 		filterDialog:    filterDialog,
+		infoDialog:      infoDialog,
 		mode:            modeNormal,
 		focus:           focusLogs,
 		pid:             os.Getpid(),
@@ -213,6 +230,14 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterText = ""
 					m.updateFilteredLogs()
 				}
+			}
+			return m, dialogCmd
+		}
+
+		if m.infoDialog.IsActive() {
+			dialogCmd := m.infoDialog.Update(msg)
+			if m.infoDialog.GetResult() != nil {
+				m.infoDialog.Hide()
 			}
 			return m, dialogCmd
 		}
@@ -349,6 +374,16 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateFilteredLogs()
 		m.logsMutex.Unlock()
 		return m, nil
+
+	case infoDialogMsg:
+		m.infoDialog = template.NewDialog(template.DialogConfig{
+			Type:    template.DialogTypeConfirmation,
+			Title:   msg.title,
+			Content: msg.content,
+			Width:   m.width,
+		})
+		m.infoDialog.Show()
+		return m, nil
 	}
 
 	return m, cmd
@@ -365,6 +400,9 @@ func (m *TerminalModel) View() string {
 	}
 	if m.filterDialog.IsActive() {
 		return m.filterDialog.View(m.width, m.height)
+	}
+	if m.infoDialog.IsActive() {
+		return m.infoDialog.View(m.width, m.height)
 	}
 
 	// ── Right column: LogView on top, CommandBar on bottom ──
@@ -978,50 +1016,71 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 }
 
-// listThemes logs all available theme names, one per line.
+// listThemes shows the theme picker as a styled overlay.
 func (m *TerminalModel) listThemes() tea.Cmd {
 	available := AvailableThemeNames()
 	sort.Strings(available)
+	current := GetThemeName()
+
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(TC("primary"))).
+		Render("Themes  (" + current + " active)")
+
 	var b strings.Builder
-	b.WriteString("Themes (" + GetThemeName() + " active):")
+	bulletActive := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))).Render("★")
+	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render("○")
+	activeName := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(TC("secondary")))
 	for _, name := range available {
-		b.WriteString("\n  " + name)
+		if name == current {
+			b.WriteString("  " + bulletActive + " " + activeName.Render(name) + "  (active)\n")
+		} else {
+			b.WriteString("  " + bullet + " " + name + "\n")
+		}
 	}
-	return m.logCmd("info", b.String())
+	return showInfoDialog(title, strings.TrimSuffix(b.String(), "\n"))
 }
 
-// listAll logs services, infrastructure components, and service endpoints,
-// each on its own line.
+// listAll shows services, infrastructure components, and service endpoints as
+// a styled overlay, grouped into sections.
 func (m *TerminalModel) listAll() tea.Cmd {
+	section := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(TC("primary"))).
+		Render
+	on := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))).Render("●")
+	off := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render("○")
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
+
 	var b strings.Builder
 
-	b.WriteString("Services:")
+	b.WriteString(section("Services"))
 	if len(m.serviceEntries) == 0 {
-		b.WriteString(" none")
+		b.WriteString("\n  " + dim.Render("none"))
 	} else {
 		for _, s := range m.serviceEntries {
-			mark := "off"
+			icon := off
 			if s.Running {
-				mark = "on"
+				icon = on
 			}
-			b.WriteString("\n  " + s.Name + ":" + mark)
+			b.WriteString("\n  " + icon + " " + s.Name)
 		}
 	}
 
-	b.WriteString("\nComponents:")
+	b.WriteString("\n\n" + section("Components"))
 	if len(m.infraEntries) == 0 {
-		b.WriteString(" none")
+		b.WriteString("\n  " + dim.Render("none"))
 	} else {
 		for _, e := range m.infraEntries {
-			mark := "off"
+			icon := off
 			if e.Connected {
-				mark = "on"
+				icon = on
 			}
-			b.WriteString("\n  " + e.Name + ":" + mark)
+			b.WriteString("\n  " + icon + " " + e.Name)
 		}
 	}
 
-	b.WriteString("\nEndpoints:")
+	b.WriteString("\n\n" + section("Endpoints"))
 	factories := registry.GetServiceFactories()
 	names := make([]string, 0, len(factories))
 	for name := range factories {
@@ -1036,14 +1095,14 @@ func (m *TerminalModel) listAll() tea.Cmd {
 		}
 		for _, ep := range svc.Endpoints() {
 			any = true
-			b.WriteString("\n  " + svc.Name() + " " + ep)
+			b.WriteString("\n  " + dim.Render(svc.Name()) + " " + ep)
 		}
 	}
 	if !any {
-		b.WriteString(" none")
+		b.WriteString("\n  " + dim.Render("none"))
 	}
 
-	return m.logCmd("info", b.String())
+	return showInfoDialog(section("List"), strings.TrimSuffix(b.String(), "\n"))
 }
 
 // endpointProvider is satisfied by services that expose their routes.

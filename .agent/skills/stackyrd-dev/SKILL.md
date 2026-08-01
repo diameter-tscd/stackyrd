@@ -94,8 +94,12 @@ The command bar (`:` or `ctrl+p`) accepts commands with or without a leading col
 | `gc` | Force garbage collection, report heap before/after |
 | `services` / `infra` | Service / infrastructure status counts |
 | `list` / `ls` | List services, components, and endpoints |
-| `themes` / `theme list` | List available themes (active marked) |
+| `themes` / `theme list` | List available themes in a styled overlay (active marked) |
 | `theme <name>` | Switch theme live + persist to config.yaml |
+
+`themes` and `list`/`ls` render their output as a full-screen styled overlay
+(theme-colored headers, status bullets, grouped sections) rather than a log
+line; press `y`/`n`/`esc` to dismiss it.
 
 Log messages word-wrap to the panel width; messages containing a long
 unbreakable token (serialized errors, URLs) are flattened to one line.

@@ -308,9 +308,12 @@ colon is optional — `theme ocean_blue` and `:theme ocean_blue` are equivalent:
 | `:gc` | Force a garbage collection cycle and report heap before/after |
 | `:services` | Show service status |
 | `:infra` | Show infrastructure status |
-| `:list` / `:ls` | List all services, infrastructure components, and service endpoints |
+| `:list` / `:ls` | List all services, infrastructure components, and service endpoints in a styled overlay |
 | `:themes` | List available themes (active one marked) |
 | `:theme <name>` | Switch theme live and persist it to `config.yaml` |
+
+`:themes` and `:list`/`:ls` render their output in a full-screen styled overlay
+instead of the log view; press `y`/`n`/`esc` to dismiss it.
 
 `:theme <name>` applies the change immediately (no restart) and rewrites the
 `app.theme` line in `config.yaml` so the theme survives the next start.

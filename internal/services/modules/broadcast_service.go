@@ -24,6 +24,7 @@ type SimpleStreamGenerator struct {
 	streamID    string
 	broadcaster *utils.EventBroadcaster
 	running     bool
+	mu          sync.Mutex
 	stopChan    chan struct{}
 }
 
@@ -36,26 +37,31 @@ func NewSimpleStreamGenerator(streamID string, broadcaster *utils.EventBroadcast
 }
 
 func (sg *SimpleStreamGenerator) Start() {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
 	if sg.running {
 		return
 	}
+	// Fresh channel every start so a previously stopped generator can restart.
+	sg.stopChan = make(chan struct{})
 	sg.running = true
-	go sg.generateEvents()
+	go utils.GoSafe(nil, sg.generateEvents)
 }
 
 func (sg *SimpleStreamGenerator) Stop() {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
 	if !sg.running {
 		return
 	}
 	sg.running = false
-	select {
-	case sg.stopChan <- struct{}{}:
-	default:
-		close(sg.stopChan)
-	}
+	// Safe under the lock: only one caller can reach the close.
+	close(sg.stopChan)
 }
 
 func (sg *SimpleStreamGenerator) IsRunning() bool {
+	sg.mu.Lock()
+	defer sg.mu.Unlock()
 	return sg.running
 }
 
@@ -83,9 +89,11 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 			event := events[i%len(events)]
 			i++
 
-			data := event.Data
-			if data == nil {
-				data = make(map[string]interface{})
+			// Shallow-copy the template map: each broadcast must carry its own
+			// map so previously delivered events never mutate under a client.
+			data := make(map[string]interface{}, len(event.Data)+2)
+			for k, v := range event.Data {
+				data[k] = v
 			}
 			data["timestamp"] = time.Now().Unix()
 			data["service"] = "service_h"
@@ -100,6 +108,7 @@ type BroadcastService struct {
 	enabled     bool
 	broadcaster *utils.EventBroadcaster
 	streams     map[string]*SimpleStreamGenerator
+	streamsMu   sync.Mutex
 	logger      *logger.Logger
 }
 
@@ -165,7 +174,10 @@ func (s *BroadcastService) streamEvents(c echo.Context) error {
 
 	for {
 		select {
-		case event := <-client.Channel:
+		case event, ok := <-client.Channel:
+			if !ok {
+				return nil
+			}
 			if err := s.sendSSEEvent(c, event); err != nil {
 				return nil
 			}
@@ -227,28 +239,33 @@ func (s *BroadcastService) getActiveStreams(c echo.Context) error {
 func (s *BroadcastService) startStream(c echo.Context) error {
 	streamID := c.Param("stream_id")
 
-	if generator, exists := s.streams[streamID]; exists {
-		generator.Start()
+	s.streamsMu.Lock()
+	generator, exists := s.streams[streamID]
+	if !exists {
+		generator = NewSimpleStreamGenerator(streamID, s.broadcaster)
+		s.streams[streamID] = generator
+	}
+	generator.Start()
+	s.streamsMu.Unlock()
+
+	if exists {
 		return response.Success(c, nil, fmt.Sprintf("Stream '%s' restarted", streamID))
 	}
-
-	generator := NewSimpleStreamGenerator(streamID, s.broadcaster)
-	s.streams[streamID] = generator
-	generator.Start()
-
 	return response.Created(c, nil, fmt.Sprintf("Stream '%s' created and started", streamID))
 }
 
 func (s *BroadcastService) stopStream(c echo.Context) error {
 	streamID := c.Param("stream_id")
 
+	s.streamsMu.Lock()
 	generator, exists := s.streams[streamID]
 	if !exists {
+		s.streamsMu.Unlock()
 		return response.NotFound(c, fmt.Sprintf("Stream '%s' not found", streamID))
 	}
-
 	generator.Stop()
 	delete(s.streams, streamID)
+	s.streamsMu.Unlock()
 
 	return response.Success(c, nil, fmt.Sprintf("Stream '%s' stopped and removed", streamID))
 }
@@ -260,7 +277,10 @@ var sseBufPool = sync.Pool{
 }
 
 func (s *BroadcastService) sendSSEEvent(c echo.Context, event utils.EventData) error {
-	buf := sseBufPool.Get().(*bytes.Buffer)
+	buf, ok := sseBufPool.Get().(*bytes.Buffer)
+	if !ok || buf == nil {
+		buf = &bytes.Buffer{}
+	}
 	buf.Reset()
 	defer sseBufPool.Put(buf)
 
@@ -288,9 +308,8 @@ func (s *BroadcastService) startDemoStreams() {
 		generator.Start()
 	}
 }
-
 func init() {
-	registry.RegisterService("broadcast_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("broadcast_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewBroadcastService(config.Services.IsEnabled("broadcast_service"), logger)
 	})
 }

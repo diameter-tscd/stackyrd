@@ -1,29 +1,29 @@
 package utils
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-var (
-	seededRand   = rand.New(rand.NewSource(time.Now().UnixNano()))
-	seededRandMu sync.Mutex
-)
-
-// RandomString generates a random string of the given length.
+// RandomString generates a cryptographically random string of the given length.
 func RandomString(length int) string {
-	b := make([]byte, length)
-	seededRandMu.Lock()
-	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
+	if length < 0 {
+		length = 0
 	}
-	seededRandMu.Unlock()
+	b := make([]byte, length)
+	limit := big.NewInt(int64(len(charset)))
+	for i := range b {
+		n, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			panic("crypto/rand failure: " + err.Error())
+		}
+		b[i] = charset[n.Int64()]
+	}
 	return string(b)
 }
 
@@ -49,9 +49,13 @@ func ToCamelCase(s string) string {
 	})
 
 	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
+		if len(part) == 0 {
+			continue
 		}
+		// Work on runes so a multi-byte leading character isn't byte-split.
+		runes := []rune(strings.ToLower(part))
+		runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+		parts[i] = string(runes)
 	}
 	return strings.Join(parts, "")
 }

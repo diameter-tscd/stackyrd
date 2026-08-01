@@ -29,7 +29,7 @@ var defaultCORSConfig = CORSConfig{
 	AllowOrigins:     []string{"*"},
 	AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 	AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
-	AllowCredentials: true,
+	AllowCredentials: false,
 	MaxAge:           86400,
 }
 
@@ -43,28 +43,47 @@ func CORSWithConfig(allowOrigins []string) echo.MiddlewareFunc {
 	return CORS(config)
 }
 
+func originAllowed(allowOrigins []string, origin string) bool {
+	for _, o := range allowOrigins {
+		if o == "*" || o == origin || matchSubdomain(o, origin) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWildcard(allowOrigins []string) bool {
+	for _, o := range allowOrigins {
+		if o == "*" {
+			return true
+		}
+	}
+	return false
+}
+
 func CORS(config CORSConfig) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			origin := c.Request().Header.Get("Origin")
 
-			allowed := false
-			for _, o := range config.AllowOrigins {
-				if o == "*" || o == origin || matchSubdomain(o, origin) {
-					allowed = true
-					break
-				}
-			}
-
-			if !allowed {
+			if !originAllowed(config.AllowOrigins, origin) {
 				return next(c)
 			}
 
-			c.Response().Header().Set("Access-Control-Allow-Origin", origin)
-			c.Response().Header().Set("Vary", "Origin")
-
+			// Credentialed CORS must never combine with the "*" origin per the
+			// Fetch spec: an explicit, allow-listed origin is required instead.
 			if config.AllowCredentials {
+				if origin == "" || hasWildcard(config.AllowOrigins) {
+					return next(c)
+				}
+				c.Response().Header().Set("Access-Control-Allow-Origin", origin)
+				c.Response().Header().Set("Vary", "Origin")
 				c.Response().Header().Set("Access-Control-Allow-Credentials", "true")
+			} else if hasWildcard(config.AllowOrigins) {
+				c.Response().Header().Set("Access-Control-Allow-Origin", "*")
+			} else if origin != "" {
+				c.Response().Header().Set("Access-Control-Allow-Origin", origin)
+				c.Response().Header().Set("Vary", "Origin")
 			}
 
 			c.Response().Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowMethods, ", "))

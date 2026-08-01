@@ -1,12 +1,13 @@
 app:
   name: "stackyrd"
-  version: "1.0.3-clover"
+  version: "1.0.4-clover"
   debug: true
   env: "development"
   banner_path: "banner.txt"
   startup_delay: 3                # seconds to display boot screen (0 to skip)
   quiet_startup: true             # suppress console logs (TUI only, logs still go to monitoring)
   enable_tui: true                # enable fancy TUI mode (false = traditional console logging)
+  theme: "tokyonight" # TUI color theme (default, vintage_purple, vintage_dark, vintage_pinky, blue_ish, slate, charcoal_tea, pastel_light, sunflower_gold, muted_teal)
 
 server:   
   port: "8080"
@@ -33,7 +34,6 @@ middleware:
   ratelimit: true
   security: true
   audit: true
-  encryption: false    # Controlled by encryption.enabled config
   gzip: true
   swagger: true       # Controlled by swagger.enabled config
 
@@ -116,9 +116,3 @@ encryption:
   rotate_keys: false
   key_rotation_interval: "24h"
 
-plugins:
-  enabled: true
-  default_limits:
-    max_timeout_ms: 30000
-    max_memory_bytes: 104857600
-  # allowlist: []

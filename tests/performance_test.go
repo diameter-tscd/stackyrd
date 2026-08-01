@@ -153,16 +153,23 @@ func BenchmarkHandler_JSON_SmallPayload(b *testing.B) {
 	}
 }
 
+type LargeItem struct {
+	ID    int     `json:"id"`
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Value float64 `json:"value"`
+}
+
 func BenchmarkHandler_JSON_LargePayload(b *testing.B) {
 	e := echo.New()
 
-	items := make([]map[string]interface{}, 100)
+	items := make([]LargeItem, 100)
 	for i := range items {
-		items[i] = map[string]interface{}{
-			"id":    i,
-			"name":  "User Name Placeholder that has some length",
-			"email": "user@example.com",
-			"value": float64(i) * 1.23,
+		items[i] = LargeItem{
+			ID:    i,
+			Name:  "User Name Placeholder that has some length",
+			Email: "user@example.com",
+			Value: float64(i) * 1.23,
 		}
 	}
 

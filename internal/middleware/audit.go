@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"stackyrd/config"
@@ -87,9 +88,7 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 						}
 					}
 					if !skip {
-						for _, v := range values {
-							headers[name] = v
-						}
+						headers[name] = strings.Join(values, ",")
 					}
 				}
 				fields["headers"] = headers

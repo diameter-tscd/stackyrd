@@ -19,7 +19,7 @@ flowchart TB
     end
 
     subgraph deps["pkg/registry/"]
-        depBag["Dependencies<br/>name → interface{}"]
+        depBag["Dependencies<br/>sealed bag, typed getters<br/>Redis() / Postgres() / ..."]
     end
 
     subgraph plugin["pkg/plugin/"]
@@ -79,6 +79,7 @@ sequenceDiagram
 
     srv->>deps: NewDependencies()
     srv->>deps: Set(name, component) for each infra
+    srv->>deps: Seal() — read-only after boot
     srv->>srv: setConnectionDefaults()
 
     srv->>plugin: Init(cfg, logger, pluginGroup)
@@ -107,8 +108,8 @@ sequenceDiagram
 flowchart LR
     subgraph Service["Service (internal/services/modules/)"]
         S1["interface<br/>Name / WireName / Enabled<br/>Endpoints / RegisterRoutes / Get"]
-        S2["init() → RegisterService(name, factory)"]
-        S3["factory: cfg, logger, deps → Service"]
+        S2["init() → RegisterService(name, factory)<br/>or RegisterServiceWithDeps(name, factory)"]
+        S3["plain factory: cfg, logger → Service<br/>dep factory: cfg, logger, deps → Service"]
         S4["config.yaml: services.{wire_name}: true/false"]
     end
 
@@ -154,7 +155,7 @@ flowchart TD
     services["Service Routes<br/>users / products / tasks / ..."]
     handler["Handler func"]
     bind["request.Bind(c, &target)<br/>Validate via go-playground/validator"]
-    deps["deps.Get(name) for infra"]
+    deps["deps.Redis() / deps.Postgres() / ...<br/>typed getters (nil if absent)"]
     response["response.Success / Created / Error"]
 
     req --> recover
@@ -272,28 +273,24 @@ flowchart LR
         pg["postgres.PostgresConnectionManager"]
         mongo["mongo.MongoConnectionManager"]
         kafka["kafka.KafkaManager"]
-        grafana["grafana.GrafanaClient"]
+        grafana["grafana.GrafanaManager"]
         cron["cron.CronManager"]
+        minio["minio.MinIOManager"]
         plugins["plugin.PluginBridge"]
     end
 
-    subgraph DepsBag["Dependencies (map[string]interface{})"]
-        d1["'redis' → *RedisManager"]
-        d2["'postgres' → *PostgresConnectionManager"]
-        d3["'postgres.default' → *PostgresManager"]
-        d4["'mongo' → *MongoConnectionManager"]
-        d5["'mongo.default' → *MongoClient"]
-        d6["'plugins' → *PluginBridge"]
-        d7["..."]
+    subgraph DepsBag["Dependencies (sealed after boot)"]
+        getters["typed getters:<br/>Redis() / Postgres() / Mongo()<br/>Kafka() / Grafana() / Cron() / MinIO()<br/>each returns *T or nil"]
+        cache["GetAll() — TTL-cached snapshot (2s)"]
     end
 
     subgraph ServiceFactories["Service Factory (init)"]
-        f1["registry.RegisterService('users', factory)"]
-        f2["registry.RegisterService('products', factory)"]
+        f1["RegisterService('users', factory)<br/>plain: cfg, logger → Service"]
+        f2["RegisterServiceWithDeps('tasks', factory)<br/>deps: cfg, logger, deps → Service"]
     end
 
     subgraph AutoDiscover["AutoDiscoverServices()"]
-        ad["for each factory:<br/>  svc = factory(cfg, logger, deps)<br/>  serviceDiscovered.Store(name, svc.Get())"]
+        ad["for each plain factory:<br/>  svc = factory(cfg, logger)<br/>for each dep factory:<br/>  svc = factory(cfg, logger, deps)<br/>serviceDiscovered.Store(name, svc.Get())"]
     end
 
     InfraComponents --> DepsBag

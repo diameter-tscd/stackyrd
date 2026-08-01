@@ -3,14 +3,14 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"stackyrd/config"
-	"stackyrd/pkg/logger"
-
 	"github.com/labstack/echo/v4"
 	"github.com/spf13/viper"
+	"stackyrd/config"
+	"stackyrd/pkg/logger"
 )
 
 type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
@@ -62,7 +62,6 @@ func (r *MiddlewareRegistry) IsEnabled(name string) bool {
 	return true
 }
 
-// GetNames returns all registered middleware names.
 func (r *MiddlewareRegistry) GetNames() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -93,7 +92,9 @@ func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger 
 	defer r.mu.RUnlock()
 
 	for name, factory := range r.factories {
-		if r.IsEnabled(name) {
+		// Read the enabled flag directly instead of calling IsEnabled (which
+		// re-acquires RLock and would self-deadlock once a writer is pending).
+		if r.enabled[name] {
 			logger.Debug("Creating middleware", "name", name)
 			mw, err := factory(cfg, logger)
 			if err != nil {
@@ -110,17 +111,6 @@ func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger 
 	}
 
 	return middlewares
-}
-
-type Config struct {
-	AuthType string
-	Logger   *logger.Logger
-}
-
-func InitMiddlewares(e *echo.Echo, cfg Config) {
-	e.Use(RequestID())
-	e.Use(Logger(cfg.Logger))
-	e.Use(PermissionCheck(cfg.Logger))
 }
 
 func init() {
@@ -143,18 +133,48 @@ func init() {
 	})
 }
 
+var reqIDPool = sync.Pool{
+	New: func() any { return &strings.Builder{} },
+}
+
 func RequestID() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			requestID := c.Request().Header.Get("X-Request-ID")
+			// Only honor well-formed client-supplied IDs; anything else gets a
+			// fresh server-generated ID so headers/logs can't be poisoned.
+			if requestID != "" && !validRequestID(requestID) {
+				requestID = ""
+			}
 			if requestID == "" {
-				requestID = "req-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+				b := reqIDPool.Get().(*strings.Builder)
+				b.Reset()
+				b.WriteString("req-")
+				b.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10))
+				// Builder.String() shares b.buf; cloning before Put prevents a
+				// concurrent request reusing the builder from mutating this ID.
+				requestID = strings.Clone(b.String())
+				reqIDPool.Put(b)
 			}
 			c.Set("X-Request-ID", requestID)
 			c.Response().Header().Set("X-Request-ID", requestID)
 			return next(c)
 		}
 	}
+}
+
+// validRequestID restricts client-supplied request IDs to a safe charset and
+// length, preventing header injection and unbounded log entries.
+func validRequestID(s string) bool {
+	if len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func Logger(l *logger.Logger) echo.MiddlewareFunc {
@@ -169,14 +189,12 @@ func Logger(l *logger.Logger) echo.MiddlewareFunc {
 			method := c.Request().Method
 			path := c.Request().URL.Path
 
-			msg := strconv.Itoa(status) + " | " + method + " | " + path + " | " + latency.String()
-
 			if status >= 500 {
-				l.Error(msg, nil)
+				l.Error("request failed", nil, "status", status, "method", method, "path", path, "latency", latency.String())
 			} else if status >= 400 {
-				l.Warn(msg)
+				l.Warn("request", "status", status, "method", method, "path", path, "latency", latency.String())
 			} else {
-				l.Info(msg)
+				l.Info("request", "status", status, "method", method, "path", path, "latency", latency.String())
 			}
 
 			return err
@@ -225,9 +243,8 @@ func matchPath(path, pattern string) bool {
 	if pattern == "" || pattern == "*" {
 		return true
 	}
-	n := len(pattern)
-	if n > 0 && pattern[n-1] == '*' {
-		return len(path) >= n-1 && path[:n-1] == pattern[:n-1]
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 	}
 	return path == pattern
 }

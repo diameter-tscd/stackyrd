@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/logger"
 
@@ -32,8 +31,21 @@ func TestMiddleware_CORSAllowAll(t *testing.T) {
 	handler := mw(func(c echo.Context) error { return nil })
 	_ = handler(c)
 
-	assert.Equal(t, "http://example.com", rec.Header().Get("Access-Control-Allow-Origin"))
-	assert.Equal(t, "true", rec.Header().Get("Access-Control-Allow-Credentials"))
+	// Wildcard origin must never be combined with credentials.
+	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
+}
+
+func TestMiddleware_CORSWildcardRefusesCredentials(t *testing.T) {
+	mw := middleware.CORSAllowAll()
+
+	c, rec := testEchoContext(http.MethodGet, "/")
+	c.Request().Header.Set("Origin", "http://evil.com")
+
+	handler := mw(func(c echo.Context) error { return nil })
+	_ = handler(c)
+
+	assert.Empty(t, rec.Header().Get("Access-Control-Allow-Credentials"))
 }
 
 func TestMiddleware_CORSBlockedOrigin(t *testing.T) {
@@ -73,7 +85,7 @@ func TestMiddleware_CORSSubdomainMatch(t *testing.T) {
 }
 
 func TestMiddleware_JWTRequiredValid(t *testing.T) {
-	secret := "test-secret"
+	secret := "test-secret-0123456789abcdef"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
@@ -110,7 +122,7 @@ func TestMiddleware_JWTRequiredMissing(t *testing.T) {
 }
 
 func TestMiddleware_JWTSetsClaims(t *testing.T) {
-	secret := "test-secret"
+	secret := "test-secret-0123456789abcdef"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
@@ -216,21 +228,6 @@ func TestMiddleware_AuditSkipsHealth(t *testing.T) {
 	_ = handler(c)
 }
 
-func TestMiddleware_EncryptionDisabled(t *testing.T) {
-	cfg := &config.Config{
-		Encryption: config.EncryptionConfig{
-			Enabled: false,
-		},
-	}
-	l := logger.New(false, nil)
-	mw := middleware.EncryptionMiddleware(cfg, l)
-
-	c, _ := testEchoContext(http.MethodGet, "/")
-
-	handler := mw(func(c echo.Context) error { return nil })
-	_ = handler(c)
-}
-
 func TestMiddleware_GzipEncoding(t *testing.T) {
 	mw := middleware.GzipMiddleware()
 
@@ -253,12 +250,13 @@ func TestMiddleware_GzipNoEncoding(t *testing.T) {
 }
 
 func TestMiddleware_GenerateToken(t *testing.T) {
-	token, err := middleware.GenerateToken("u1", "user", "u@t.com", "admin", "secret", time.Hour)
+	secret := "secret-key-for-tests-0123456789"
+	token, err := middleware.GenerateToken("u1", "user", "u@t.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 
 	parsed, err := jwt.ParseWithClaims(token, &middleware.JWTClaims{}, func(t *jwt.Token) (interface{}, error) {
-		return []byte("secret"), nil
+		return []byte(secret), nil
 	})
 	assert.NoError(t, err)
 	assert.True(t, parsed.Valid)

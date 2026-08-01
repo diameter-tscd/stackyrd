@@ -1,145 +1,99 @@
 package utils
 
 import (
-	"flag"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
-// FlagDefinition represents a command-line flag definition
-type FlagDefinition struct {
-	Name         string                        // Flag name (without dash)
-	DefaultValue interface{}                   // Default value
-	Description  string                        // Help text
-	Validator    func(value interface{}) error // Optional validation function
+// isRestrictedIP reports whether the IP is a loopback, private (RFC1918),
+// link-local, unspecified, or multicast address — i.e. anything that could be
+// used to probe internal infrastructure from a remote config URL.
+func isRestrictedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast()
 }
 
-// ParsedFlags holds the parsed flag values
-type ParsedFlags struct {
-	ConfigURL string // -c flag value
-	Port      string // -port flag value
-	Verbose   bool   // -verbose flag value
-	Env       string // -env flag value
-	// Add new flags here as needed
+// isRestrictedHost reports whether host resolves to a restricted address.
+func isRestrictedHost(host string) bool {
+	if host == "localhost" || host == "" || strings.HasPrefix(host, "127.") {
+		return true
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		// Unresolvable: fail closed rather than let a later resolution land on
+		// an unexpected internal address.
+		return true
+	}
+	for _, a := range addrs {
+		ip := net.ParseIP(a)
+		if ip != nil && isRestrictedIP(ip) {
+			return true
+		}
+	}
+	return false
 }
 
-// ParseFlags parses command line flags based on provided definitions and returns structured flag values
-func ParseFlags(flagDefinitions []FlagDefinition) (*ParsedFlags, error) {
-	parsed := &ParsedFlags{}
-
-	// Create a map to hold flag pointers
-	flagPtrs := make(map[string]interface{})
-
-	// Dynamically define flags based on flagDefinitions
-	for _, def := range flagDefinitions {
-		switch v := def.DefaultValue.(type) {
-		case string:
-			flagPtrs[def.Name] = flag.String(def.Name, v, def.Description)
-		case int:
-			flagPtrs[def.Name] = flag.Int(def.Name, v, def.Description)
-		case bool:
-			flagPtrs[def.Name] = flag.Bool(def.Name, v, def.Description)
-		default:
-			return nil, fmt.Errorf("unsupported flag type for %s: %T", def.Name, v)
-		}
+// validateConfigURL rejects URLs pointing at restricted/internal hosts so a
+// hostile config URL cannot probe infrastructure (SSRF).
+func validateConfigURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid config URL: %w", err)
 	}
-
-	// Parse the flags
-	flag.Parse()
-
-	// Extract values and validate
-	for _, def := range flagDefinitions {
-		var value interface{}
-
-		switch ptr := flagPtrs[def.Name].(type) {
-		case *string:
-			value = *ptr
-			switch def.Name {
-			case "c":
-				parsed.ConfigURL = *ptr
-			case "port":
-				parsed.Port = *ptr
-			case "env":
-				parsed.Env = *ptr
-			}
-			// Add new string flag assignments here
-		case *int:
-			value = *ptr
-			// Add new int flag assignments here
-		case *bool:
-			value = *ptr
-			if def.Name == "verbose" {
-				parsed.Verbose = *ptr
-			}
-			// Add new bool flag assignments here
-		}
-
-		// Validate the value if validator is provided
-		if def.Validator != nil {
-			if err := def.Validator(value); err != nil {
-				return nil, fmt.Errorf("flag -%s validation failed: %w", def.Name, err)
-			}
-		}
+	host := u.Hostname()
+	if isRestrictedHost(host) {
+		return fmt.Errorf("config URL host not allowed (SSRF guard): %s", host)
 	}
-
-	return parsed, nil
+	return nil
 }
 
 // LoadConfigFromURL loads configuration from a remote URL using HTTP GET
 func LoadConfigFromURL(configURL string) error {
-	// Make HTTP GET request to fetch the config
-	resp, err := http.Get(configURL)
+	if err := validateConfigURL(configURL); err != nil {
+		return err
+	}
+
+	// Restrict redirects and time the request so a hostile URL cannot probe
+	// internal services (SSRF) or hang startup indefinitely.
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 2 {
+				return fmt.Errorf("too many redirects")
+			}
+			host := req.URL.Hostname()
+			if isRestrictedHost(host) {
+				return fmt.Errorf("redirect to restricted address blocked: %s", host)
+			}
+			return nil
+		},
+	}
+	resp, err := client.Get(configURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch config from URL %s: %w", configURL, err)
 	}
 	defer resp.Body.Close()
 
-	// Check if the response is successful
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to fetch config from URL %s: HTTP %d %s", configURL, resp.StatusCode, resp.Status)
 	}
 
-	// Check content type
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if contentType != "" && !strings.Contains(contentType, "yaml") && !strings.Contains(contentType, "yml") {
 		fmt.Fprintf(os.Stderr, "Warning: Content-Type '%s' does not indicate YAML format\n", contentType)
 	}
 
-	// Read the response body and set it as config
 	if err := viper.ReadConfig(resp.Body); err != nil {
 		return fmt.Errorf("failed to parse config from URL %s: %w", configURL, err)
 	}
 
 	return nil
-}
-
-// PrintUsage prints the usage information for command line flags based on provided definitions
-func PrintUsage(flagDefinitions []FlagDefinition, appName string) {
-	fmt.Printf("Usage of %s:\n", appName)
-	for _, def := range flagDefinitions {
-		switch def.DefaultValue.(type) {
-		case string:
-			fmt.Printf("  -%s string\n", def.Name)
-		case int:
-			fmt.Printf("  -%s int\n", def.Name)
-		case bool:
-			fmt.Printf("  -%s\n", def.Name)
-		}
-		fmt.Printf("        %s", def.Description)
-		if def.DefaultValue != "" && def.DefaultValue != false && def.DefaultValue != 0 {
-			fmt.Printf(" (default %v)", def.DefaultValue)
-		}
-		fmt.Println()
-	}
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Printf("  ./%-40s # Load config from local config.yaml\n", appName)
-	fmt.Printf("  ./%s -c http://example.com/config.yaml\n", appName)
-	fmt.Printf("  ./%s -port 9090 -env production\n", appName)
-	fmt.Printf("  ./%s -c https://config.example.com/app.yaml -verbose\n", appName)
-	fmt.Println()
 }

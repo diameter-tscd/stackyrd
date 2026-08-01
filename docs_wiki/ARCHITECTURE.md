@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**stackyrd** is an enterprise-grade modular Go framework built on **Echo v4** with auto-discovery patterns, async infrastructure initialization, a plugin system (TS/Go/Python/Lua), TUI dashboard, and Prometheus metrics.
+**stackyrd** is an enterprise-grade modular Go framework built on **Echo v4** with auto-discovery patterns, async infrastructure initialization, TUI dashboard, and Prometheus metrics.
 
 ## Key Concepts
 
@@ -10,7 +10,7 @@ Components register themselves via `init()` functions at import time:
 - **Services**: Business logic in `internal/services/modules/`
 - **Middleware**: HTTP middleware in `internal/middleware/`
 - **Infrastructure**: Database/clients in `pkg/infrastructure/`
-- **Plugins**: TypeScript/Go/Lua/Python scripts in `pkg/plugin/builtin/`
+
 
 ### Boot Sequence
 
@@ -29,11 +29,10 @@ flowchart TD
     I -->|Console mode| L[direct logs]
     L --> M[server.New]
     M --> N[async infra init<br/>all components in parallel]
-    M --> O[plugin init<br/>bridge → deps.plugins]
-    M --> P[middleware auto-discovery]
-    M --> Q[service auto-discovery]
-    M --> R[route registration<br/>/api/v1]
-    M --> S[Swagger UI<br/>if enabled]
+    M --> O[middleware auto-discovery]
+    M --> P[service auto-discovery]
+    M --> Q[route registration<br/>/api/v1]
+    M --> R[Swagger UI<br/>if enabled]
 ```
 
 ### Request Flow
@@ -43,9 +42,7 @@ flowchart LR
     A[Client] --> B[Middleware Chain]
     B --> C[Service Handler]
     C --> D[Response]
-    B -.-> E[Plugin Bridge<br/>optional]
-    E --> F[Infrastructure<br/>DB, Cache, Kafka, MinIO]
-    C --> F
+    C --> F[Infrastructure<br/>DB, Cache, Kafka, MinIO]
 ```
 
 ### TUI vs Console Mode
@@ -67,10 +64,6 @@ flowchart TD
     A --> I[pkg/]
     I --> J[assets/<br/>Embedded application assets (banner.txt)]
     I --> K[interfaces/<br/>Service interface]
-    I --> L[plugin/<br/>Plugin system]
-    L --> M[builtin/<br/>Plugin manifests]
-    L --> N[sdk/<br/>TS type declarations]
-    L --> O[python/<br/>Python host runtime]
     I --> P[registry/<br/>Service registry + DI]
     I --> Q[infrastructure/<br/>DB/clients async-managed]
     I --> R[response/<br/>API response helpers]
@@ -108,15 +101,16 @@ type Service interface {
 
 // Auto-registration with dependency injection
 func init() {
-    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        helper := registry.NewServiceHelper(cfg, log, deps)
-        if !helper.IsServiceEnabled("service_name") {
+    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
+        if !cfg.Services.IsEnabled("service_name") {
             return nil
         }
         return NewService(true, log)
     })
 }
 ```
+
+Services that need infrastructure use `RegisterServiceWithDeps` and read typed getters (`deps.Postgres()`, `deps.Redis()`, ...) instead of raw map access.
 
 ## Infrastructure Component Pattern
 ```go
@@ -138,19 +132,6 @@ func init() {
 
 Components are initialized **asynchronously** by `InfraInitManager` with per-component health polling.
 
-## Plugin System
-
-```mermaid
-flowchart TD
-    A[PluginRegistry<br/>singleton]
-    A --> B[RuntimeRegistry<br/>prefix-based: ts: → goja, ext: → gRPC, go: → native]
-    A --> C[PluginBridge<br/>InfrastructureComponent → deps.plugins]
-    A --> D[Transpiler<br/>esbuild TS→JS + SHA256 cache]
-    A --> E[Sandbox<br/>timeout + RSS memory enforcement]
-    A --> F[Filesystem<br/>embed.FS + CopyOnWriteFs overlay]
-    A --> G[REST API<br/>GET/POST /api/v1/plugins/*]
-```
-
 ## Middleware Pattern
 ```go
 type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
@@ -163,10 +144,10 @@ func init() {
 ```
 
 ## Key Features
-- **Dependency Injection**: Dynamic `Dependencies` container with TTL-cached GetAll()
+- **Dependency Injection**: Two factory types — plain `RegisterService(cfg, logger)` and `RegisterServiceWithDeps(cfg, logger, deps)`; sealed `Dependencies` bag with typed getters (`Redis()`, `Postgres()`, ...) and TTL-cached GetAll()
 - **Async Initialization**: All infrastructure components init in parallel
 - **Multi-connection DB**: Postgres + MongoDB with named connection managers
-- **Plugin System**: TypeScript (goja), Python/external (gRPC), Lua, Go
+
 - **TUI Dashboard**: Bubbletea boot sequence + live monitoring dashboard
 - **Prometheus Metrics**: HTTP, DB, cache, circuit breaker, webhook, batch, WebSocket
 - **Resilience**: Circuit breaker, retry with backoff, health checks, timeouts

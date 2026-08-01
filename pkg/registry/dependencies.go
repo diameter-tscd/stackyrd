@@ -1,40 +1,43 @@
 package registry
 
 import (
+	"stackyrd/pkg/infrastructure"
 	"sync"
-	"time"
 )
 
-// Dependencies holds all infrastructure dependencies that services might need
 type Dependencies struct {
-	// Dynamic component store - no static declarations
 	components map[string]interface{}
 	mu         sync.RWMutex
-	// TTL cache for GetAll() to avoid copying the entire map on every health check
-	cachedAll   map[string]interface{}
-	cacheExpiry time.Time
-	cacheTTL    time.Duration
+	sealed     bool
 }
 
-// NewDependencies creates a new dependencies container
 func NewDependencies() *Dependencies {
 	return &Dependencies{
 		components: make(map[string]interface{}),
-		cacheTTL:   2 * time.Second, // reduced copy frequency 4x from 500ms default
 	}
 }
 
-// Set stores a component by name
 func (d *Dependencies) Set(name string, component interface{}) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.sealed {
+		return
+	}
 	d.components[name] = component
-	// Invalidate cache on mutation
-	d.cachedAll = nil
-	d.cacheExpiry = time.Time{}
 }
 
-// Get retrieves a component by name
+func (d *Dependencies) Seal() {
+	d.mu.Lock()
+	d.sealed = true
+	d.mu.Unlock()
+}
+
+func (d *Dependencies) IsSealed() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.sealed
+}
+
 func (d *Dependencies) Get(name string) (interface{}, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -42,41 +45,52 @@ func (d *Dependencies) Get(name string) (interface{}, bool) {
 	return comp, ok
 }
 
-// GetAll returns all registered components — returns a TTL-cached snapshot
-// to avoid allocating and copying the entire map on every /health/dependencies call.
+func typed[T any](d *Dependencies, name string) *T {
+	comp, ok := d.Get(name)
+	if !ok {
+		return nil
+	}
+	v, ok := comp.(*T)
+	if !ok {
+		return nil
+	}
+	return v
+}
+
+func (d *Dependencies) Redis() *infrastructure.RedisManager {
+	return typed[infrastructure.RedisManager](d, "redis")
+}
+
+func (d *Dependencies) Postgres() *infrastructure.PostgresConnectionManager {
+	return typed[infrastructure.PostgresConnectionManager](d, "postgres")
+}
+
+func (d *Dependencies) Mongo() *infrastructure.MongoConnectionManager {
+	return typed[infrastructure.MongoConnectionManager](d, "mongo")
+}
+
+func (d *Dependencies) Kafka() *infrastructure.KafkaManager {
+	return typed[infrastructure.KafkaManager](d, "kafka")
+}
+
+func (d *Dependencies) Grafana() *infrastructure.GrafanaManager {
+	return typed[infrastructure.GrafanaManager](d, "grafana")
+}
+
+func (d *Dependencies) MinIO() *infrastructure.MinIOManager {
+	return typed[infrastructure.MinIOManager](d, "minio")
+}
+
+func (d *Dependencies) Cron() *infrastructure.CronManager {
+	return typed[infrastructure.CronManager](d, "cron")
+}
+
 func (d *Dependencies) GetAll() map[string]interface{} {
 	d.mu.RLock()
-	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
-		result := d.cachedAll
-		d.mu.RUnlock()
-		return result
-	}
-	d.mu.RUnlock()
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	// Re-check after acquiring write lock
-	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
-		return d.cachedAll
-	}
+	defer d.mu.RUnlock()
 	result := make(map[string]interface{}, len(d.components))
 	for k, v := range d.components {
 		result[k] = v
 	}
-	d.cachedAll = result
-	d.cacheExpiry = time.Now().Add(d.cacheTTL)
 	return result
-}
-
-// GetTyped retrieves component with type assertion
-func GetTyped[T any](d *Dependencies, name string) (T, bool) {
-	var zero T
-
-	comp, ok := d.Get(name)
-	if !ok {
-		return zero, false
-	}
-
-	typed, ok := comp.(T)
-	return typed, ok
 }

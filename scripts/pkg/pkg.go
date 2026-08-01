@@ -159,10 +159,6 @@ func (ctx *InstallContext) ensureProjectRoot(logger *Logger) error {
 
 func ClearScreen() {
 	cmd := exec.Command("clear")
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "cls")
-	}
 	cmd.Stdout = os.Stdout
 	_ = cmd.Run()
 }

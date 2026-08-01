@@ -1,6 +1,6 @@
 # Development Guide
 
-Learn to add services, middleware, infrastructure components, and plugins to stackyrd.
+Learn to add services, middleware, and infrastructure components to stackyrd.
 
 ## Adding a Service
 
@@ -52,7 +52,7 @@ func (s *YourService) handleGet(c echo.Context) error {
 }
 
 func init() {
-    registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
         if !cfg.Services.IsEnabled("your_service") {
             return nil
         }
@@ -167,7 +167,7 @@ func (s *YourService) create(c echo.Context) error {
 
 ## Using Dependencies
 
-Services receive infrastructure components via the `Dependencies` container:
+Services that need infrastructure components use `RegisterServiceWithDeps` and access them via typed getters on `Dependencies` (nil if the component is missing):
 
 ```go
 type YourService struct {
@@ -177,71 +177,37 @@ type YourService struct {
 }
 
 func init() {
-    registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterServiceWithDeps("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
         if !cfg.Services.IsEnabled("your_service") {
             return nil
         }
-        var db *infrastructure.PostgresConnectionManager
-        if d, ok := deps.Get("postgres"); ok {
-            db = d.(*infrastructure.PostgresConnectionManager)
-        }
-        var cache *infrastructure.RedisManager
-        if r, ok := deps.Get("redis"); ok {
-            cache = r.(*infrastructure.RedisManager)
-        }
-        return &YourService{enabled: true, db: db, cache: cache}
+        return &YourService{enabled: true, db: deps.Postgres(), cache: deps.Redis()}
     })
 }
 ```
 
-## Using Plugins from Services
+Available getters: `Redis()`, `Postgres()`, `Mongo()`, `Kafka()`, `Grafana()`, `MinIO()`, `Cron()`.
 
-The `PluginBridge` is available in `deps["plugins"]`:
-
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var bridge *plugin.PluginBridge
-        if b, ok := deps.Get("plugins"); ok {
-            bridge = b.(*plugin.PluginBridge)
-        }
-        return NewMyService(true, log, bridge)
-    })
-}
-
-// At runtime:
-if s.bridge != nil && s.bridge.HasPlugin("inspector") {
-    result, err := s.bridge.Execute("inspector", map[string]interface{}{
-        "mode": "ping",
-    })
-}
-```
+The `Dependencies` container is **sealed** after boot — `Set()` is a no-op once infrastructure registration completes.
 
 ## Using the Cache
 
-The `pkg/cache/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. It is injected via Dependencies under the `"caching"` key.
-
-```yaml
-services:
-  caching: true
-```
+The `pkg/cache/` package provides an in-memory `cache.Cache[T]` (with a `ShardedCache[T]` variant). Instantiate it directly in a service constructor:
 
 ```go
 import "stackyrd/pkg/cache"
 
 func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
         if !cfg.Services.IsEnabled("my_service") {
             return nil
         }
-        var cm *cache.CachingManager
-        if c, ok := deps.Get("caching"); ok {
-            cm = c.(*cache.CachingManager)
-        }
-        return NewMyService(true, log, cm)
+        return NewMyService(true, log, cache.New[string]())
     })
 }
 ```
+
+For a Redis-backed cache, access the shared connection via `deps.Redis()` in a `RegisterServiceWithDeps` factory.
 
 ## Response Helpers
 

@@ -44,21 +44,26 @@ func (bc *BarChart) AddItem(label string, value float64, color string) {
 
 // Render renders the bar chart as a string
 func (bc *BarChart) Render() string {
-	if len(bc.Items) == 0 {
+	if len(bc.Items) == 0 || bc.Width <= 0 {
 		return ""
 	}
 
 	var sb strings.Builder
 
 	if bc.Title != "" {
-		sb.WriteString(bc.Title + "\n")
-		sb.WriteString(strings.Repeat("─", bc.Width) + "\n")
+		sb.WriteString(bc.Title)
+		sb.WriteString("\n")
+		sb.WriteString(strings.Repeat("─", bc.Width))
+		sb.WriteString("\n")
 	}
 
 	maxValue := 0.0
 	maxLabelLen := 0
 
 	for _, item := range bc.Items {
+		if math.IsNaN(item.Value) || math.IsInf(item.Value, 0) {
+			continue
+		}
 		if item.Value > maxValue {
 			maxValue = item.Value
 		}
@@ -73,10 +78,17 @@ func (bc *BarChart) Render() string {
 
 	for _, item := range bc.Items {
 		label := fmt.Sprintf("%-*s", maxLabelLen, item.Label)
-		barLen := int((item.Value / maxValue) * float64(bc.Width-maxLabelLen-10))
+		value := item.Value
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			value = 0
+		}
+		barLen := int((value / maxValue) * float64(bc.Width-maxLabelLen-10))
 
 		if barLen < 0 {
 			barLen = 0
+		}
+		if barLen > bc.Width {
+			barLen = bc.Width
 		}
 
 		bar := strings.Repeat("█", barLen)
@@ -123,14 +135,18 @@ func (s *Sparkline) SetValues(values []float64) {
 
 // Render renders the sparkline as a string
 func (s *Sparkline) Render() string {
-	if len(s.Values) == 0 {
+	if len(s.Values) == 0 || len(s.Chars) == 0 {
 		return ""
+	}
+	if s.Width < 1 {
+		s.Width = 20
 	}
 
 	var sb strings.Builder
 
 	if s.Title != "" {
-		sb.WriteString(s.Title + ": ")
+		sb.WriteString(s.Title)
+		sb.WriteString(": ")
 	}
 
 	values := s.Values
@@ -145,6 +161,13 @@ func (s *Sparkline) Render() string {
 			sampled[i] = values[idx]
 		}
 		values = sampled
+	}
+
+	// Neutralize NaN/Inf so min/max and the index math below stay finite.
+	for i, v := range values {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			values[i] = 0
+		}
 	}
 
 	minVal, maxVal := math.Inf(1), math.Inf(-1)
@@ -212,7 +235,17 @@ func (g *Gauge) Render() string {
 	var sb strings.Builder
 
 	if g.Title != "" {
-		sb.WriteString(g.Title + ": ")
+		sb.WriteString(g.Title)
+		sb.WriteString(": ")
+	}
+
+	if g.Width < 0 {
+		g.Width = 0
+	}
+
+	if g.Max <= 0 || math.IsNaN(g.Value) || math.IsInf(g.Value, 0) {
+		sb.WriteString("[" + strings.Repeat("░", g.Width) + "] 0.0%")
+		return sb.String()
 	}
 
 	percentage := g.Value / g.Max
@@ -270,7 +303,8 @@ func (t *Table) Render() string {
 	var sb strings.Builder
 
 	if t.Title != "" {
-		sb.WriteString(t.Title + "\n")
+		sb.WriteString(t.Title)
+		sb.WriteString("\n")
 	}
 
 	if len(t.Headers) == 0 {

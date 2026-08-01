@@ -3,9 +3,11 @@ package infrastructure
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -56,6 +58,7 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 	}
 
 	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
 	}
 
@@ -64,6 +67,7 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 		Conn: sqlDB,
 	}), &gorm.Config{})
 	if err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("failed to initialize GORM: %w", err)
 	}
 
@@ -78,9 +82,14 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 	}, nil
 }
 
-func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectionManager, error) {
+func NewPostgresConnectionManager(cfg config.PostgresConfig, log ...*logger.Logger) (*PostgresConnectionManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
+	}
+
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
 	}
 
 	manager := &PostgresConnectionManager{
@@ -96,6 +105,9 @@ func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectio
 		if err != nil {
 			// Log error but continue with other connections
 			// Don't fail the entire manager initialization
+			if l != nil {
+				l.Warn("Skipping postgres connection", "name", connCfg.Name, "error", err.Error())
+			}
 			continue
 		}
 
@@ -140,10 +152,14 @@ func (m *PostgresConnectionManager) GetAllConnections() map[string]*PostgresMana
 // GetStatus returns status for all connections
 func (m *PostgresConnectionManager) GetStatus() map[string]interface{} {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	status := make(map[string]interface{})
-
+	connections := make(map[string]*PostgresManager, len(m.connections))
 	for name, conn := range m.connections {
+		connections[name] = conn
+	}
+	m.mu.RUnlock()
+
+	status := make(map[string]interface{})
+	for name, conn := range connections {
 		status[name] = conn.GetStatus()
 	}
 
@@ -155,20 +171,26 @@ func (m *PostgresConnectionManager) Close() error {
 	return m.CloseAll()
 }
 
-// CloseAll closes all connections
+// CloseAll closes all connections and their worker pools
 func (m *PostgresConnectionManager) CloseAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var errors []error
+	var errs []error
 	for name, conn := range m.connections {
-		if err := conn.DB.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close connection '%s': %w", name, err))
+		if conn.Pool != nil {
+			conn.Pool.Close()
+		}
+		if conn.DB != nil {
+			if err := conn.DB.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
+			}
 		}
 	}
+	m.connections = make(map[string]*PostgresManager)
 
-	if len(errors) > 0 {
-		return fmt.Errorf("errors closing connections: %v", errors)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -183,7 +205,10 @@ func (p *PostgresManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	p.statusMu.RLock()
 	if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
-		cached := p.statusCache
+		cached := make(map[string]interface{}, len(p.statusCache))
+		for k, v := range p.statusCache {
+			cached[k] = v
+		}
 		p.statusMu.RUnlock()
 		return cached
 	}
@@ -313,6 +338,10 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ 
 		rawQueryPool.Put(r)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return results, nil
 }
 
@@ -367,7 +396,7 @@ func (p *PostgresManager) GetRunningQueries(ctx context.Context) (_ []PGQuery, e
 		var user, db, state, query sql.NullString
 		var duration sql.NullString
 		if err := rows.Scan(&q.Pid, &user, &db, &state, &duration, &query); err != nil {
-			continue
+			return nil, err
 		}
 		q.User = user.String
 		q.DB = db.String
@@ -375,6 +404,9 @@ func (p *PostgresManager) GetRunningQueries(ctx context.Context) (_ []PGQuery, e
 		q.Duration = duration.String
 		q.Query = query.String
 		queries = append(queries, q)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return queries, nil
 }
@@ -386,34 +418,17 @@ func (p *PostgresManager) GetSessionCount(ctx context.Context) (int, error) {
 }
 
 func (p *PostgresManager) GetDBInfo(ctx context.Context) (map[string]interface{}, error) {
-	var version, dbName, user, sslMode string
+	var version, size, dbName, user, sslMode string
 
-	// Fetch Version
-	if err := p.DB.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Size (formatted)
-	var size string
-	if err := p.DB.QueryRowContext(ctx, "SELECT pg_size_pretty(pg_database_size(current_database()))").Scan(&size); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Name
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_database()").Scan(&dbName); err != nil {
-		return nil, err
-	}
-
-	// Fetch Current User
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_user").Scan(&user); err != nil {
-		return nil, err
-	}
-
-	// Fetch SSL Status
-	// Note: checks if usage of SSL is active for this backend
-	err := p.DB.QueryRowContext(ctx, "SELECT COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')").Scan(&sslMode)
+	err := p.DB.QueryRowContext(ctx, `
+		SELECT version(),
+		       pg_size_pretty(pg_database_size(current_database())),
+		       current_database(),
+		       current_user,
+		       COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')
+	`).Scan(&version, &size, &dbName, &user, &sslMode)
 	if err != nil {
-		sslMode = "unknown"
+		return nil, err
 	}
 
 	return map[string]interface{}{
@@ -527,6 +542,9 @@ func (p *PostgresManager) GORMFirstAsync(ctx context.Context, dest interface{}, 
 // GORMUpdateAsync asynchronously updates records using GORM.
 func (p *PostgresManager) GORMUpdateAsync(ctx context.Context, model interface{}, updates interface{}, conds ...interface{}) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
+		if len(conds) == 0 {
+			return struct{}{}, fmt.Errorf("GORMUpdateAsync requires at least one condition")
+		}
 		err := p.ORM.WithContext(ctx).Model(model).Where(conds[0], conds[1:]...).Updates(updates).Error
 		return struct{}{}, err
 	})
@@ -548,7 +566,8 @@ func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []strin
 		// Create a batch result with an error
 		result := NewBatchAsyncResult[sql.Result](len(queries), 20)
 		for i := range result.Results {
-			result.Results[i].Complete(nil, fmt.Errorf("queries and args length mismatch"))
+			result.Results[i].Error = fmt.Errorf("queries and args length mismatch")
+			result.CompleteResult(i)
 		}
 		return result
 	}
@@ -571,8 +590,7 @@ func (p *PostgresManager) SubmitAsyncJob(job func()) {
 	if p.Pool != nil {
 		p.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 
@@ -592,6 +610,6 @@ func init() {
 		if !cfg.Postgres.Enabled {
 			return nil, nil
 		}
-		return NewPostgresConnectionManager(cfg.Postgres)
+		return NewPostgresConnectionManager(cfg.Postgres, log)
 	})
 }

@@ -60,6 +60,15 @@ type CircuitBreaker struct {
 
 // NewCircuitBreaker creates a new circuit breaker
 func NewCircuitBreaker(config CircuitBreakerConfig) *CircuitBreaker {
+	if config.MaxFailures <= 0 {
+		config.MaxFailures = 1
+	}
+	if config.HalfOpenMaxRequests <= 0 {
+		config.HalfOpenMaxRequests = 1
+	}
+	if config.ResetTimeout <= 0 {
+		config.ResetTimeout = 30 * time.Second
+	}
 	return &CircuitBreaker{
 		config: config,
 		state:  StateClosed,
@@ -106,21 +115,31 @@ func (cb *CircuitBreaker) ExecuteWithFallback(fn func() error, fallback func() e
 	return nil
 }
 
-// AllowRequest checks if a request is allowed
+// AllowRequest checks if a request is allowed.
+// The Open -> HalfOpen transition happens here, atomically, so that after the
+// reset timeout exactly HalfOpenMaxRequests probes are let through (no
+// unbounded request wave), and a probe that succeeds closes the breaker.
 func (cb *CircuitBreaker) AllowRequest() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	switch cb.state {
 	case StateClosed:
 		return true
 	case StateOpen:
 		if time.Since(cb.lastFailureTime) > cb.config.ResetTimeout {
+			cb.transition(StateHalfOpen)
+			cb.halfOpenCount = 1 // this probe consumes the allowance
+			cb.successes = 0
 			return true
 		}
 		return false
 	case StateHalfOpen:
-		return cb.halfOpenCount < cb.config.HalfOpenMaxRequests
+		if cb.halfOpenCount >= cb.config.HalfOpenMaxRequests {
+			return false
+		}
+		cb.halfOpenCount++
+		return true
 	default:
 		return false
 	}
@@ -129,47 +148,59 @@ func (cb *CircuitBreaker) AllowRequest() bool {
 // RecordSuccess records a successful request
 func (cb *CircuitBreaker) RecordSuccess() {
 	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
+	var change *[2]State
 	cb.successes++
 
 	switch cb.state {
 	case StateHalfOpen:
-		cb.halfOpenCount++
 		if cb.halfOpenCount >= cb.config.HalfOpenMaxRequests {
-			cb.setState(StateClosed)
+			change = cb.transition(StateClosed)
 			cb.failures = 0
 			cb.halfOpenCount = 0
 		}
 	case StateClosed:
 		cb.failures = 0
 	}
+	cb.mu.Unlock()
+
+	cb.notify(change)
 }
 
 // RecordFailure records a failed request
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
-	defer cb.mu.Unlock()
+	var change *[2]State
 
 	cb.failures++
 	cb.lastFailureTime = time.Now()
 
 	if cb.state == StateHalfOpen {
-		cb.setState(StateOpen)
+		change = cb.transition(StateOpen)
 		cb.halfOpenCount = 0
 	} else if cb.state == StateClosed && cb.failures >= cb.config.MaxFailures {
-		cb.setState(StateOpen)
+		change = cb.transition(StateOpen)
+		cb.halfOpenCount = 0
 	}
+	cb.mu.Unlock()
+
+	cb.notify(change)
 }
 
-// setState changes the circuit breaker state
-func (cb *CircuitBreaker) setState(newState State) {
-	if cb.state != newState {
-		oldState := cb.state
-		cb.state = newState
-		if cb.config.OnStateChange != nil {
-			cb.config.OnStateChange(cb.config.Name, oldState, newState)
-		}
+// transition sets the new state (caller holds mu) and reports the change.
+func (cb *CircuitBreaker) transition(newState State) *[2]State {
+	if cb.state == newState {
+		return nil
+	}
+	old := cb.state
+	cb.state = newState
+	return &[2]State{old, newState}
+}
+
+// notify invokes OnStateChange outside the lock so a callback that re-enters
+// the breaker (GetState/RecordFailure/...) cannot deadlock.
+func (cb *CircuitBreaker) notify(change *[2]State) {
+	if change != nil && cb.config.OnStateChange != nil {
+		cb.config.OnStateChange(cb.config.Name, change[0], change[1])
 	}
 }
 

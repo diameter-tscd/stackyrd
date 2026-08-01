@@ -20,6 +20,12 @@ func Percent(part, total float64) float64 {
 
 // RoundToDecimal rounds a float to decimal precision.
 func RoundToDecimal(num float64, precision int) float64 {
+	if precision < -15 {
+		precision = -15
+	}
+	if precision > 15 {
+		precision = 15
+	}
 	output := math.Pow(10, float64(precision))
 	return math.Round(num*output) / output
 }

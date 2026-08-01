@@ -3,6 +3,8 @@ package infrastructure
 import (
 	"context"
 	"fmt"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,9 +12,10 @@ import (
 
 // AsyncResult represents the result of an asynchronous operation
 type AsyncResult[T any] struct {
-	Value T
-	Error error
-	Done  chan struct{}
+	Value        T
+	Error        error
+	Done         chan struct{}
+	completeOnce sync.Once
 }
 
 // NewAsyncResult creates a new async result
@@ -24,9 +27,11 @@ func NewAsyncResult[T any]() *AsyncResult[T] {
 
 // Complete marks the async operation as complete
 func (r *AsyncResult[T]) Complete(value T, err error) {
-	r.Value = value
-	r.Error = err
-	close(r.Done)
+	r.completeOnce.Do(func() {
+		r.Value = value
+		r.Error = err
+		close(r.Done)
+	})
 }
 
 // Wait blocks until the operation is complete and returns the result
@@ -70,7 +75,15 @@ var asyncSemaphore = make(chan struct{}, 1000) // global cap on concurrent async
 func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *AsyncResult[T] {
 	result := NewAsyncResult[T]()
 
-	asyncSemaphore <- struct{}{}
+	// Acquire a semaphore slot without blocking the caller indefinitely: if the
+	// global cap is saturated, honor cancellation instead of hanging handlers.
+	select {
+	case asyncSemaphore <- struct{}{}:
+	case <-ctx.Done():
+		var zero T
+		result.Complete(zero, ctx.Err())
+		return result
+	}
 	go func() {
 		defer func() { <-asyncSemaphore }()
 		defer func() {
@@ -102,14 +115,18 @@ func NewBatchAsyncResult[T any](count int, batchSize int) *BatchAsyncResult[T] {
 		results[i] = *NewAsyncResult[T]()
 	}
 
-	return &BatchAsyncResult[T]{
+	br := &BatchAsyncResult[T]{
 		Results:   results,
 		Done:      make(chan struct{}),
 		batchSize: batchSize,
 		pending:   int32(count),
 	}
+	if count == 0 {
+		// Nothing to complete; close Done immediately so WaitAll never hangs.
+		close(br.Done)
+	}
+	return br
 }
-
 
 // CompleteResult marks one operation done and, when all operations in the
 // batch have completed, closes the batch Done channel. It is the sole
@@ -128,8 +145,8 @@ func (br *BatchAsyncResult[T]) WaitAll() ([]T, []error) {
 	values := make([]T, len(br.Results))
 	errors := make([]error, len(br.Results))
 
-	for i, result := range br.Results {
-		values[i], errors[i] = result.Wait()
+	for i := range br.Results {
+		values[i], errors[i] = br.Results[i].Wait()
 	}
 
 	return values, errors
@@ -187,15 +204,26 @@ type WorkerPool struct {
 	workers  int
 	jobQueue chan func()
 	stopChan chan struct{}
+	stopOnce sync.Once
 	wg       sync.WaitGroup
+	logger   *logger.Logger
 }
 
-// NewWorkerPool creates a new worker pool
-func NewWorkerPool(workers int) *WorkerPool {
+// NewWorkerPool creates a new worker pool. An optional logger enables
+// structured panic logging; without one, panics log to stderr.
+func NewWorkerPool(workers int, log ...*logger.Logger) *WorkerPool {
+	if workers < 1 {
+		workers = 1
+	}
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
+	}
 	return &WorkerPool{
 		workers:  workers,
 		jobQueue: make(chan func(), workers*2),
 		stopChan: make(chan struct{}),
+		logger:   l,
 	}
 }
 
@@ -207,21 +235,24 @@ func (wp *WorkerPool) Start() {
 	}
 }
 
-// Stop stops the worker pool, draining any queued jobs first.
+// Stop stops the worker pool. Workers finish any in-flight job and drain
+// remaining queued jobs before exiting — no jobs are dropped.
 func (wp *WorkerPool) Stop() {
-	// Drain buffered jobs before signalling workers to stop so that Submit
-	// never races with close (only Stop ever closes stopChan).
-	for len(wp.jobQueue) > 0 {
-		<-wp.jobQueue
-	}
-	close(wp.stopChan)
-	wp.wg.Wait()
+	wp.stopOnce.Do(func() {
+		close(wp.stopChan)
+		wp.wg.Wait()
+	})
 }
 
 // Submit submits a job to the worker pool.  Blocks if the queue is full;
-// call SubmitOrDrop for a non-blocking variant.
+// call SubmitOrDrop for a non-blocking variant.  After Stop/Close, Submit
+// never blocks forever: it either lands in the queue (drained by workers)
+// or is dropped when shutdown is signaled.
 func (wp *WorkerPool) Submit(job func()) {
-	wp.jobQueue <- job
+	select {
+	case wp.jobQueue <- job:
+	case <-wp.stopChan:
+	}
 }
 
 // SubmitOrDrop attempts to submit a job without blocking.  Returns false
@@ -230,6 +261,8 @@ func (wp *WorkerPool) SubmitOrDrop(job func()) bool {
 	select {
 	case wp.jobQueue <- job:
 		return true
+	case <-wp.stopChan:
+		return false
 	default:
 		return false
 	}
@@ -237,24 +270,28 @@ func (wp *WorkerPool) SubmitOrDrop(job func()) bool {
 
 func (wp *WorkerPool) worker() {
 	defer wp.wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			_ = r
-		}
-	}()
 
 	for {
 		select {
 		case job := <-wp.jobQueue:
-			job()
+			utils.GoSafe(wp.logger, job)
 		case <-wp.stopChan:
-			return
+			// Drain remaining queued jobs before exiting so shutdown does not
+			// silently discard accepted work.
+			for {
+				select {
+				case job := <-wp.jobQueue:
+					utils.GoSafe(wp.logger, job)
+				default:
+					return
+				}
+			}
 		}
 	}
 }
 
-// Close closes the worker pool
+// Close closes the worker pool. Jobs submitted after Close are dropped,
+// never blocked on.
 func (wp *WorkerPool) Close() {
 	wp.Stop()
-	close(wp.jobQueue)
 }

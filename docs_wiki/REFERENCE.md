@@ -41,7 +41,6 @@ middleware:
   ratelimit: true
   security: true
   audit: true
-  encryption: false
   gzip: true
   swagger: true
 
@@ -113,12 +112,6 @@ encryption:
 swagger:
   enabled: false
   base_path: "/swagger"
-
-plugins:
-  enabled: true
-  default_limits:
-    max_timeout_ms: 30000
-    max_memory_bytes: 104857600
 ```
 
 ## API Response Format
@@ -184,12 +177,21 @@ type Service interface {
 Services auto-register via `init()`:
 ```go
 func init() {
-    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        helper := registry.NewServiceHelper(cfg, log, deps)
-        if !helper.IsServiceEnabled("service_name") {
+    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
+        if !cfg.Services.IsEnabled("service_name") {
             return nil
         }
         return NewService(true, log)
+    })
+}
+```
+
+Services that consume infrastructure use `RegisterServiceWithDeps` and typed getters:
+```go
+func init() {
+    registry.RegisterServiceWithDeps("service_name", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+        pg := deps.Postgres() // *PostgresConnectionManager or nil
+        return NewService(cfg.Services.IsEnabled("service_name"), log, pg)
     })
 }
 ```
@@ -215,54 +217,17 @@ func init() {
 
 ## Infrastructure Components
 
-| Component | Config Key | Dependencies Key | Package |
-|-----------|------------|------------------|---------|
-| PostgreSQL | `postgres` | `postgres` | `pgx/v5` + `gorm` |
-| MongoDB | `mongo` | `mongo` | `mongo-driver` |
-| Redis | `redis` | `redis` | `go-redis/v9` |
-| Kafka | `kafka` | `kafka` | `sarama` |
-| MinIO | `minio` | `minio` | `minio-go/v7` |
-| Grafana | `grafana` | `grafana` | HTTP client |
-| Cron | `cron` | `cron` | `robfig/cron/v3` |
-| Plugins | `plugins` | `plugins` | PluginBridge |
+| Component | Config Key | Typed Getter | Package |
+|-----------|------------|--------------|---------|
+| PostgreSQL | `postgres` | `deps.Postgres()` | `pgx/v5` + `gorm` |
+| MongoDB | `mongo` | `deps.Mongo()` | `mongo-driver` |
+| Redis | `redis` | `deps.Redis()` | `go-redis/v9` |
+| Kafka | `kafka` | `deps.Kafka()` | `sarama` |
+| MinIO | `minio` | `deps.MinIO()` | `minio-go/v7` |
+| Grafana | `grafana` | `deps.Grafana()` | HTTP client |
+| Cron | `cron` | `deps.Cron()` | `robfig/cron/v3` |
 
-## Plugin System
-
-### REST API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/plugins` | List all plugins |
-| GET | `/api/v1/plugins/:name` | Plugin details |
-| POST | `/api/v1/plugins/:name/execute` | Execute plugin |
-| PUT | `/api/v1/plugins/:name/scripts/:file` | Upload/replace script |
-| GET | `/api/v1/plugins/:name/scripts` | List plugin scripts |
-| GET | `/api/v1/plugins/:name/scripts/:file` | Get script content |
-| DELETE | `/api/v1/plugins/:name` | Unload plugin |
-| GET | `/api/v1/plugins/manager/status` | Manager health metrics |
-
-### Runtime Types
-
-| Prefix | Runtime | Language |
-|--------|---------|----------|
-| `ts:` | goja (sandboxed) | TypeScript |
-| `ext:` | gRPC subprocess | Python, etc. |
-| `go:` | Native Go | Go |
-
-### Builtin Plugins
-
-| Plugin | Language | Purpose |
-|--------|----------|---------|
-| inspector | TypeScript | System inspection |
-| aggregator | TypeScript | Data aggregation |
-| template_renderer | Python | Template rendering |
-| schema_validator | Python | Schema validation |
-| data_processor | Python | Data processing |
-| metric_computer | Python | Metric computation |
-| webhook_transformer | Python | Webhook transformation |
-| python_demo | Python | Demo plugin |
-| lua_demo | Lua | Lua demo |
-| lua_transformer | Lua | Lua transformation |
+## Middleware
 
 ## Middleware
 
@@ -276,7 +241,6 @@ func init() {
 | Rate Limit | `ratelimit` | Rate limiting |
 | Security | `security` | Security headers |
 | Audit | `audit` | Audit logging |
-| Encryption | `encryption` | Request/response encryption |
 | Gzip | `gzip` | Response compression |
 | Swagger | `swagger` | Swagger UI route |
 
@@ -330,3 +294,35 @@ go run cmd/app/main.go -port 9090
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -ldflags="-s -w -buildid=" -trimpath -o dist/stackyrd ./cmd/app
 ```
+
+## TUI Commands
+
+In TUI mode, press `:` (or `ctrl+p`) to open the command bar. The leading
+colon is optional — `theme ocean_blue` and `:theme ocean_blue` are equivalent:
+
+| Command | Description |
+|---------|-------------|
+| `:help` | List available commands |
+| `:clear` | Clear the log view |
+| `:stats` | Show CPU / RAM / goroutine stats |
+| `:gc` | Force a garbage collection cycle and report heap before/after |
+| `:services` | Show service status |
+| `:infra` | Show infrastructure status |
+| `:list` / `:ls` | List all services, infrastructure components, and service endpoints in a styled overlay |
+| `:themes` | List available themes (active one marked) |
+| `:theme <name>` | Switch theme live and persist it to `config.yaml` |
+
+`:themes` and `:list`/`:ls` render their output in a full-screen styled overlay
+instead of the log view; press `y`/`n`/`esc` to dismiss it.
+
+`:theme <name>` applies the change immediately (no restart) and rewrites the
+`app.theme` line in `config.yaml` so the theme survives the next start.
+
+Scrolling is independent per pane: the mouse wheel scrolls the pane under the
+cursor (sidebar or logs), and keyboard scrolling (`up`/`down`, `pgup`/`pgdown`,
+`home`/`end`) targets the focused pane (`tab` cycles focus) — scrolling one pane
+never moves the other.
+
+Log messages are word-wrapped to the panel width, but messages containing a
+long unbreakable token (serialized errors, URLs, stack traces) are flattened to
+a single truncated line so they don't flood the log view.

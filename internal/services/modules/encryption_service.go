@@ -4,13 +4,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"sync"
 	"time"
 
 	"stackyrd/config"
@@ -27,11 +27,19 @@ type EncryptionService struct {
 	enabled       bool
 	algorithm     string
 	encryptionKey []byte
+	keyMu         sync.RWMutex
+	lastRotation  int64
+	logger        *logger.Logger
 }
 
-func NewEncryptionService(enabled bool, cfg map[string]interface{}) *EncryptionService {
+func NewEncryptionService(enabled bool, cfg map[string]interface{}, log ...*logger.Logger) *EncryptionService {
 	algorithm := "aes-256-gcm"
 	key := ""
+
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
+	}
 
 	if cfg != nil {
 		if alg, ok := cfg["algorithm"].(string); ok && alg != "" {
@@ -42,19 +50,29 @@ func NewEncryptionService(enabled bool, cfg map[string]interface{}) *EncryptionS
 		}
 	}
 
-	keyBytes := []byte(key)
-	if len(keyBytes) < 32 {
-		paddedKey := make([]byte, 32)
-		copy(paddedKey, keyBytes)
-		keyBytes = paddedKey
-	} else if len(keyBytes) > 32 {
-		keyBytes = keyBytes[:32]
+	// Derive a full-strength 32-byte AES key. Never zero-pad or truncate user
+	// input: sha256 stretches any passphrase to 256 bits of key material. If no
+	// key is configured, fall back to a fresh random key so ciphertext is not
+	// trivially decryptable with a known constant.
+	var keyBytes []byte
+	if key != "" {
+		sum := sha256.Sum256([]byte(key))
+		keyBytes = sum[:]
+	} else {
+		keyBytes = make([]byte, 32)
+		if _, err := rand.Read(keyBytes); err != nil {
+			panic(fmt.Sprintf("failed to generate encryption key: %v", err))
+		}
+		if l != nil {
+			l.Warn("Encryption service using a random in-memory key — configure encryption.key to persist")
+		}
 	}
 
 	return &EncryptionService{
 		enabled:       enabled,
 		algorithm:     algorithm,
 		encryptionKey: keyBytes,
+		logger:        l,
 	}
 }
 
@@ -101,30 +119,32 @@ type DecryptResponse struct {
 type StatusResponse struct {
 	Enabled      bool   `json:"enabled"`
 	Algorithm    string `json:"algorithm"`
-	CurrentKey   string `json:"current_key"`
-	KeyLength    int    `json:"key_length"`
 	RotateKeys   bool   `json:"rotate_keys"`
 	LastRotation int64  `json:"last_rotation"`
 }
 
 type KeyRotateRequest struct {
-	NewKey string `json:"new_key" validate:"required,min=16,max=64"`
+	NewKey string `json:"new_key" validate:"required,min=32,max=128"`
 }
 
 func (s *EncryptionService) encrypt(data []byte) (string, error) {
-	block, err := aes.NewCipher(s.encryptionKey)
+	s.keyMu.RLock()
+	key := s.encryptionKey
+	s.keyMu.RUnlock()
+
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %v", err)
+		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %v", err)
+		return "", fmt.Errorf("failed to create GCM: %w", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %v", err)
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
 	encrypted := gcm.Seal(nonce, nonce, data, nil)
@@ -134,17 +154,21 @@ func (s *EncryptionService) encrypt(data []byte) (string, error) {
 func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(encryptedData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64: %v", err)
+		return nil, fmt.Errorf("failed to decode base64: %w", err)
 	}
 
-	block, err := aes.NewCipher(s.encryptionKey)
+	s.keyMu.RLock()
+	key := s.encryptionKey
+	s.keyMu.RUnlock()
+
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %v", err)
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %v", err)
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
 	nonceSize := gcm.NonceSize()
@@ -155,7 +179,7 @@ func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	decrypted, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt: %v", err)
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
 
 	return decrypted, nil
@@ -174,7 +198,10 @@ func (s *EncryptionService) EncryptData(c echo.Context) error {
 
 	encrypted, err := s.encrypt([]byte(req.Data))
 	if err != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Encryption failed: %v", err))
+		if s.logger != nil {
+			s.logger.Error("Encryption failed", err)
+		}
+		return response.InternalServerError(c, "Encryption failed")
 	}
 
 	resp := EncryptResponse{
@@ -200,7 +227,10 @@ func (s *EncryptionService) DecryptData(c echo.Context) error {
 
 	decrypted, err := s.decrypt(req.EncryptedData)
 	if err != nil {
-		return response.BadRequest(c, fmt.Sprintf("Decryption failed: %v", err))
+		if s.logger != nil {
+			s.logger.Error("Decryption failed", err)
+		}
+		return response.BadRequest(c, "Decryption failed")
 	}
 
 	resp := DecryptResponse{
@@ -214,15 +244,15 @@ func (s *EncryptionService) DecryptData(c echo.Context) error {
 }
 
 func (s *EncryptionService) GetStatus(c echo.Context) error {
-	currentKeyPreview := fmt.Sprintf("%s...", hex.EncodeToString(s.encryptionKey[:4]))
+	s.keyMu.RLock()
+	lastRotation := s.lastRotation
+	s.keyMu.RUnlock()
 
 	resp := StatusResponse{
 		Enabled:      s.enabled,
 		Algorithm:    s.algorithm,
-		CurrentKey:   currentKeyPreview,
-		KeyLength:    len(s.encryptionKey),
-		RotateKeys:   false,
-		LastRotation: time.Now().Unix(),
+		RotateKeys:   lastRotation != 0,
+		LastRotation: lastRotation,
 	}
 
 	return response.Success(c, resp, "Encryption service status")
@@ -234,35 +264,26 @@ func (s *EncryptionService) RotateKey(c echo.Context) error {
 		return response.BadRequest(c, "Invalid request body")
 	}
 
-	if len(req.NewKey) < 16 {
-		return response.BadRequest(c, "New key must be at least 16 characters long")
+	// Reject weak keys instead of silently padding/truncating them.
+	if len(req.NewKey) < 32 {
+		return response.BadRequest(c, "New key must be at least 32 characters long")
 	}
 
-	newKeyBytes := []byte(req.NewKey)
-	if len(newKeyBytes) < 32 {
-		paddedKey := make([]byte, 32)
-		copy(paddedKey, newKeyBytes)
-		s.encryptionKey = paddedKey
-	} else if len(newKeyBytes) > 32 {
-		s.encryptionKey = newKeyBytes[:32]
-	} else {
-		s.encryptionKey = newKeyBytes
-	}
-
-	if strings.Contains(req.NewKey, "-") {
-		s.algorithm = "aes-256-gcm-custom"
-	}
+	sum := sha256.Sum256([]byte(req.NewKey))
+	s.keyMu.Lock()
+	s.encryptionKey = sum[:]
+	s.lastRotation = time.Now().Unix()
+	s.keyMu.Unlock()
 
 	return response.Success(c, map[string]string{
-		"message":         "Encryption key rotated successfully",
-		"new_key_preview": fmt.Sprintf("%s...", hex.EncodeToString(s.encryptionKey[:4])),
+		"message": "Encryption key rotated successfully",
 	}, "Key rotation successful")
 }
 
 func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %v", err)
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	return s.encrypt(jsonData)
 }
@@ -270,17 +291,17 @@ func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
 func (s *EncryptionService) DecryptJSON(encryptedData string, target interface{}) error {
 	decrypted, err := s.decrypt(encryptedData)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt: %v", err)
+		return fmt.Errorf("failed to decrypt: %w", err)
 	}
 	return json.Unmarshal(decrypted, target)
 }
 
 func init() {
-	registry.RegisterService("encryption_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("encryption_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		encryptionConfig := map[string]interface{}{
 			"algorithm": config.Encryption.Algorithm,
 			"key":       config.Encryption.Key,
 		}
-		return NewEncryptionService(config.Encryption.Enabled, encryptionConfig)
+		return NewEncryptionService(config.Encryption.Enabled, encryptionConfig, logger)
 	})
 }

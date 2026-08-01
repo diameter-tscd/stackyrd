@@ -1,8 +1,0 @@
-name: data_processor
-version: 1.0.0
-description: "Aggregates, filters, sorts, and computes statistics on data arrays. Modes: aggregate (default), filter, sort, stats, batch."
-author: stackyrd
-entrypoint: "ext:scripts/handler.py"
-limits:
-  max_timeout_ms: 30000
-  max_memory_bytes: 67108864

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"strings"
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
@@ -50,8 +51,13 @@ func SecurityWithConfig(config SecurityConfig) echo.MiddlewareFunc {
 			c.Response().Header().Set("X-XSS-Protection", config.XXSSProtection)
 			c.Response().Header().Set("Referrer-Policy", config.ReferrerPolicy)
 			c.Response().Header().Set("Permissions-Policy", config.PermissionsPolicy)
-			c.Response().Header().Set("Strict-Transport-Security",
-				fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge))
+			if config.StrictTransportSecurity != "" {
+				hsts := config.StrictTransportSecurity
+				if strings.Contains(hsts, "%d") {
+					hsts = fmt.Sprintf(hsts, config.StrictTransportSecurityMaxAge)
+				}
+				c.Response().Header().Set("Strict-Transport-Security", hsts)
+			}
 
 			return next(c)
 		}

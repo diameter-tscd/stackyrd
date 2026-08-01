@@ -88,7 +88,7 @@ type BuildConfig struct {
 	MemoryTotal      uint64
 }
 
-const lowMemoryThreshold = 8 * 1024 * 1024 * 1024 // 8GB
+const lowMemoryThreshold = 4 * 1024 * 1024 * 1024 // 4GB
 
 // BuildContext holds the build state
 type BuildContext struct {
@@ -139,17 +139,7 @@ func (ctx *BuildContext) checkPath(logger *Logger) error {
 
 // clear console screen and reset terminal state
 func ClearScreen() {
-	fmt.Print("\033[?1049l\033[0m\033[H\033[2J\033[3J")
-
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "cls")
-	default:
-		cmd = exec.Command("clear")
-	}
-
+	cmd := exec.Command("clear")
 	cmd.Stdout = os.Stdout
 	_ = cmd.Run()
 }
@@ -739,63 +729,13 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
-// compilePlugins pre-compiles plugin scripts in the builtin directory
-func (ctx *BuildContext) compilePlugins(logger *Logger) error {
-	logger.Info("Compiling plugin scripts...")
-
-	builtinDir := filepath.Join(ctx.ProjectDir, "pkg", "plugin", "builtin")
-	entries, err := os.ReadDir(builtinDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logger.Info("No builtin plugins directory found, skipping")
-			return nil
-		}
-		return fmt.Errorf("failed to read builtin plugins: %w", err)
-	}
-
-	compiled := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		scriptsDir := filepath.Join(builtinDir, entry.Name(), "scripts")
-		scriptsEntries, err := os.ReadDir(scriptsDir)
-		if err != nil {
-			continue
-		}
-		for _, script := range scriptsEntries {
-			if script.IsDir() {
-				continue
-			}
-			name := script.Name()
-			scriptPath := filepath.Join(scriptsDir, name)
-
-			if strings.HasSuffix(name, ".py") {
-				pycPath := filepath.Join(scriptsDir, strings.TrimSuffix(name, ".py")+".pyc")
-				logger.Debug("Compiling %s -> %s", scriptPath, pycPath)
-				cmd := exec.Command("python3", "-c",
-					fmt.Sprintf("import py_compile; py_compile.compile(%q, cfile=%q, doraise=True)", scriptPath, pycPath))
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					logger.Warn("Failed to compile Python plugin %s: %v", scriptPath, err)
-					continue
-				}
-				compiled++
-				logger.Success("Compiled Python plugin: %s", filepath.Base(scriptPath))
-			}
-		}
-	}
-
-	if compiled == 0 {
-		logger.Info("No Python plugin scripts to compile")
-	} else {
-		logger.Success("Compiled %d Python plugin script(s)", compiled)
-	}
-	return nil
-}
-
 // buildApplication builds the Go application
 func (ctx *BuildContext) buildApplication(logger *Logger) error {
+	logger.Info("Tidying Go modules...")
+	if err := exec.Command("go", "mod", "tidy").Run(); err != nil {
+		return fmt.Errorf("go mod tidy failed: %w", err)
+	}
+
 	logger.Info("Building Go binary...")
 
 	// Generate version info if available
@@ -807,13 +747,23 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 		logger.Info("Skipping goversioninfo (not available)")
 	}
 
-	// Build command
-	var cmd *exec.Cmd
 	outputPath := filepath.Join(ctx.DistPath, APP_NAME)
-
 	if runtime.GOOS == "windows" {
 		outputPath += ".exe"
 	}
+
+	env := append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
+	if ctx.Config.SlowMode {
+		env = append(env, "GOMAXPROCS=1")
+	}
+
+	type buildTry struct {
+		bin  string
+		args []string
+		desc string
+	}
+
+	var tries []buildTry
 
 	if ctx.Config.UseGarble {
 		if err := exec.Command("garble", "-h").Run(); err != nil {
@@ -825,34 +775,114 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 		} else {
 			logger.Success("garble found")
 		}
-		cmd = exec.Command("garble", "build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH)
-	} else {
-		args := []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath}
-		if ctx.Config.SlowMode {
-			logger.Warn("Slow mode: limiting compiler to 1 concurrent compile (-p=1)")
-			args = append(args, "-p=1")
-		}
-		args = append(args, MAIN_PATH)
-		cmd = exec.Command("go", args...)
+		tries = append(tries, buildTry{"garble", []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath, MAIN_PATH}, "garble build"})
 	}
 
-	// Set environment for garble
-	env := append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
+	baseArgs := []string{"build", "-ldflags=-s -w -buildid=", "-trimpath", "-o", outputPath}
 	if ctx.Config.SlowMode {
-		env = append(env, "GOMAXPROCS=1")
+		logger.Warn("Slow mode: limiting compiler to 1 concurrent compile (-p=1)")
+		baseArgs = append(baseArgs, "-p=1")
 	}
-	cmd.Env = env
+	baseArgs = append(baseArgs, MAIN_PATH)
+	tries = append(tries, buildTry{"go", baseArgs, "go build"})
 
-	// Run build
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	tries = append(tries, buildTry{"go", []string{"build", "-o", outputPath, MAIN_PATH}, "go build (minimal flags)"})
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build failed with exit code: %w", err)
+	// runTry executes a single build attempt. When outPath differs from
+	// outputPath, the produced binary is renamed into place afterwards so
+	// concurrent attempts never write to the same file.
+	runTry := func(t buildTry, outPath string) error {
+		args := make([]string, len(t.args))
+		copy(args, t.args)
+		for i := range args {
+			if args[i] == outputPath {
+				args[i] = outPath
+			}
+		}
+
+		cmd := exec.Command(t.bin, args...)
+		cmd.Env = env
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		logger.Info("Trying: %s", t.desc)
+		err := cmd.Run()
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				logger.Warn("%s failed with exit code %d", t.desc, exitErr.ExitCode())
+			} else {
+				logger.Warn("%s failed (%v)", t.desc, err)
+			}
+			_ = os.Remove(outPath)
+			return err
+		}
+
+		if outPath != outputPath {
+			if err := os.Rename(outPath, outputPath); err != nil {
+				_ = os.Remove(outPath)
+				return fmt.Errorf("rename %s -> %s: %w", outPath, outputPath, err)
+			}
+		}
+		return nil
 	}
 
-	logger.Success("Build successful: %s", outputPath)
-	return nil
+	var (
+		lastErr error
+		errMu   sync.Mutex
+		ok      bool
+		okMu    sync.Mutex
+	)
+
+	if ctx.Config.FastMode {
+		const maxConcurrent = 10
+		logger.Info("Fast mode: running up to %d concurrent build attempts", maxConcurrent)
+
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+
+		for i, t := range tries {
+			wg.Add(1)
+			go func(t buildTry, idx int) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				// unique temp output so concurrent attempts don't clash
+				outPath := fmt.Sprintf("%s.tmp%d", outputPath, idx)
+				if err := runTry(t, outPath); err != nil {
+					errMu.Lock()
+					lastErr = err
+					errMu.Unlock()
+					return
+				}
+				okMu.Lock()
+				ok = true
+				okMu.Unlock()
+			}(t, i)
+		}
+		wg.Wait()
+
+		if ok {
+			logger.Success("Build successful: %s", outputPath)
+			return nil
+		}
+		if lastErr != nil {
+			return fmt.Errorf("all build attempts failed: %w", lastErr)
+		}
+		return nil
+	}
+
+	// Sequential fallback (slow/normal mode)
+	for _, t := range tries {
+		if err := runTry(t, outputPath); err == nil {
+			logger.Success("Build successful: %s", outputPath)
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+
+	return fmt.Errorf("all build attempts failed: %w", lastErr)
 }
 
 // copyAssets copies required assets to the dist directory
@@ -941,16 +971,16 @@ func (ctx *BuildContext) detectSystemResources(logger *Logger) error {
 
 	ctx.Config.MemoryTotal = v.Total
 
-	lowCPU := cpuCores < 4
+	lowCPU := cpuCores < 2
 	lowRAM := v.Total < lowMemoryThreshold
 
 	ctx.Config.SlowMode = lowCPU || lowRAM
 
 	if lowCPU {
-		logger.Warn("Low CPU cores detected: %d (< 4). Enabling slow build mode.", cpuCores)
+		logger.Warn("Low CPU cores detected: %d (< 2). Enabling slow build mode.", cpuCores)
 	}
 	if lowRAM {
-		logger.Warn("Low memory detected: %s (< 8 GB). Enabling slow build mode.", humanizeSize(int64(v.Total)))
+		logger.Warn("Low memory detected: %s (< 4 GB). Enabling slow build mode.", humanizeSize(int64(v.Total)))
 	}
 	if ctx.Config.SlowMode {
 		logger.Warn("Compiler parallelism will be reduced, garble/UPX will be skipped.")
@@ -988,7 +1018,7 @@ func main() {
 		useGarble      = flag.Bool("garble", false, "Enable garble obfuscation (skips interactive prompt)")
 		useUPX         = flag.Bool("upx", false, "Enable UPX compression (skips interactive prompt)")
 		slowMode       = flag.Bool("slow-mode", false, "Force slow build mode (reduces parallelism, skips garble/UPX)")
-		fastMode       = flag.Bool("fast-mode", false, "Force fast build mode (skips garble/UPX/backup-archive for speed)")
+		fastMode       = flag.Bool("fast", false, "Skip low-spec detection, use full concurrency")
 		noBackup       = flag.Bool("no-backup", false, "Skip backing up and archiving old dist files")
 		noCompression  = flag.Bool("no-compression", false, "Skip UPX LZMA compression step")
 		archiveFormat  = flag.String("archive-format", DefaultFormat, "Backup archive format: tar (native LZMA2, default) or 7z (requires 7z binary)")
@@ -1097,7 +1127,6 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 		{"Stopping running process", ctx.stopRunningProcess},
 		{"Creating backup", ctx.createBackup},
 		{"Archiving backup", ctx.archiveBackup},
-		{"Compiling plugins", ctx.compilePlugins},
 		{"Building application", ctx.buildApplication},
 		{"Asking user about UPX compression", ctx.askUserAboutUPX},
 		{"Compressing with UPX", ctx.compressWithUPX},
@@ -1106,18 +1135,23 @@ func runCLIBuild(ctx *BuildContext, logger *Logger) {
 
 	for i, step := range steps {
 		if step.name == "Asking user about garble" && (ctx.Config.UseGarble || ctx.Config.SlowMode || ctx.Config.FastMode) {
+			logger.Warn("Skipped: %s", step.name)
 			continue
 		}
 		if step.name == "Asking user about UPX compression" && (ctx.Config.UseUPX || ctx.Config.SlowMode || ctx.Config.FastMode || ctx.Config.NoCompression) {
+			logger.Warn("Skipped: %s", step.name)
 			continue
 		}
 		if step.name == "Compressing with UPX" && (ctx.Config.SlowMode || ctx.Config.FastMode || ctx.Config.NoCompression) {
+			logger.Warn("Skipped: %s", step.name)
 			continue
 		}
 		if step.name == "Archiving backup" && (ctx.Config.FastMode || ctx.Config.NoBackup) {
+			logger.Warn("Skipped: %s", step.name)
 			continue
 		}
 		if step.name == "Creating backup" && ctx.Config.NoBackup {
+			logger.Warn("Skipped: %s", step.name)
 			continue
 		}
 
@@ -1337,7 +1371,6 @@ func NewBuildTuiModel(ctx *BuildContext, logger *Logger) BuildTuiModel {
 		{"Stop Running Process", (*BuildContext).stopRunningProcess},
 		{"Create Backup", (*BuildContext).createBackup},
 		{"Archive Backup", (*BuildContext).archiveBackup},
-		{"Compile Plugins", (*BuildContext).compilePlugins},
 		{"Build Application", (*BuildContext).buildApplication},
 		{"Configure UPX Compression", nil},
 		{"Compress with UPX", (*BuildContext).compressWithUPX},

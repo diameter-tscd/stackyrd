@@ -87,7 +87,7 @@ func (s *HelloService) handleHello(c echo.Context) error {
 }
 
 func init() {
-    registry.RegisterService("hello_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterService("hello_service", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
         if !cfg.Services.IsEnabled("hello_service") {
             return nil
         }

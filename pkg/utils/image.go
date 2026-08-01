@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nfnt/resize"
 	"golang.org/x/image/bmp"
+	"golang.org/x/image/draw"
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
 )
@@ -33,12 +33,11 @@ const (
 
 // CompressionOptions defines options for image compression
 type CompressionOptions struct {
-	Quality        int                          // Quality 1-100 (higher = better quality)
-	MaxWidth       uint                         // Maximum width (0 = no resize)
-	MaxHeight      uint                         // Maximum height (0 = no resize)
-	PreserveAspect bool                         // Preserve aspect ratio when resizing
-	OutputFormat   ImageFormat                  // Output format (default: same as input)
-	Interpolation  resize.InterpolationFunction // Resize interpolation method
+	Quality        int         // Quality 1-100 (higher = better quality)
+	MaxWidth       uint        // Maximum width (0 = no resize)
+	MaxHeight      uint        // Maximum height (0 = no resize)
+	PreserveAspect bool        // Preserve aspect ratio when resizing
+	OutputFormat   ImageFormat // Output format (default: same as input)
 }
 
 // DefaultCompressionOptions returns sensible default compression options
@@ -48,7 +47,6 @@ func DefaultCompressionOptions() CompressionOptions {
 		MaxWidth:       0,
 		MaxHeight:      0,
 		PreserveAspect: true,
-		Interpolation:  resize.Lanczos3,
 	}
 }
 
@@ -197,11 +195,11 @@ func Crop(img image.Image, spec Cropspec) image.Image {
 	x := clamp(spec.X, 0, srcW-1)
 	y := clamp(spec.Y, 0, srcH-1)
 	w := spec.Width
-	if w == 0 || x+w > srcW {
+	if w <= 0 || w > srcW-x {
 		w = srcW - x
 	}
 	h := spec.Height
-	if h == 0 || y+h > srcH {
+	if h <= 0 || h > srcH-y {
 		h = srcH - y
 	}
 
@@ -242,7 +240,7 @@ func CenterCrop(img image.Image, targetWidth, targetHeight uint) image.Image {
 		if targetHeight == 0 {
 			targetHeight = targetWidth
 		}
-		return resize.Resize(targetWidth, targetHeight, cropped, resize.Lanczos3)
+		return scaleImage(cropped, targetWidth, targetHeight)
 	}
 
 	return cropped
@@ -267,6 +265,10 @@ func ResizeImage(img image.Image, options CompressionOptions) image.Image {
 	targetHeight := options.MaxHeight
 
 	if options.PreserveAspect {
+		if origHeight == 0 {
+			// Degenerate image: nothing to scale against, return as-is.
+			return img
+		}
 		aspectRatio := float64(origWidth) / float64(origHeight)
 
 		if targetWidth == 0 {
@@ -296,27 +298,66 @@ func ResizeImage(img image.Image, options CompressionOptions) image.Image {
 		return img
 	}
 
-	return resize.Resize(targetWidth, targetHeight, img, options.Interpolation)
+	return scaleImage(img, targetWidth, targetHeight)
+}
+
+// scaleImage resizes src to the target dimensions using high-quality Catmull-Rom
+// interpolation (replaces the abandoned nfnt/resize package).
+func scaleImage(src image.Image, width, height uint) image.Image {
+	dst := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+	return dst
 }
 
 // decodeImage decodes an image from a reader given its format.
+const (
+	// maxDecodeBytes caps the compressed input size read into memory.
+	maxDecodeBytes = 64 << 20
+	// maxImagePixels caps the decoded pixel count to prevent decompression
+	// bombs from exhausting memory (≈50MP).
+	maxImagePixels = 50_000_000
+)
+
 func decodeImage(reader io.Reader, format ImageFormat) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxDecodeBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image: %w", err)
+	}
+	if len(data) > maxDecodeBytes {
+		return nil, fmt.Errorf("image exceeds size limit")
+	}
+
+	// Check dimensions before full decode so a huge image cannot allocate
+	// unbounded memory during decoding.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("invalid image: %w", err)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxImagePixels {
+		return nil, fmt.Errorf("image dimensions exceed safety limit (%dx%d)", cfg.Width, cfg.Height)
+	}
+
+	var img image.Image
 	switch format {
 	case FormatJPEG:
-		return jpeg.Decode(reader)
+		img, err = jpeg.Decode(bytes.NewReader(data))
 	case FormatPNG:
-		return png.Decode(reader)
+		img, err = png.Decode(bytes.NewReader(data))
 	case FormatGIF:
-		return gif.Decode(reader)
+		img, err = gif.Decode(bytes.NewReader(data))
 	case FormatBMP:
-		return bmp.Decode(reader)
+		img, err = bmp.Decode(bytes.NewReader(data))
 	case FormatTIFF:
-		return tiff.Decode(reader)
+		img, err = tiff.Decode(bytes.NewReader(data))
 	case FormatWebP:
-		return webp.Decode(reader)
+		img, err = webp.Decode(bytes.NewReader(data))
 	default:
 		return nil, fmt.Errorf("unsupported image format: %s", format)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+	return img, nil
 }
 
 // encodeImage encodes an image to a writer in the specified format.
@@ -334,7 +375,9 @@ func encodeImage(writer io.Writer, img image.Image, format ImageFormat, quality 
 	case FormatTIFF:
 		return tiff.Encode(writer, img, &tiff.Options{Compression: tiff.Deflate})
 	case FormatWebP:
-		return jpeg.Encode(writer, img, &jpeg.Options{Quality: quality})
+		// No stdlib/imported WebP encoder: refuse rather than emit JPEG bytes
+		// mislabeled as WebP.
+		return fmt.Errorf("webp output is not supported")
 	default:
 		return fmt.Errorf("unsupported output format: %s", format)
 	}
@@ -467,9 +510,12 @@ func OptimizeForWeb(input io.Reader, output io.Writer, maxWidth uint, quality in
 
 // compressWithAutoDetect detects the input format automatically and compresses.
 func compressWithAutoDetect(reader io.Reader, writer io.Writer, options CompressionOptions) error {
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxDecodeBytes+1))
 	if err != nil {
 		return fmt.Errorf("failed to read input: %w", err)
+	}
+	if len(data) > maxDecodeBytes {
+		return fmt.Errorf("input image exceeds size limit")
 	}
 
 	inputFormat, ok := DetectFormatFromBytes(data)
@@ -523,42 +569,44 @@ func BatchProcess(inputPaths []string, compressOpts CompressionOptions, batchOpt
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(path string) {
-			defer wg.Done()
-			defer func() { <-sem }()
+			GoSafe(nil, func() {
+				defer wg.Done()
+				defer func() { <-sem }()
 
-			result := BatchResult{InputPath: path}
+				result := BatchResult{InputPath: path}
 
-			outputPath := batchOpts.OutputDir
-			if outputPath == "" {
-				outputPath = filepath.Dir(path)
-			}
-			ext := filepath.Ext(path)
-			base := strings.TrimSuffix(filepath.Base(path), ext)
-			result.OutputPath = filepath.Join(outputPath, base+batchOpts.Suffix+ext)
-
-			if !batchOpts.Overwrite {
-				if _, err := os.Stat(result.OutputPath); err == nil {
-					result.Err = fmt.Errorf("output file exists: %s", result.OutputPath)
-					mu.Lock()
-					results = append(results, result)
-					mu.Unlock()
-					if batchOpts.OnProgress != nil {
-						batchOpts.OnProgress(path, result.Err)
-					}
-					return
+				outputPath := batchOpts.OutputDir
+				if outputPath == "" {
+					outputPath = filepath.Dir(path)
 				}
-			}
+				ext := filepath.Ext(path)
+				base := strings.TrimSuffix(filepath.Base(path), ext)
+				result.OutputPath = filepath.Join(outputPath, base+batchOpts.Suffix+ext)
 
-			err := CompressFile(path, result.OutputPath, compressOpts)
-			result.Err = err
+				if !batchOpts.Overwrite {
+					if _, err := os.Stat(result.OutputPath); err == nil {
+						result.Err = fmt.Errorf("output file exists: %s", result.OutputPath)
+						mu.Lock()
+						results = append(results, result)
+						mu.Unlock()
+						if batchOpts.OnProgress != nil {
+							batchOpts.OnProgress(path, result.Err)
+						}
+						return
+					}
+				}
 
-			mu.Lock()
-			results = append(results, result)
-			mu.Unlock()
+				err := CompressFile(path, result.OutputPath, compressOpts)
+				result.Err = err
 
-			if batchOpts.OnProgress != nil {
-				batchOpts.OnProgress(path, err)
-			}
+				mu.Lock()
+				results = append(results, result)
+				mu.Unlock()
+
+				if batchOpts.OnProgress != nil {
+					batchOpts.OnProgress(path, err)
+				}
+			})
 		}(inputPath)
 	}
 
@@ -572,7 +620,10 @@ func Rotate(img image.Image, degrees int) image.Image {
 	w := bounds.Dx()
 	h := bounds.Dy()
 
-	switch degrees % 360 {
+	// Normalize negative and over-360 rotations into a canonical 0-359 value.
+	degrees = ((degrees % 360) + 360) % 360
+
+	switch degrees {
 	case 0:
 		return img
 	case 90:
@@ -633,11 +684,5 @@ func FlipVertically(img image.Image) image.Image {
 }
 
 func clamp(val, minVal, maxVal int) int {
-	if val < minVal {
-		return minVal
-	}
-	if val > maxVal {
-		return maxVal
-	}
-	return val
+	return max(minVal, min(val, maxVal))
 }

@@ -3,6 +3,7 @@ package request
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -108,12 +109,18 @@ func FormatValidationErrors(errs validator.ValidationErrors) map[string]string {
 
 // validatePhone validates phone number format
 func validatePhone(fl validator.FieldLevel) bool {
+	if fl.Field().Kind() != reflect.String {
+		return false
+	}
 	phone := fl.Field().String()
 	return phoneRegex.MatchString(phone)
 }
 
 // validateUsername validates username format (alphanumeric, 3-20 chars)
 func validateUsername(fl validator.FieldLevel) bool {
+	if fl.Field().Kind() != reflect.String {
+		return false
+	}
 	username := fl.Field().String()
 	return userRegex.MatchString(username)
 }

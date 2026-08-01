@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -59,7 +60,7 @@ func (k *KafkaManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	if k.Producer == nil && len(k.Brokers) == 0 {
+	if k.Producer == nil || len(k.Brokers) == 0 {
 
 		stats["connected"] = false
 		return stats
@@ -120,7 +121,8 @@ func (h *consumerHandler) Cleanup(sarama.ConsumerGroupSession) error { return ni
 func (h *consumerHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for message := range claim.Messages() {
 		if err := h.handler(message.Key, message.Value); err != nil {
-			h.logger.Error("Error handling message", err)
+			h.logger.Error("Error handling message", err, "topic", claim.Topic(), "partition", claim.Partition())
+			return err
 		}
 		session.MarkMessage(message, "")
 	}
@@ -184,6 +186,9 @@ func (k *KafkaManager) ConsumeAsync(ctx context.Context, topic string, handler f
 // Sync Methods (for backward compatibility and internal use)
 
 func (k *KafkaManager) Publish(ctx context.Context, topic string, message []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	msg := &sarama.ProducerMessage{
 		Topic: topic,
 		Value: sarama.ByteEncoder(message),
@@ -194,6 +199,9 @@ func (k *KafkaManager) Publish(ctx context.Context, topic string, message []byte
 }
 
 func (k *KafkaManager) PublishWithKey(ctx context.Context, topic string, key, message []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	msg := &sarama.ProducerMessage{
 		Topic: topic,
 		Key:   sarama.ByteEncoder(key),
@@ -211,8 +219,7 @@ func (k *KafkaManager) SubmitAsyncJob(job func()) {
 	if k.Pool != nil {
 		k.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

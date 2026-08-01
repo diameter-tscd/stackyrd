@@ -461,9 +461,6 @@ func (m *TerminalModel) renderSidebarContent() string {
 	b.WriteString(sidebarValueStyle().Render("Uptime " + uptime))
 	b.WriteString("\n")
 
-	// spacing
-	b.WriteString("\n")
-
 	// Divider
 	b.WriteString(divider)
 	b.WriteString("\n")
@@ -545,9 +542,10 @@ func (m *TerminalModel) renderResourcesSection() string {
 
 	sectionTitle := "Resources"
 	if m.sidebarContentWidth >= 16 {
-		sectionTitle = "─── Resources ───"
+		sectionTitle = "። Resources"
 	}
 	lines = append(lines, sidebarSectionStyle().Render(sectionTitle))
+	lines = append(lines, "")
 
 	barW := m.sidebarContentWidth - 20
 	if barW < 4 {
@@ -566,9 +564,6 @@ func (m *TerminalModel) renderResourcesSection() string {
 	memUsedGiB := fmt.Sprintf("%.1f", float64(m.memUsed)/1024)
 	memTotalGiB := fmt.Sprintf("%.1f", float64(m.memTotal)/1024)
 	lines = append(lines, fmt.Sprintf("     %s / %s GiB", sidebarValueStyle().Render(memUsedGiB), sidebarDimStyle().Render(memTotalGiB)))
-
-	// Separator
-	lines = append(lines, DividerLine().Render(strings.Repeat("─", 38)))
 
 	// Key-value info as 2-column table for proper alignment
 	var kvRows []table.Row
@@ -610,7 +605,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	compTitle := "Components"
 	if cw >= 16 {
-		compTitle = "─── Components ───"
+		compTitle = "። Components"
 	}
 	lines = append(lines, sidebarSectionStyle().Render(compTitle))
 
@@ -657,7 +652,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	svcTitle := "Services"
 	if cw >= 16 {
-		svcTitle = "─── Services ───"
+		svcTitle = "። Services"
 	}
 	lines = append(lines, sidebarSectionStyle().Render(svcTitle))
 
@@ -709,7 +704,7 @@ func (m *TerminalModel) renderComponentsSection() string {
 
 	mwTitle := "Middlewares"
 	if cw >= 16 {
-		mwTitle = "─── Middlewares ───"
+		mwTitle = "። Middlewares"
 	}
 	lines = append(lines, sidebarSectionStyle().Render(mwTitle))
 

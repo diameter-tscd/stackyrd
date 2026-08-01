@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"stackyrd/pkg/utils"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ var (
 	configCacheMu   sync.RWMutex
 	configCacheTime time.Time
 	configCacheTTL  = 5 * time.Minute
+	viperMu         sync.Mutex // serializes global-viper mutations across goroutines
 )
 
 func setupViperDefaults() {
@@ -218,9 +220,9 @@ type GrafanaConfig struct {
 func LoadConfig() (*Config, error) {
 	configCacheMu.RLock()
 	if configCache != nil && time.Since(configCacheTime) < configCacheTTL {
-		cached := configCache
+		cached := *configCache // defensive copy: callers must not mutate shared state
 		configCacheMu.RUnlock()
-		return cached, nil
+		return &cached, nil
 	}
 	configCacheMu.RUnlock()
 	return loadFromSource()
@@ -232,6 +234,9 @@ func ForceReloadConfig() (*Config, error) {
 }
 
 func loadFromSource() (*Config, error) {
+	viperMu.Lock()
+	defer viperMu.Unlock()
+
 	setupViperDefaults()
 
 	viper.SetConfigName("config")
@@ -261,16 +266,37 @@ func loadFromSource() (*Config, error) {
 
 // LoadConfigWithURL loads configuration from URL (if provided) or local file
 func LoadConfigWithURL(configURL string) (*Config, error) {
-	if configURL != "" {
-		return loadFromSource()
+	if configURL == "" {
+		return LoadConfig()
 	}
-	return LoadConfig()
+
+	viperMu.Lock()
+	defer viperMu.Unlock()
+
+	if err := utils.LoadConfigFromURL(configURL); err != nil {
+		return nil, fmt.Errorf("failed to load config from URL: %w", err)
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	configCacheMu.Lock()
+	configCache = &cfg
+	configCacheTime = time.Now()
+	configCacheMu.Unlock()
+
+	return &cfg, nil
 }
 
 // SaveTheme persists app.theme back to the local config file so a runtime
 // theme change survives a restart. It edits only the theme line, preserving the
 // rest of the file byte-for-byte. Remote-URL configs have no file to write.
 func SaveTheme(name string) error {
+	viperMu.Lock()
+	defer viperMu.Unlock()
+
 	viper.Set("app.theme", name)
 
 	path := viper.ConfigFileUsed()
@@ -283,6 +309,17 @@ func SaveTheme(name string) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
+	// Locate the top-level "app:" key so a "theme:" nested in some other block
+	// (datasource config, plugin settings, ...) is never rewritten.
+	appIndent := -1
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "app:") {
+			appIndent = len(line) - len(trimmed)
+			break
+		}
+	}
+
 	lines := strings.Split(string(data), "\n")
 	replaced := false
 	for i, line := range lines {
@@ -290,13 +327,17 @@ func SaveTheme(name string) error {
 		if !strings.HasPrefix(trimmed, "theme:") {
 			continue
 		}
-		indent := line[:len(line)-len(trimmed)]
+		indent := len(line) - len(trimmed)
+		if appIndent >= 0 && indent <= appIndent {
+			// Not nested inside app: — leave it alone.
+			continue
+		}
 		comment := ""
 		if c := strings.Index(trimmed, "#"); c >= 0 {
 			comment = " " + trimmed[c:]
 			trimmed = trimmed[:c]
 		}
-		lines[i] = indent + "theme: " + fmt.Sprintf("%q", name) + comment
+		lines[i] = strings.Repeat(" ", indent) + "theme: " + fmt.Sprintf("%q", name) + comment
 		replaced = true
 		break
 	}
@@ -308,5 +349,11 @@ func SaveTheme(name string) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), mode)
+
+	// Write via temp file + rename so an interrupted write can't corrupt config.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")), mode); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return os.Rename(tmp, path)
 }

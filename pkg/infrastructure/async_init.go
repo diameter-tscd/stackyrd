@@ -28,6 +28,7 @@ type InfraInitManager struct {
 	doneChan chan struct{}
 	wg       sync.WaitGroup
 	ready    atomic.Bool
+	started  sync.Once
 
 	// cacheMu guards GetStatus TTL-snapshot. updateStatus invalidates it.
 	cacheMu      sync.Mutex
@@ -49,6 +50,13 @@ func NewInfraInitManager(logger *logger.Logger) *InfraInitManager {
 
 // StartAsyncInitialization begins asynchronous initialization of all infrastructure components
 func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger *logger.Logger) *ComponentRegistry {
+	im.started.Do(func() {
+		im.startAsyncInitialization(cfg, logger)
+	})
+	return GetGlobalRegistry()
+}
+
+func (im *InfraInitManager) startAsyncInitialization(cfg *config.Config, logger *logger.Logger) {
 	registry := GetGlobalRegistry()
 
 	// Initialize all registered components (registry.Initialize logs per-component failures)
@@ -73,12 +81,21 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 					Progress:    1.0,
 				})
 
-				// Perform health check with timeout
-				status := comp.GetStatus()
-				if connected, ok := status["connected"].(bool); ok && connected {
-					logger.Debug("Health check passed", "component", compName)
-				} else {
-					logger.Warn("Health check failed or not applicable", "component", compName)
+				// Perform health check with timeout so a hung component can
+				// never wedge WaitForInitialization.
+				statusCh := make(chan map[string]interface{}, 1)
+				go func() {
+					statusCh <- comp.GetStatus()
+				}()
+				select {
+				case status := <-statusCh:
+					if connected, ok := status["connected"].(bool); ok && connected {
+						logger.Debug("Health check passed", "component", compName)
+					} else {
+						logger.Warn("Health check failed or not applicable", "component", compName)
+					}
+				case <-time.After(10 * time.Second):
+					logger.Warn("Health check timed out", "component", compName)
 				}
 			})
 		}(name, component)
@@ -90,8 +107,6 @@ func (im *InfraInitManager) StartAsyncInitialization(cfg *config.Config, logger 
 		im.ready.Store(true)
 		close(im.doneChan)
 	}()
-
-	return registry
 }
 
 // updateStatus updates the initialization status of a component
@@ -108,23 +123,31 @@ func (im *InfraInitManager) invalidateStatusCache() {
 	im.cacheMu.Unlock()
 }
 
-// updateStatusProgress updates only the progress of a component
+// updateStatusProgress updates only the progress of a component.
+// It replaces the status pointer (never mutates in place) so cached
+// snapshots shared by reference stay race-free.
 func (im *InfraInitManager) updateStatusProgress(name string, progress float64) {
 	im.mu.Lock()
 	if status, exists := im.status[name]; exists {
-		status.Progress = progress
+		updated := *status
+		updated.Progress = progress
+		im.status[name] = &updated
 	}
 	im.mu.Unlock()
 	im.invalidateStatusCache()
 }
 
 // GetStatus returns the current initialization status of all components.
-// updateStatus replaces pointers in the source map (never mutates in place),
-// so a shallow snapshot copy is safe to hand back while cached.
+// Status pointers are never mutated in place (updateStatus replaces them),
+// so sharing them across snapshots is race-free; the map itself is copied so
+// a caller cannot corrupt the shared cache.
 func (im *InfraInitManager) GetStatus() map[string]*InfraInitStatus {
 	im.cacheMu.Lock()
 	if time.Now().Before(im.cacheExpiry) && im.cachedStatus != nil {
-		result := im.cachedStatus
+		result := make(map[string]*InfraInitStatus, len(im.cachedStatus))
+		for k, v := range im.cachedStatus {
+			result[k] = v
+		}
 		im.cacheMu.Unlock()
 		return result
 	}

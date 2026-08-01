@@ -60,7 +60,7 @@ func NewDialog(config DialogConfig) *DialogModel {
 		}
 		ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
 		ti.CharLimit = 100
-		ti.Width = config.Width - 4 // Account for padding
+		ti.Width = max(0, config.Width-4) // Account for padding
 		ti.SetValue(config.DefaultValue)
 		ti.Focus()
 		model.textinput = ti
@@ -139,6 +139,12 @@ func (d *DialogModel) Update(msg tea.Msg) tea.Cmd {
 func (d *DialogModel) View(width, height int) string {
 	if !d.isActive {
 		return ""
+	}
+	if width < 0 {
+		width = 0
+	}
+	if height < 0 {
+		height = 0
 	}
 
 	// Create full-screen black background

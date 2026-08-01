@@ -209,6 +209,9 @@ func NewGrafanaManager(cfg config.GrafanaConfig, logger *logger.Logger) (*Grafan
 		}
 		logger.Debug("Using API key authentication")
 	} else if cfg.Username != "" {
+		client.RequestLogHook = func(logger retryablehttp.Logger, req *http.Request, retryNumber int) {
+			req.SetBasicAuth(cfg.Username, cfg.Password)
+		}
 		logger.Debug("Using basic authentication", "username", cfg.Username)
 	}
 
@@ -223,6 +226,8 @@ func NewGrafanaManager(cfg config.GrafanaConfig, logger *logger.Logger) (*Grafan
 
 	// Test connection
 	if err := manager.testConnection(); err != nil {
+		// Release any background HTTP transports before discarding the client
+		manager.Client.HTTPClient.CloseIdleConnections()
 		return nil, fmt.Errorf("failed to connect to Grafana: %w", err)
 	}
 
@@ -685,6 +690,9 @@ func (gm *GrafanaManager) SubmitAsyncJob(job func()) {
 func (gm *GrafanaManager) Close() error {
 	if gm.Pool != nil {
 		gm.Pool.Close()
+	}
+	if gm.Client != nil && gm.Client.HTTPClient != nil {
+		gm.Client.HTTPClient.CloseIdleConnections()
 	}
 	return nil
 }

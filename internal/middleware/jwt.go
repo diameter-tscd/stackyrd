@@ -50,6 +50,9 @@ const (
 )
 
 func GenerateToken(userID, username, email, role, secretKey string, expiration time.Duration) (string, error) {
+	if len(secretKey) < 16 {
+		return "", fmt.Errorf("secretKey must be at least 16 bytes")
+	}
 	claims := JWTClaims{
 		UserID:   userID,
 		Username: username,
@@ -92,7 +95,8 @@ func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 				}
 				return []byte(config.SecretKey), nil
 			}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
-				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience))
+				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience),
+				jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))
 			if err != nil || !parsedToken.Valid {
 				if optional {
 					return next(c)

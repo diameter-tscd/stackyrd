@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"math"
 	"strconv"
 
 	"stackyrd/config"
@@ -8,6 +9,7 @@ import (
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
 	"github.com/labstack/echo/v4"
@@ -56,7 +58,7 @@ func (s *GrafanaService) RegisterRoutes(g *echo.Group) {
 
 func (s *GrafanaService) createDashboard(c echo.Context) error {
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.Bind(&dashboard); err != nil {
+	if err := request.Bind(c, &dashboard); err != nil {
 		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
@@ -76,7 +78,7 @@ func (s *GrafanaService) updateDashboard(c echo.Context) error {
 	}
 
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.Bind(&dashboard); err != nil {
+	if err := request.Bind(c, &dashboard); err != nil {
 		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
@@ -154,24 +156,33 @@ func (s *GrafanaService) listDashboards(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to list dashboards")
 	}
 
+	total := len(dashboards)
+
+	// Clamp page so (page-1)*perPage can never overflow into a negative start.
+	if page > math.MaxInt/perPage {
+		page = math.MaxInt / perPage
+	}
 	start := (page - 1) * perPage
+	if start < 0 {
+		start = 0
+	}
 	end := start + perPage
 
-	if start >= len(dashboards) {
+	if start >= total {
 		dashboards = []infrastructure.GrafanaDashboard{}
-	} else if end > len(dashboards) {
+	} else if end > total {
 		dashboards = dashboards[start:]
 	} else {
 		dashboards = dashboards[start:end]
 	}
 
-	meta := response.CalculateMeta(page, perPage, int64(len(dashboards)))
+	meta := response.CalculateMeta(page, perPage, int64(total))
 	return response.SuccessWithMeta(c, dashboards, meta, "Dashboards retrieved successfully")
 }
 
 func (s *GrafanaService) createDataSource(c echo.Context) error {
 	var ds infrastructure.GrafanaDataSource
-	if err := c.Bind(&ds); err != nil {
+	if err := request.Bind(c, &ds); err != nil {
 		return response.BadRequest(c, "Invalid data source data")
 	}
 
@@ -186,7 +197,7 @@ func (s *GrafanaService) createDataSource(c echo.Context) error {
 
 func (s *GrafanaService) createAnnotation(c echo.Context) error {
 	var annotation infrastructure.GrafanaAnnotation
-	if err := c.Bind(&annotation); err != nil {
+	if err := request.Bind(c, &annotation); err != nil {
 		return response.BadRequest(c, "Invalid annotation data")
 	}
 

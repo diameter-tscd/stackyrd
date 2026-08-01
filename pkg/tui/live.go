@@ -7,6 +7,7 @@ import (
 	"stackyrd/pkg/utils"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -49,7 +50,7 @@ type LiveModel struct {
 	height          int
 	quitting        bool
 	maxLogs         int
-	program         *tea.Program
+	program         atomic.Pointer[tea.Program]
 
 	// Reusable dialog components
 	exitDialog   *template.DialogModel
@@ -131,7 +132,6 @@ func liveTickCmd() tea.Cmd {
 func (m *LiveModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		liveTickCmd(),
 	)
 }
 
@@ -542,8 +542,8 @@ func (m *LiveModel) getLevelStyle(level string) lipgloss.Style {
 
 // AddLog adds a log entry to the TUI
 func (m *LiveModel) AddLog(level, message string) {
-	if m.program != nil {
-		m.program.Send(logMsg{
+	if p := m.program.Load(); p != nil {
+		p.Send(logMsg{
 			Time:    time.Now(),
 			Level:   level,
 			Message: message,
@@ -553,7 +553,7 @@ func (m *LiveModel) AddLog(level, message string) {
 
 // SetProgram sets the tea.Program reference for sending messages
 func (m *LiveModel) SetProgram(p *tea.Program) {
-	m.program = p
+	m.program.Store(p)
 }
 
 // LiveTUI manages the live TUI instance
@@ -734,12 +734,8 @@ func (m *LiveModel) scrollToTop() {
 }
 
 func (m *LiveModel) scrollToBottom() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-
-	m.scrollOffset = len(logsToShow) - m.maxVisibleLines
+	// Use physical line count so the offset matches scrollDown/pageDown math.
+	m.scrollOffset = m.logLineCount() - m.maxVisibleLines
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}

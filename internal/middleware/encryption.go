@@ -1,8 +1,11 @@
 package middleware
 
 import (
+	"bufio"
 	"compress/gzip"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -65,5 +68,35 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.Header().Del("Content-Length")
+	// A bodyless response must not carry Content-Encoding: gzip.
+	if statusCode >= 100 && statusCode < 200 ||
+		statusCode == http.StatusNoContent || statusCode == http.StatusNotModified {
+		w.ResponseWriter.Header().Del("Content-Encoding")
+	}
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Flush keeps streaming/SSE responses from stalling: flush the gzip buffer,
+// then the underlying writer.
+func (w *gzipResponseWriter) Flush() {
+	if f, ok := w.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack lets WebSocket upgrades pass through the gzip wrapper.
+func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
+	}
+	return h.Hijack()
+}
+
+// Unwrap restores the underlying writer for http.ResponseController.
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

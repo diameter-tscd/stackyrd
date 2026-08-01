@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
@@ -177,28 +178,50 @@ func (s *Server) registerHealthEndpoints() {
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
+	if s.dependencies == nil {
+		return nil
+	}
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
-	if s.infraInitManager != nil {
-		logger.Info("Stopping async infrastructure initialization manager...")
-	}
-
+	var mu sync.Mutex
 	var shutdownErrors []error
+	var wg sync.WaitGroup
 
 	for name, component := range s.dependencies.GetAll() {
 		if component == nil {
 			continue
 		}
+		c, ok := component.(interface{ Close() error })
+		if !ok {
+			continue
+		}
 		logger.Info("Shutting down component", "component", name)
-		if c, ok := component.(interface{ Close() error }); ok {
-			if err := c.Close(); err != nil {
+		wg.Add(1)
+		go func(name string, closeFn func() error) {
+			defer wg.Done()
+			if err := closeFn(); err != nil {
+				mu.Lock()
 				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
+				mu.Unlock()
 			} else {
 				logger.Info("Component shut down", "component", name)
 			}
-		}
+		}(name, c.Close)
 	}
 
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		logger.Warn("Shutdown deadline exceeded; some components may not have closed")
+	case <-time.After(30 * time.Second):
+		logger.Warn("Shutdown timed out after 30s; some components may not have closed")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
 	if len(shutdownErrors) > 0 {
 		logger.Warn("Graceful shutdown completed with errors", "error_count", len(shutdownErrors))
 		return errors.Join(shutdownErrors...)

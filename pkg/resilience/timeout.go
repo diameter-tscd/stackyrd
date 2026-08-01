@@ -45,7 +45,7 @@ func WithContext(ctx context.Context, fn func() error) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		return context.DeadlineExceeded
+		return ctx.Err()
 	}
 }
 
@@ -84,7 +84,7 @@ func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, err
 		return res.result, res.err
 	case <-ctx.Done():
 		var zero T
-		return zero, context.DeadlineExceeded
+		return zero, ctx.Err()
 	}
 }
 

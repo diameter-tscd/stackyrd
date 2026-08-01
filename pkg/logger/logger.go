@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -55,6 +56,9 @@ type Logger struct {
 	config LoggerConfig
 }
 
+// setTimeFormatOnce guards the process-wide zerolog.TimeFieldFormat write.
+var setTimeFormatOnce sync.Once
+
 // New creates a new fancy logger
 func New(debug bool, broadcaster io.Writer) *Logger {
 	cfg := DefaultLoggerConfig()
@@ -75,7 +79,11 @@ func NewQuiet(debug bool, broadcaster io.Writer) *Logger {
 
 // NewWithConfig creates a new logger with full configuration
 func NewWithConfig(cfg LoggerConfig) *Logger {
-	zerolog.TimeFieldFormat = time.RFC3339
+	// TimeFieldFormat is a process-wide zerolog setting; set it exactly once
+	// so concurrent NewWithConfig calls can't race on it.
+	setTimeFormatOnce.Do(func() {
+		zerolog.TimeFieldFormat = time.RFC3339
+	})
 
 	// Create console output based on configuration
 	var consoleOutput zerolog.ConsoleWriter
@@ -223,7 +231,7 @@ func (l *Logger) Info(msg string, keyvals ...interface{}) {
 // Error logs an error message
 func (l *Logger) Error(msg string, err error, keyvals ...interface{}) {
 	if err != nil {
-		l.z.Error().Err(err).Fields(keyvals).Msg(msg)
+		l.log(l.z.Error().Err(err), msg, keyvals...)
 	} else {
 		l.log(l.z.Error(), msg, keyvals...)
 	}
@@ -258,7 +266,12 @@ func (l *Logger) log(e *zerolog.Event, msg string, keyvals ...interface{}) {
 		if !ok {
 			key = fmt.Sprintf("%v", keyvals[i])
 		}
-		e.Interface(key, keyvals[i+1])
+		// Marshal errors as their message, not as {} (empty struct JSON).
+		if errVal, ok := keyvals[i+1].(error); ok {
+			e.AnErr(key, errVal)
+		} else {
+			e.Interface(key, keyvals[i+1])
+		}
 	}
 	e.Msg(msg)
 }

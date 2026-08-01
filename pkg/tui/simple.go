@@ -100,11 +100,11 @@ func (r *SimpleRenderer) PrintServiceError(name, message string) {
 		Render("✗")
 
 	nameStyle := lipgloss.NewStyle().
-			Width(25).
-			Foreground(lipgloss.Color(TC("text")))
+		Width(25).
+		Foreground(lipgloss.Color(TC("text")))
 
-		statusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(TC("error")))
+	statusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("error")))
 
 	fmt.Printf("  %s %s %s %s\n", icon, nameStyle.Render(name), IconArrow, statusStyle.Render(message))
 }

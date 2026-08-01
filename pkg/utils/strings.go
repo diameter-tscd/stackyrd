@@ -12,6 +12,9 @@ const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 // RandomString generates a cryptographically random string of the given length.
 func RandomString(length int) string {
+	if length < 0 {
+		length = 0
+	}
 	b := make([]byte, length)
 	limit := big.NewInt(int64(len(charset)))
 	for i := range b {
@@ -46,9 +49,13 @@ func ToCamelCase(s string) string {
 	})
 
 	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
+		if len(part) == 0 {
+			continue
 		}
+		// Work on runes so a multi-byte leading character isn't byte-split.
+		runes := []rune(strings.ToLower(part))
+		runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+		parts[i] = string(runes)
 	}
 	return strings.Join(parts, "")
 }

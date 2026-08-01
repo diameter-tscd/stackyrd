@@ -33,6 +33,8 @@ type EventBroadcaster struct {
 	mu        sync.RWMutex
 	nextID    int
 	clientTTL time.Duration
+	stopCh    chan struct{}
+	startOnce sync.Once
 }
 
 // NewEventBroadcaster creates a new event broadcaster
@@ -42,10 +44,11 @@ func NewEventBroadcaster() *EventBroadcaster {
 		clients:   make(map[string]*StreamClient),
 		nextID:    1,
 		clientTTL: 24 * time.Hour, // Clients automatically removed after 24 hours
+		stopCh:    make(chan struct{}),
 	}
 
 	// Start cleanup routine
-	go eb.cleanupRoutine()
+	eb.startOnce.Do(func() { go eb.cleanupRoutine() })
 
 	return eb
 }
@@ -77,12 +80,9 @@ func (eb *EventBroadcaster) unsubscribeNoLock(clientID string) {
 	// Remove from clients map
 	delete(eb.clients, clientID)
 
-	// Close channel safely
-	select {
-	case <-client.Channel:
-	default:
-		close(client.Channel)
-	}
+	// Close the channel unconditionally: Broadcast holds RLock while sending,
+	// so no sender can be mid-send here, and the receiver drains on the way out.
+	close(client.Channel)
 }
 
 func (eb *EventBroadcaster) expireStaleClientsLocked() {
@@ -99,8 +99,24 @@ func (eb *EventBroadcaster) expireStaleClientsLocked() {
 func (eb *EventBroadcaster) cleanupRoutine() {
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		eb.expireStaleClients()
+	for {
+		select {
+		case <-ticker.C:
+			eb.expireStaleClients()
+		case <-eb.stopCh:
+			return
+		}
+	}
+}
+
+// Close stops the background cleanup goroutine.
+func (eb *EventBroadcaster) Close() {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	select {
+	case <-eb.stopCh:
+	default:
+		close(eb.stopCh)
 	}
 }
 
@@ -130,31 +146,20 @@ func (eb *EventBroadcaster) Subscribe(streamID string) *StreamClient {
 func (eb *EventBroadcaster) Unsubscribe(clientID string) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
+	eb.unsubscribeNoLock(clientID)
+}
 
-	client, exists := eb.clients[clientID]
-	if !exists {
-		return
+// copyData shallow-copies a caller-supplied map so a mutation by the producer
+// can never race a consumer encoding the queued event.
+func copyData(data map[string]interface{}) map[string]interface{} {
+	if data == nil {
+		return nil
 	}
-
-	// Remove from streams
-	if clients, ok := eb.streams[client.StreamID]; ok {
-		for i, c := range clients {
-			if c.ID == clientID {
-				eb.streams[client.StreamID] = append(clients[:i], clients[i+1:]...)
-				break
-			}
-		}
+	copied := make(map[string]interface{}, len(data))
+	for k, v := range data {
+		copied[k] = v
 	}
-
-	// Remove from clients map
-	delete(eb.clients, clientID)
-
-	// Close channel safely
-	select {
-	case <-client.Channel:
-	default:
-		close(client.Channel)
-	}
+	return copied
 }
 
 // Broadcast sends an event to all clients subscribed to a stream
@@ -163,7 +168,7 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
 		Message:   message,
-		Data:      data,
+		Data:      copyData(data),
 		Timestamp: time.Now().Unix(),
 		StreamID:  streamID,
 	}
@@ -205,7 +210,7 @@ func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, dat
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
 		Message:   message,
-		Data:      data,
+		Data:      copyData(data),
 		Timestamp: time.Now().Unix(),
 	}
 

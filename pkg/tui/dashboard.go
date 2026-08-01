@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,9 +66,9 @@ var (
 			Padding(0, 2)
 
 	dashBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(TC("dim"))).
-		Padding(0, 2)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(TC("dim"))).
+			Padding(0, 2)
 
 	dashHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -102,7 +104,7 @@ var (
 	// Pastel progress-bar palette (matches boot.go pastel taste)
 	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))) // pastel green
 	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning"))) // pastel peach
-	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error"))) // pastel red
+	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))   // pastel red
 )
 
 // Animation frames for the running indicator
@@ -146,8 +148,8 @@ func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []Serv
 		config:        cfg,
 		allInfra:      infra,
 		allServices:   services,
-		filteredInfra: infra,
-		filteredSvc:   services,
+		filteredInfra: slices.Clone(infra),
+		filteredSvc:   slices.Clone(services),
 		lastUpdate:    time.Now(),
 		width:         80,
 		height:        24,
@@ -244,7 +246,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Update viewport size (leave room for header and footer)
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 8
+		if h := msg.Height - 8; h > 0 {
+			m.viewport.Height = h
+		}
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -494,7 +498,16 @@ func (m DashboardModel) renderServicesBox() string {
 }
 
 func (m DashboardModel) renderProgressBar(percent float64, width int) string {
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		percent = 0
+	}
+	if width < 0 {
+		width = 0
+	}
 	filled := int(percent / 100.0 * float64(width))
+	if filled < 0 {
+		filled = 0
+	}
 	if filled > width {
 		filled = width
 	}

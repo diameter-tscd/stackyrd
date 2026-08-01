@@ -76,9 +76,13 @@ var (
 		{ID: 1, Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Username: "alice123", Age: 30},
 		{ID: 2, Name: "Bob", Email: "bob@example.com", Phone: "+0987654321", Username: "bob456", Age: 25},
 	}
-	usersIdx = map[int]*User{
-		1: &usersList[0],
-		2: &usersList[1],
+	// usersIdx maps ID -> index in usersList. Indices are stable because
+	// records are only appended, never reordered or removed; computing the
+	// *User from the current slice avoids the stale-pointer trap of pointing
+	// into a reallocated backing array.
+	usersIdx = map[int]int{
+		1: 0,
+		2: 1,
 	}
 )
 
@@ -106,26 +110,26 @@ func (s *UsersService) listUsers(c echo.Context) error {
 		perPage = 10
 	}
 
-	totalUsers := func() int {
-		usersMu.RLock()
-		defer usersMu.RUnlock()
-		return len(usersList)
-	}()
-	if page > totalUsers {
+	usersMu.RLock()
+	total := len(usersList)
+	if page > total {
+		usersMu.RUnlock()
 		return response.BadRequest(c, "Invalid pagination parameters")
 	}
 
-	usersMu.RLock()
 	start := (page - 1) * perPage
+	if start > total {
+		start = total
+	}
 	end := start + perPage
-	if end > len(usersList) {
-		end = len(usersList)
+	if end > total {
+		end = total
 	}
 	usersPage := make([]User, end-start)
 	copy(usersPage, usersList[start:end])
 	usersMu.RUnlock()
 
-	meta := response.CalculateMeta(page, perPage, int64(len(usersList)))
+	meta := response.CalculateMeta(page, perPage, int64(total))
 	return response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
 }
 
@@ -136,11 +140,13 @@ func (s *UsersService) getUser(c echo.Context) error {
 	}
 
 	usersMu.RLock()
-	u, ok := usersIdx[id]
-	usersMu.RUnlock()
+	idx, ok := usersIdx[id]
 	if ok {
-		return response.Success(c, *u, "User retrieved successfully")
+		user := usersList[idx] // copy under the lock, then release
+		usersMu.RUnlock()
+		return response.Success(c, user, "User retrieved successfully")
 	}
+	usersMu.RUnlock()
 
 	return response.NotFound(c, "User not found")
 }
@@ -163,7 +169,7 @@ func (s *UsersService) createUser(c echo.Context) error {
 	}
 	user.ID = len(usersList) + 1
 	usersList = append(usersList, user)
-	usersIdx[user.ID] = &usersList[len(usersList)-1]
+	usersIdx[user.ID] = len(usersList) - 1
 	usersMu.Unlock()
 
 	return response.Created(c, user, "User created successfully")
@@ -189,10 +195,10 @@ func (s *UsersService) updateUser(c echo.Context) error {
 
 	usersMu.Lock()
 	defer usersMu.Unlock()
-	u, ok := usersIdx[id]
+	idx, ok := usersIdx[id]
 	if ok {
 		user.ID = id
-		*u = user
+		usersList[idx] = user
 		return response.Success(c, user, "User updated successfully")
 	}
 

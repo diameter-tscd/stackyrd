@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"stackyrd/config"
@@ -26,6 +27,8 @@ type EncryptionService struct {
 	enabled       bool
 	algorithm     string
 	encryptionKey []byte
+	keyMu         sync.RWMutex
+	lastRotation  int64
 	logger        *logger.Logger
 }
 
@@ -125,7 +128,11 @@ type KeyRotateRequest struct {
 }
 
 func (s *EncryptionService) encrypt(data []byte) (string, error) {
-	block, err := aes.NewCipher(s.encryptionKey)
+	s.keyMu.RLock()
+	key := s.encryptionKey
+	s.keyMu.RUnlock()
+
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -150,7 +157,11 @@ func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decode base64: %w", err)
 	}
 
-	block, err := aes.NewCipher(s.encryptionKey)
+	s.keyMu.RLock()
+	key := s.encryptionKey
+	s.keyMu.RUnlock()
+
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -187,7 +198,9 @@ func (s *EncryptionService) EncryptData(c echo.Context) error {
 
 	encrypted, err := s.encrypt([]byte(req.Data))
 	if err != nil {
-		s.logger.Error("Encryption failed", err)
+		if s.logger != nil {
+			s.logger.Error("Encryption failed", err)
+		}
 		return response.InternalServerError(c, "Encryption failed")
 	}
 
@@ -214,7 +227,9 @@ func (s *EncryptionService) DecryptData(c echo.Context) error {
 
 	decrypted, err := s.decrypt(req.EncryptedData)
 	if err != nil {
-		s.logger.Error("Decryption failed", err)
+		if s.logger != nil {
+			s.logger.Error("Decryption failed", err)
+		}
 		return response.BadRequest(c, "Decryption failed")
 	}
 
@@ -229,11 +244,15 @@ func (s *EncryptionService) DecryptData(c echo.Context) error {
 }
 
 func (s *EncryptionService) GetStatus(c echo.Context) error {
+	s.keyMu.RLock()
+	lastRotation := s.lastRotation
+	s.keyMu.RUnlock()
+
 	resp := StatusResponse{
 		Enabled:      s.enabled,
 		Algorithm:    s.algorithm,
-		RotateKeys:   false,
-		LastRotation: time.Now().Unix(),
+		RotateKeys:   lastRotation != 0,
+		LastRotation: lastRotation,
 	}
 
 	return response.Success(c, resp, "Encryption service status")
@@ -251,7 +270,10 @@ func (s *EncryptionService) RotateKey(c echo.Context) error {
 	}
 
 	sum := sha256.Sum256([]byte(req.NewKey))
+	s.keyMu.Lock()
 	s.encryptionKey = sum[:]
+	s.lastRotation = time.Now().Unix()
+	s.keyMu.Unlock()
 
 	return response.Success(c, map[string]string{
 		"message": "Encryption key rotated successfully",

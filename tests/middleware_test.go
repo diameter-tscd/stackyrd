@@ -85,7 +85,7 @@ func TestMiddleware_CORSSubdomainMatch(t *testing.T) {
 }
 
 func TestMiddleware_JWTRequiredValid(t *testing.T) {
-	secret := "test-secret"
+	secret := "test-secret-0123456789abcdef"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
@@ -122,7 +122,7 @@ func TestMiddleware_JWTRequiredMissing(t *testing.T) {
 }
 
 func TestMiddleware_JWTSetsClaims(t *testing.T) {
-	secret := "test-secret"
+	secret := "test-secret-0123456789abcdef"
 	token, err := middleware.GenerateToken("u1", "testuser", "test@test.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 
@@ -250,12 +250,13 @@ func TestMiddleware_GzipNoEncoding(t *testing.T) {
 }
 
 func TestMiddleware_GenerateToken(t *testing.T) {
-	token, err := middleware.GenerateToken("u1", "user", "u@t.com", "admin", "secret", time.Hour)
+	secret := "secret-key-for-tests-0123456789"
+	token, err := middleware.GenerateToken("u1", "user", "u@t.com", "admin", secret, time.Hour)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 
 	parsed, err := jwt.ParseWithClaims(token, &middleware.JWTClaims{}, func(t *jwt.Token) (interface{}, error) {
-		return []byte("secret"), nil
+		return []byte(secret), nil
 	})
 	assert.NoError(t, err)
 	assert.True(t, parsed.Valid)

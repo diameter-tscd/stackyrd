@@ -265,6 +265,10 @@ func ResizeImage(img image.Image, options CompressionOptions) image.Image {
 	targetHeight := options.MaxHeight
 
 	if options.PreserveAspect {
+		if origHeight == 0 {
+			// Degenerate image: nothing to scale against, return as-is.
+			return img
+		}
 		aspectRatio := float64(origWidth) / float64(origHeight)
 
 		if targetWidth == 0 {
@@ -371,7 +375,9 @@ func encodeImage(writer io.Writer, img image.Image, format ImageFormat, quality 
 	case FormatTIFF:
 		return tiff.Encode(writer, img, &tiff.Options{Compression: tiff.Deflate})
 	case FormatWebP:
-		return jpeg.Encode(writer, img, &jpeg.Options{Quality: quality})
+		// No stdlib/imported WebP encoder: refuse rather than emit JPEG bytes
+		// mislabeled as WebP.
+		return fmt.Errorf("webp output is not supported")
 	default:
 		return fmt.Errorf("unsupported output format: %s", format)
 	}
@@ -614,7 +620,10 @@ func Rotate(img image.Image, degrees int) image.Image {
 	w := bounds.Dx()
 	h := bounds.Dy()
 
-	switch degrees % 360 {
+	// Normalize negative and over-360 rotations into a canonical 0-359 value.
+	degrees = ((degrees % 360) + 360) % 360
+
+	switch degrees {
 	case 0:
 		return img
 	case 90:

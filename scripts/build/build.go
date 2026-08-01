@@ -788,25 +788,98 @@ func (ctx *BuildContext) buildApplication(logger *Logger) error {
 
 	tries = append(tries, buildTry{"go", []string{"build", "-o", outputPath, MAIN_PATH}, "go build (minimal flags)"})
 
-	var lastErr error
-	for _, t := range tries {
-		cmd := exec.Command(t.bin, t.args...)
+	// runTry executes a single build attempt. When outPath differs from
+	// outputPath, the produced binary is renamed into place afterwards so
+	// concurrent attempts never write to the same file.
+	runTry := func(t buildTry, outPath string) error {
+		args := make([]string, len(t.args))
+		copy(args, t.args)
+		for i := range args {
+			if args[i] == outputPath {
+				args[i] = outPath
+			}
+		}
+
+		cmd := exec.Command(t.bin, args...)
 		cmd.Env = env
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		logger.Info("Trying: %s", t.desc)
 		err := cmd.Run()
-		if err == nil {
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				logger.Warn("%s failed with exit code %d", t.desc, exitErr.ExitCode())
+			} else {
+				logger.Warn("%s failed (%v)", t.desc, err)
+			}
+			_ = os.Remove(outPath)
+			return err
+		}
+
+		if outPath != outputPath {
+			if err := os.Rename(outPath, outputPath); err != nil {
+				_ = os.Remove(outPath)
+				return fmt.Errorf("rename %s -> %s: %w", outPath, outputPath, err)
+			}
+		}
+		return nil
+	}
+
+	var (
+		lastErr error
+		errMu   sync.Mutex
+		ok      bool
+		okMu    sync.Mutex
+	)
+
+	if ctx.Config.FastMode {
+		const maxConcurrent = 10
+		logger.Info("Fast mode: running up to %d concurrent build attempts", maxConcurrent)
+
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+
+		for i, t := range tries {
+			wg.Add(1)
+			go func(t buildTry, idx int) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				// unique temp output so concurrent attempts don't clash
+				outPath := fmt.Sprintf("%s.tmp%d", outputPath, idx)
+				if err := runTry(t, outPath); err != nil {
+					errMu.Lock()
+					lastErr = err
+					errMu.Unlock()
+					return
+				}
+				okMu.Lock()
+				ok = true
+				okMu.Unlock()
+			}(t, i)
+		}
+		wg.Wait()
+
+		if ok {
 			logger.Success("Build successful: %s", outputPath)
 			return nil
 		}
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			logger.Warn("%s failed with exit code %d, trying next...", t.desc, exitErr.ExitCode())
-		} else {
-			logger.Warn("%s failed (%v), trying next...", t.desc, err)
+		if lastErr != nil {
+			return fmt.Errorf("all build attempts failed: %w", lastErr)
 		}
-		lastErr = err
+		return nil
+	}
+
+	// Sequential fallback (slow/normal mode)
+	for _, t := range tries {
+		if err := runTry(t, outputPath); err == nil {
+			logger.Success("Build successful: %s", outputPath)
+			return nil
+		} else {
+			lastErr = err
+		}
 	}
 
 	return fmt.Errorf("all build attempts failed: %w", lastErr)

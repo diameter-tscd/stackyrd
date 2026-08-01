@@ -60,6 +60,11 @@ func (s *CacheService) SetCachedValue(c echo.Context) error {
 		return response.BadRequest(c, "Invalid body")
 	}
 
+	const maxTTLSeconds = 30 * 24 * 3600
+	if req.TTL <= 0 || req.TTL > maxTTLSeconds {
+		return response.BadRequest(c, "ttl_seconds must be between 1 and 2592000")
+	}
+
 	ttl := time.Duration(req.TTL) * time.Second
 	s.store.Set(key, req.Value, ttl)
 

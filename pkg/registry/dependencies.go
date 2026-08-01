@@ -3,22 +3,17 @@ package registry
 import (
 	"stackyrd/pkg/infrastructure"
 	"sync"
-	"time"
 )
 
 type Dependencies struct {
-	components  map[string]interface{}
-	mu          sync.RWMutex
-	sealed      bool
-	cachedAll   map[string]interface{}
-	cacheExpiry time.Time
-	cacheTTL    time.Duration
+	components map[string]interface{}
+	mu         sync.RWMutex
+	sealed     bool
 }
 
 func NewDependencies() *Dependencies {
 	return &Dependencies{
 		components: make(map[string]interface{}),
-		cacheTTL:   2 * time.Second,
 	}
 }
 
@@ -29,8 +24,6 @@ func (d *Dependencies) Set(name string, component interface{}) {
 		return
 	}
 	d.components[name] = component
-	d.cachedAll = nil
-	d.cacheExpiry = time.Time{}
 }
 
 func (d *Dependencies) Seal() {
@@ -94,24 +87,10 @@ func (d *Dependencies) Cron() *infrastructure.CronManager {
 
 func (d *Dependencies) GetAll() map[string]interface{} {
 	d.mu.RLock()
-	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
-		result := d.cachedAll
-		d.mu.RUnlock()
-		return result
-	}
-	d.mu.RUnlock()
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	// Re-check after acquiring write lock
-	if time.Now().Before(d.cacheExpiry) && d.cachedAll != nil {
-		return d.cachedAll
-	}
+	defer d.mu.RUnlock()
 	result := make(map[string]interface{}, len(d.components))
 	for k, v := range d.components {
 		result[k] = v
 	}
-	d.cachedAll = result
-	d.cacheExpiry = time.Now().Add(d.cacheTTL)
 	return result
 }

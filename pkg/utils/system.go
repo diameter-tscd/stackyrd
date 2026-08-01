@@ -14,32 +14,32 @@ import (
 var (
 	runtimeMemStats  atomic.Pointer[runtime.MemStats]
 	statsMutex       sync.Mutex
-	runtimeStats     bool
-	memSelfInterval  time.Duration
-	memSelfLastFetch time.Time
+	runtimeStats     atomic.Bool
+	memSelfInterval  atomic.Int64 // nanoseconds
+	memSelfLastFetch atomic.Int64 // UnixNano
 	memSelfValue     atomic.Uint64
 
-	routineLastFetch    time.Time
-	routineInterval     time.Duration
-	routineFirstFetched bool
+	routineLastFetch    atomic.Int64 // UnixNano
+	routineInterval     atomic.Int64 // nanoseconds
+	routineFirstFetched atomic.Bool
 	routineValue        atomic.Int32
 )
 
 // getRuntimeStats gathers runtime.
 func getRuntimeStats() runtime.MemStats {
-	if !runtimeStats {
+	if !runtimeStats.Load() {
 		statsMutex.Lock()
-		defer statsMutex.Unlock()
-		if !runtimeStats { // double-check
+		if !runtimeStats.Load() { // double-check
 			staged := runtime.MemStats{}
 			runtime.ReadMemStats(&staged)
 			runtimeMemStats.Store(&staged)
-			memSelfInterval = 5 * time.Second
+			memSelfInterval.Store(int64(5 * time.Second))
 			memSelfValue.Store(0)
 			routineValue.Store(0)
-			routineInterval = 5 * time.Second
-			runtimeStats = true
+			routineInterval.Store(int64(5 * time.Second))
+			runtimeStats.Store(true)
 		}
+		statsMutex.Unlock()
 	}
 	// Atomically load pointer — loads on Ptr-typed atomics are already fully
 	// synchronised, so copying the dereferenced struct is race-free without a
@@ -49,7 +49,6 @@ func getRuntimeStats() runtime.MemStats {
 	if p == nil {
 		return runtime.MemStats{}
 	}
-	_ = *p // force dereference to prove no escape (p is already a pointer copy)
 	return *p
 }
 
@@ -57,23 +56,29 @@ func getRuntimeStats() runtime.MemStats {
 func GetMemSelf() uint64 {
 	_ = getRuntimeStats() // ensure background stats goroutine is running
 
-	if memSelfLastFetch.IsZero() || time.Since(memSelfLastFetch) >= memSelfInterval {
-		alloc := runtimeMemStats.Load().Sys
-		memSelfValue.Store(alloc / 1024 / 1024)
-		memSelfLastFetch = time.Now()
+	last := memSelfLastFetch.Load()
+	now := time.Now()
+	if last == 0 || now.UnixNano()-last >= memSelfInterval.Load() {
+		if p := runtimeMemStats.Load(); p != nil {
+			memSelfValue.Store(p.Sys / 1024 / 1024)
+		}
+		memSelfLastFetch.Store(now.UnixNano())
 	}
 	return memSelfValue.Load()
 }
 
 func GetRoutine() int {
-	if !routineFirstFetched {
-		routineInterval = 5 * time.Second
-		routineFirstFetched = true
-	} else {
-		if routineLastFetch.IsZero() || time.Since(routineLastFetch) >= routineInterval {
-			routineLastFetch = time.Now()
-			routineValue.Store(int32(runtime.NumGoroutine()))
-		}
+	if !routineFirstFetched.Load() {
+		routineFirstFetched.Store(true)
+		routineValue.Store(int32(runtime.NumGoroutine()))
+		return int(routineValue.Load())
+	}
+
+	last := routineLastFetch.Load()
+	now := time.Now()
+	if last == 0 || now.UnixNano()-last >= routineInterval.Load() {
+		routineLastFetch.Store(now.UnixNano())
+		routineValue.Store(int32(runtime.NumGoroutine()))
 	}
 	return int(routineValue.Load())
 }

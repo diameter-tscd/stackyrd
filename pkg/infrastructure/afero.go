@@ -19,8 +19,9 @@ var ErrNotInitialized = errors.New("afero manager not initialized")
 
 // assets is the global singleton Afero manager
 var (
-	instance *aferoManager
-	once     sync.Once
+	instance    *aferoManager
+	initOnce    sync.Once
+	factoryOnce sync.Once
 )
 
 // aferoManager represents the singleton Afero filesystem manager
@@ -33,7 +34,7 @@ type aferoManager struct {
 // Init initializes the singleton Afero manager with the given configuration
 // This function is safe to call multiple times - subsequent calls will be ignored
 func Init(embedFS embed.FS, aliasMap map[string]string, isDev bool) {
-	once.Do(func() {
+	initOnce.Do(func() {
 		instance = &aferoManager{
 			aliases: make(map[string]string),
 		}
@@ -156,10 +157,12 @@ func init() {
 	// Register as infrastructure component — uses OS filesystem by default.
 	// Call Init() separately with an embed.FS to layer embed on top.
 	RegisterComponent("afero", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
-		once.Do(func() {
-			instance = &aferoManager{
-				fs:      afero.NewOsFs(),
-				aliases: make(map[string]string),
+		factoryOnce.Do(func() {
+			if instance == nil {
+				instance = &aferoManager{
+					fs:      afero.NewOsFs(),
+					aliases: make(map[string]string),
+				}
 			}
 		})
 		l.Info("Afero filesystem manager initialized (OS filesystem)")

@@ -37,11 +37,20 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
+// normalizeConfig guards against a zero-value RetryConfig, which would
+// otherwise silently run zero attempts and report success.
+func normalizeConfig(cfg RetryConfig) RetryConfig {
+	if cfg.MaxAttempts <= 0 {
+		return DefaultRetryConfig()
+	}
+	return cfg
+}
+
 // Retry executes a function with retry and exponential backoff
 func Retry(fn func() error, config ...RetryConfig) error {
 	var cfg RetryConfig
 	if len(config) > 0 {
-		cfg = config[0]
+		cfg = normalizeConfig(config[0])
 	} else {
 		cfg = DefaultRetryConfig()
 	}
@@ -75,7 +84,7 @@ func Retry(fn func() error, config ...RetryConfig) error {
 func RetryWithContext(ctx context.Context, fn func() error, config ...RetryConfig) error {
 	var cfg RetryConfig
 	if len(config) > 0 {
-		cfg = config[0]
+		cfg = normalizeConfig(config[0])
 	} else {
 		cfg = DefaultRetryConfig()
 	}
@@ -121,10 +130,7 @@ func RetryWithContext(ctx context.Context, fn func() error, config ...RetryConfi
 func calculateDelay(attempt int, config RetryConfig) time.Duration {
 	delay := float64(config.InitialDelay) * math.Pow(config.BackoffFactor, float64(attempt-1))
 
-	if delay > float64(config.MaxDelay) {
-		delay = float64(config.MaxDelay)
-	}
-
+	// Jitter first, then cap, so MaxDelay is a true ceiling.
 	if config.Jitter {
 		jitterMu.Lock()
 		jitter := jitterRand.Float64() * 0.5
@@ -132,7 +138,14 @@ func calculateDelay(attempt int, config RetryConfig) time.Duration {
 		delay = delay * (1 + jitter)
 	}
 
+	if delay > float64(config.MaxDelay) {
+		delay = float64(config.MaxDelay)
+	}
+
+	// Clamp before converting so float->duration truncation can't wrap negative.
+	if delay > float64(math.MaxInt64) {
+		delay = float64(math.MaxInt64)
+	}
+
 	return time.Duration(delay)
 }
-
-

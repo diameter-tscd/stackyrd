@@ -16,6 +16,7 @@ type RedisManager struct {
 	Client *redis.Client
 	Pool   *WorkerPool // Async worker pool — lazily initialised on first async call
 	once   sync.Once
+	poolMu sync.Mutex
 
 	// statusCache avoids re-running Ping + PoolStats on every /health call.
 	statusCache  map[string]interface{}
@@ -43,8 +44,12 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
 	})
 
 	// Test connection
-	if err := client.Ping(context.Background()).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pingErr := client.Ping(pingCtx).Err()
+	pingCancel()
+	if pingErr != nil {
+		client.Close()
+		return nil, fmt.Errorf("failed to connect to redis: %w", pingErr)
 	}
 
 	return &RedisManager{
@@ -59,7 +64,9 @@ func (r *RedisManager) startPool() {
 	r.once.Do(func() {
 		pool := NewWorkerPool(10)
 		pool.Start()
+		r.poolMu.Lock()
 		r.Pool = pool
+		r.poolMu.Unlock()
 	})
 }
 
@@ -93,7 +100,10 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	r.statusMu.RLock()
 	if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
-		cached := r.statusCache
+		cached := make(map[string]interface{}, len(r.statusCache))
+		for k, v := range r.statusCache {
+			cached[k] = v
+		}
 		r.statusMu.RUnlock()
 		return cached
 	}
@@ -103,7 +113,9 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 	addr := r.Client.Options().Addr
 	db := r.Client.Options().DB
 
-	pong, err := r.Client.Ping(context.Background()).Result()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pong, err := r.Client.Ping(pingCtx).Result()
+	pingCancel()
 	stats["connected"] = err == nil
 	stats["ping"] = pong
 	stats["addr"] = addr
@@ -264,8 +276,11 @@ func (r *RedisManager) SubmitAsyncJob(job func()) {
 
 // Close closes the Redis manager and its worker pool.
 func (r *RedisManager) Close() error {
-	if r.Pool != nil {
-		r.Pool.Close()
+	r.poolMu.Lock()
+	pool := r.Pool
+	r.poolMu.Unlock()
+	if pool != nil {
+		pool.Close()
 	}
 	if r.Client != nil {
 		return r.Client.Close()

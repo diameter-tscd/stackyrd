@@ -1,6 +1,7 @@
 package response
 
 import (
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -59,7 +60,12 @@ func (p *PaginationRequest) GetPerPage() int {
 }
 
 func (p *PaginationRequest) GetOffset() int {
-	return (p.GetPage() - 1) * p.GetPerPage()
+	page := p.GetPage()
+	perPage := p.GetPerPage()
+	if page > math.MaxInt/perPage {
+		page = math.MaxInt / perPage
+	}
+	return (page - 1) * perPage
 }
 
 func (p *PaginationRequest) GetOrder() string {
@@ -74,8 +80,16 @@ var responsePool = sync.Pool{
 	New: func() any { return &Response{} },
 }
 
+func getPooledResponse() *Response {
+	resp, ok := responsePool.Get().(*Response)
+	if !ok || resp == nil {
+		return &Response{}
+	}
+	return resp
+}
+
 func Success(c echo.Context, data interface{}, message ...string) error {
-	resp := responsePool.Get().(*Response)
+	resp := getPooledResponse()
 	// Reset to zero values
 	*resp = Response{}
 
@@ -99,7 +113,7 @@ func Success(c echo.Context, data interface{}, message ...string) error {
 }
 
 func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...string) error {
-	resp := responsePool.Get().(*Response)
+	resp := getPooledResponse()
 	*resp = Response{}
 
 	msg := ""
@@ -123,7 +137,7 @@ func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...st
 }
 
 func Created(c echo.Context, data interface{}, message ...string) error {
-	resp := responsePool.Get().(*Response)
+	resp := getPooledResponse()
 	*resp = Response{}
 
 	msg := "Resource created successfully"
@@ -212,7 +226,7 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 	}
 
 	now := time.Now()
-	resp := responsePool.Get().(*Response)
+	resp := getPooledResponse()
 	*resp = Response{}
 
 	errorDetailsCopy := make(map[string]interface{}, len(errorDetails))
@@ -247,6 +261,12 @@ func getCorrelationID(c echo.Context) string {
 }
 
 func CalculateMeta(page, perPage int, total int64, extra ...map[string]interface{}) *Meta {
+	if perPage < 1 {
+		perPage = 1
+	}
+	if page < 1 {
+		page = 1
+	}
 	totalPages := int(total) / perPage
 	if int(total)%perPage > 0 {
 		totalPages++

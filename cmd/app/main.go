@@ -41,7 +41,7 @@ func main() {
 
 	_ = verbose
 
-	configManager := NewConfigManager(configURL)
+	configManager := NewConfigManager(configURL, port, env)
 
 	app := NewApplication(configManager)
 

@@ -104,15 +104,28 @@ func (s *TasksService) updateTask(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to fetch task")
 	}
 
-	if err := request.Bind(c, &task); err != nil {
+	// Bind into a fresh struct: the body must never override the ID resolved
+	// from the URL (a body-supplied "id" would otherwise retarget the update).
+	var payload Task
+	if err := request.Bind(c, &payload); err != nil {
 		return response.BadRequest(c, "Invalid input")
 	}
 
-	result = s.db.ORM.WithContext(c.Request().Context()).Model(&task).Updates(task)
+	// Map-based update so zero values (e.g. Completed=false) are applied
+	// instead of being skipped by Updates(struct).
+	result = s.db.ORM.WithContext(c.Request().Context()).Model(&task).Updates(map[string]interface{}{
+		"title":       payload.Title,
+		"description": payload.Description,
+		"completed":   payload.Completed,
+	})
 	if result.Error != nil {
 		s.logger.Error("Failed to update task", result.Error, "id", id)
 		return response.InternalServerError(c, "Failed to update task")
 	}
+
+	task.Title = payload.Title
+	task.Description = payload.Description
+	task.Completed = payload.Completed
 
 	return response.Success(c, task)
 }

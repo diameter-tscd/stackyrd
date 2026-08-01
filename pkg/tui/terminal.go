@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"stackyrd/pkg/utils"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -77,7 +79,7 @@ type TerminalModel struct {
 	height          int
 	quitting        bool
 	maxLogs         int
-	program         *tea.Program
+	program         atomic.Pointer[tea.Program]
 
 	exitDialog   *template.DialogModel
 	filterDialog *template.DialogModel
@@ -154,7 +156,6 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 		width:           80,
 		height:          24,
 		maxLogs:         1000,
-		program:         nil,
 		exitDialog:      exitDialog,
 		filterDialog:    filterDialog,
 		infoDialog:      infoDialog,
@@ -463,8 +464,8 @@ func (m *TerminalModel) renderSidebarContent() string {
 	if m.config.Banner != "" {
 		for _, line := range strings.Split(m.config.Banner, "\n") {
 			line = strings.TrimRight(line, " ")
-			if len(line) > cw {
-				line = line[:cw]
+			if len([]rune(line)) > cw {
+				line = string([]rune(line)[:cw])
 			}
 			b.WriteString(sidebarHeaderStyle().Render(line))
 			b.WriteString("\n")
@@ -601,7 +602,7 @@ func (m *TerminalModel) renderResourcesSection() string {
 	lines = append(lines, fmt.Sprintf("     %s / %s GiB", sidebarValueStyle().Render(memUsedGiB), sidebarDimStyle().Render(memTotalGiB)))
 
 	// Separator
-	lines = append(lines, DividerLine().Render(strings.Repeat("", 38)))
+	lines = append(lines, DividerLine().Render(strings.Repeat("─", 38)))
 
 	// Key-value info as 2-column table for proper alignment
 	var kvRows []table.Row
@@ -617,8 +618,8 @@ func (m *TerminalModel) renderResourcesSection() string {
 	}))
 	if m.hostname != "" {
 		hn := m.hostname
-		if len(hn) > 24 {
-			hn = hn[:24]
+		if runes := []rune(hn); len(runes) > 24 {
+			hn = string(runes[:24])
 		}
 		kvRows = append(kvRows, table.NewRow(table.RowData{"k": "Host", "v": hn}))
 	}
@@ -775,7 +776,10 @@ func (m *TerminalModel) renderLogView() string {
 		logArea = 5
 	}
 
-	b.WriteString(mainPanelStyle().Render("▪ Live Logs"))
+	// Header is written plain; the outer mainPanelStyle().Width(...) render at
+	// the end applies color + padding uniformly. Double-rendering it here added
+	// a second 4-col padding (8 spaces before "▪") and a stray colored gap.
+	b.WriteString("▪ Live Logs")
 	b.WriteString("\n\n")
 
 	logLines := m.renderLogEntries()
@@ -1129,7 +1133,7 @@ func (m *TerminalModel) handleThemeCommand(name string) tea.Cmd {
 	if name == "" || name == "list" {
 		return m.listThemes()
 	}
-	if _, ok := themes[name]; !ok {
+	if !ThemeExists(name) {
 		return m.logCmd("warn", "Unknown theme: "+name+" (try :themes)")
 	}
 
@@ -1159,8 +1163,8 @@ func (m *TerminalModel) logCmd(level, msg string) tea.Cmd {
 }
 
 func (m *TerminalModel) AddLog(level, message string) {
-	if m.program != nil {
-		m.program.Send(logMsg{
+	if p := m.program.Load(); p != nil {
+		p.Send(logMsg{
 			Time:    time.Now(),
 			Level:   level,
 			Message: message,
@@ -1169,7 +1173,7 @@ func (m *TerminalModel) AddLog(level, message string) {
 }
 
 func (m *TerminalModel) SetProgram(p *tea.Program) {
-	m.program = p
+	m.program.Store(p)
 }
 
 func (m *TerminalModel) updateFilteredLogs() {
@@ -1409,13 +1413,22 @@ func (m *TerminalModel) refreshStats() {
 }
 
 func (m *TerminalModel) termProgressBar(percent float64, width int) string {
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		percent = 0
+	}
 	if percent > 100 {
 		percent = 100
 	}
 	if percent < 0 {
 		percent = 0
 	}
+	if width < 0 {
+		width = 0
+	}
 	filled := int((percent / 100.0) * float64(width))
+	if filled < 0 {
+		filled = 0
+	}
 	if filled > width {
 		filled = width
 	}

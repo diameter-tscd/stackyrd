@@ -44,7 +44,9 @@ func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
 	}
 
 	// Basic check
-	_, err = client.ListBuckets(context.Background())
+	checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_, err = client.ListBuckets(checkCtx)
+	checkCancel()
 	if err != nil {
 		return &MinIOManager{Connected: false}, err
 	}
@@ -71,13 +73,17 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 
 	m.statusMu.RLock()
 	if m.statusCache != nil && time.Now().Before(m.statusExpiry) {
-		cached := m.statusCache
+		cached := make(map[string]interface{}, len(m.statusCache))
+		for k, v := range m.statusCache {
+			cached[k] = v
+		}
 		m.statusMu.RUnlock()
 		return cached
 	}
 	m.statusMu.RUnlock()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
 		stats := map[string]interface{}{

@@ -126,12 +126,13 @@ func (f *EmbedFile) Readdir(count int) ([]os.FileInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		infos := make([]os.FileInfo, len(entries))
-		for i, e := range entries {
-			infos[i], err = e.Info()
+		infos := make([]os.FileInfo, 0, len(entries))
+		for _, e := range entries {
+			info, err := e.Info()
 			if err != nil {
-				return nil, err
+				return infos, err
 			}
+			infos = append(infos, info)
 		}
 		return infos, nil
 	}

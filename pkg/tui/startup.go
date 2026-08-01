@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,65 +45,58 @@ type StartupModel struct {
 var (
 	// Title styles
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(TC("primary"))).
-		MarginBottom(2)
-		Bold(true).
-		Foreground(lipgloss.Color("#8daea5")).
-		MarginBottom(2)
+			Bold(true).
+			Foreground(lipgloss.Color(TC("primary"))).
+			MarginBottom(2)
 
 	subtitleStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("secondary"))).
-		Italic(true)
+			Foreground(lipgloss.Color(TC("secondary"))).
+			Italic(true)
 
 	// Banner style with gradient effect
 	bannerStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("primary"))).
-		Bold(true).
-		MarginBottom(2)
+			Foreground(lipgloss.Color(TC("primary"))).
+			Bold(true).
+			MarginBottom(2)
 
 	// Box styles
 	boxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(TC("dim"))).
-		Padding(1, 3).
-		MarginTop(1)
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6272A4")).
-		Padding(1, 3).
-		MarginTop(1)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(TC("dim"))).
+			Padding(1, 3).
+			MarginTop(1)
 
 	// Service status styles
 	pendingStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("dim")))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	loadingStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("warning")))
+			Foreground(lipgloss.Color(TC("warning")))
 
 	successStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("success")))
+			Foreground(lipgloss.Color(TC("success")))
 
 	errorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("error")))
+			Foreground(lipgloss.Color(TC("error")))
 
 	skippedStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("dim"))).
-		Italic(true)
+			Foreground(lipgloss.Color(TC("dim"))).
+			Italic(true)
 
 	// Info styles
 	labelStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("secondary"))).
-		Bold(true)
+			Foreground(lipgloss.Color(TC("secondary"))).
+			Bold(true)
 
 	// Footer style
 	footerStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("dim"))).
-		MarginTop(1)
+			Foreground(lipgloss.Color(TC("dim"))).
+			MarginTop(1)
 
 	// Highlight style
 	highlightStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(TC("primary"))).
-		Bold(true)
+			Foreground(lipgloss.Color(TC("primary"))).
+			Bold(true)
 )
 
 // Icons
@@ -137,7 +131,7 @@ func NewStartupModel(cfg StartupConfig, services []ServiceStatus) StartupModel {
 	return StartupModel{
 		spinner:   s,
 		progress:  p,
-		services:  services,
+		services:  slices.Clone(services), // copy so Update never mutates the caller's slice
 		config:    cfg,
 		startTime: time.Now(),
 		width:     80,
@@ -167,7 +161,7 @@ func (m StartupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.progress.Width = min(msg.Width-20, 60)
+		m.progress.Width = max(0, min(msg.Width-20, 60))
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -186,6 +180,9 @@ func (m StartupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Complete current service and move to next
 				m.services[m.current].Status = "success"
 				m.services[m.current].Message = "Ready"
+				m.current++
+			case "success", "error", "skipped":
+				// Already terminal — never block the boot loop on it.
 				m.current++
 			}
 			return m, tea.Batch(m.spinner.Tick, tickCmd())
@@ -234,7 +231,10 @@ func (m StartupModel) View() string {
 			completed++
 		}
 	}
-	progressPercent := float64(completed) / float64(len(m.services))
+	progressPercent := 0.0
+	if len(m.services) > 0 {
+		progressPercent = float64(completed) / float64(len(m.services))
+	}
 	b.WriteString(m.progress.ViewAs(progressPercent))
 	b.WriteString(fmt.Sprintf(" %d/%d\n\n", completed, len(m.services)))
 

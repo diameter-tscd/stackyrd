@@ -92,7 +92,9 @@ func (r *MiddlewareRegistry) AutoDiscoverMiddlewares(cfg *config.Config, logger 
 	defer r.mu.RUnlock()
 
 	for name, factory := range r.factories {
-		if r.IsEnabled(name) {
+		// Read the enabled flag directly instead of calling IsEnabled (which
+		// re-acquires RLock and would self-deadlock once a writer is pending).
+		if r.enabled[name] {
 			logger.Debug("Creating middleware", "name", name)
 			mw, err := factory(cfg, logger)
 			if err != nil {
@@ -149,7 +151,9 @@ func RequestID() echo.MiddlewareFunc {
 				b.Reset()
 				b.WriteString("req-")
 				b.WriteString(strconv.FormatInt(time.Now().UnixNano(), 10))
-				requestID = b.String()
+				// Builder.String() shares b.buf; cloning before Put prevents a
+				// concurrent request reusing the builder from mutating this ID.
+				requestID = strings.Clone(b.String())
 				reqIDPool.Put(b)
 			}
 			c.Set("X-Request-ID", requestID)

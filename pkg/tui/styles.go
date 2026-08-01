@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,8 +20,10 @@ func TextEffect(text string, colors []string) string {
 		return text
 	}
 	var result strings.Builder
-	for i, char := range text {
-		colorIdx := i % len(colors)
+	runeIdx := 0
+	for _, char := range text {
+		colorIdx := runeIdx % len(colors)
+		runeIdx++
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color(colors[colorIdx]))
 		result.WriteString(style.Render(string(char)))
 	}
@@ -28,11 +31,21 @@ func TextEffect(text string, colors []string) string {
 }
 
 // BoxStyle functions return fresh lipgloss.Style with current theme colors.
-func SuccessBoxStyle() lipgloss.Style { return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("success"))).Foreground(lipgloss.Color(TC("success"))).Padding(0, 2) }
-func WarningBoxStyle() lipgloss.Style { return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("warning"))).Foreground(lipgloss.Color(TC("warning"))).Padding(0, 2) }
-func ErrorBoxStyle() lipgloss.Style   { return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("error"))).Foreground(lipgloss.Color(TC("error"))).Padding(0, 2) }
-func InfoBoxStyle() lipgloss.Style    { return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("secondary"))).Foreground(lipgloss.Color(TC("secondary"))).Padding(0, 2) }
-func PrimaryBoxStyle() lipgloss.Style { return lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color(TC("primary"))).Foreground(lipgloss.Color(TC("text"))).Padding(1, 2) }
+func SuccessBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("success"))).Foreground(lipgloss.Color(TC("success"))).Padding(0, 2)
+}
+func WarningBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("warning"))).Foreground(lipgloss.Color(TC("warning"))).Padding(0, 2)
+}
+func ErrorBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("error"))).Foreground(lipgloss.Color(TC("error"))).Padding(0, 2)
+}
+func InfoBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(TC("secondary"))).Foreground(lipgloss.Color(TC("secondary"))).Padding(0, 2)
+}
+func PrimaryBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color(TC("primary"))).Foreground(lipgloss.Color(TC("text"))).Padding(1, 2)
+}
 
 const (
 	IconSuccess  = "✓"
@@ -64,6 +77,9 @@ func DividerLine() lipgloss.Style { return lipgloss.NewStyle().Foreground(lipglo
 func Divider(width int, char string) string {
 	if char == "" {
 		char = "─"
+	}
+	if width < 0 {
+		width = 0
 	}
 	return DividerLine().Render(strings.Repeat(char, width))
 }
@@ -102,28 +118,61 @@ func KeyValue(key, value string) string {
 }
 
 // Sidebar / main-panel styles - functions create fresh styles with current theme colors
-func sidebarStyle() lipgloss.Style          { return lipgloss.NewStyle().Padding(0, 4).Align(lipgloss.Left) }
-func mainPanelStyle() lipgloss.Style         { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Padding(0, 4).Align(lipgloss.Left) }
-func sidebarHeaderStyle() lipgloss.Style     { return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(TC("primary"))) }
-func sidebarSectionStyle() lipgloss.Style    { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Bold(true) }
-func sidebarLabelStyle() lipgloss.Style      { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))) }
-func sidebarValueStyle() lipgloss.Style      { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))) }
-func sidebarDimStyle() lipgloss.Style        { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))) }
-func commandBoxStyle() lipgloss.Style        { return lipgloss.NewStyle().Background(lipgloss.Color("#37353E")).Foreground(lipgloss.Color(TC("text"))).Padding(0, 2) }
-func commandBoxActiveStyle() lipgloss.Style  { return lipgloss.NewStyle().Background(lipgloss.Color("#37353E")).Foreground(lipgloss.Color(TC("text"))).Padding(0, 2) }
-func commandPromptStyle() lipgloss.Style     { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary"))).Bold(true) }
-func focusIndicatorStyle() lipgloss.Style    { return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary"))).Bold(true) }
+func sidebarStyle() lipgloss.Style { return lipgloss.NewStyle().Padding(0, 4).Align(lipgloss.Left) }
+func mainPanelStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Padding(0, 4).Align(lipgloss.Left)
+}
+func sidebarHeaderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(TC("primary")))
+}
+func sidebarSectionStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Bold(true)
+}
+func sidebarLabelStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
+}
+func sidebarValueStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
+}
+func sidebarDimStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
+}
+func commandBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Background(lipgloss.Color("#37353E")).Foreground(lipgloss.Color(TC("text"))).Padding(0, 2)
+}
+func commandBoxActiveStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Background(lipgloss.Color("#37353E")).Foreground(lipgloss.Color(TC("text"))).Padding(0, 2)
+}
+func commandPromptStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary"))).Bold(true)
+}
+func focusIndicatorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary"))).Bold(true)
+}
 
 func ProgressBar(percent float64, width int, showPercent bool) string {
-	if percent > 100 { percent = 100 }
-	if percent < 0 { percent = 0 }
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if width < 0 {
+		width = 0
+	}
 	filled := int((percent / 100.0) * float64(width))
 	empty := width - filled
 	var color string
 	switch {
-	case percent < 50: color = TC("success")
-	case percent < 80: color = TC("warning")
-	default: color = TC("error")
+	case percent < 50:
+		color = TC("success")
+	case percent < 80:
+		color = TC("warning")
+	default:
+		color = TC("error")
 	}
 	filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 	emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))

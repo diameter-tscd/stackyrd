@@ -12,9 +12,10 @@ type Item[T any] struct {
 
 // Cache is the original in-memory cache implementation
 type Cache[T any] struct {
-	items  map[string]Item[T]
-	mu     sync.RWMutex
-	stopCh chan struct{}
+	items     map[string]Item[T]
+	mu        sync.RWMutex
+	stopCh    chan struct{}
+	closeOnce sync.Once
 }
 
 // ShardedCache uses sharding to reduce lock contention
@@ -61,18 +62,26 @@ func (c *ShardedCache[T]) Get(key string) (T, bool) {
 	c.shards[shard].RLock()
 	item, found := c.items[shard][key]
 	c.shards[shard].RUnlock()
-	
+
 	if !found {
 		return zero, false
 	}
-	
+
 	if item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
 		c.shards[shard].Lock()
-		delete(c.items[shard], key)
+		item, found = c.items[shard][key]
+		if found && item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
+			delete(c.items[shard], key)
+			item = Item[T]{}
+			found = false
+		}
 		c.shards[shard].Unlock()
-		return zero, false
+		if !found {
+			return zero, false
+		}
+		return item.Value, true
 	}
-	
+
 	return item.Value, true
 }
 
@@ -80,12 +89,12 @@ func (c *ShardedCache[T]) Set(key string, value T, ttl time.Duration) {
 	shard := c.shardIndex(key)
 	c.shards[shard].Lock()
 	defer c.shards[shard].Unlock()
-	
+
 	exp := int64(0)
 	if ttl > 0 {
 		exp = time.Now().Add(ttl).UnixNano()
 	}
-	
+
 	c.items[shard][key] = Item[T]{
 		Value:      value,
 		Expiration: exp,
@@ -109,7 +118,11 @@ func (c *ShardedCache[T]) shardIndex(key string) int {
 
 // Close stops the background cleanup goroutine
 func (c *Cache[T]) Close() {
-	close(c.stopCh)
+	c.closeOnce.Do(func() {
+		if c.stopCh != nil {
+			close(c.stopCh)
+		}
+	})
 }
 
 // Set adds an item to the cache with a TTL (duration)
@@ -122,6 +135,9 @@ func (c *Cache[T]) Set(key string, value T, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.items == nil {
+		c.items = make(map[string]Item[T])
+	}
 	c.items[key] = Item[T]{
 		Value:      value,
 		Expiration: exp,
@@ -139,11 +155,21 @@ func (c *Cache[T]) Get(key string) (T, bool) {
 	}
 
 	if item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
+		// Upgrade to write lock and re-verify: a concurrent Set may have
+		// refreshed the value between our read and the lock acquisition.
 		c.mu.RUnlock()
 		c.mu.Lock()
-		delete(c.items, key)
+		item, found = c.items[key]
+		if found && item.Expiration > 0 && time.Now().UnixNano() > item.Expiration {
+			delete(c.items, key)
+			item = Item[T]{}
+			found = false
+		}
 		c.mu.Unlock()
-		return zero, false
+		if !found {
+			return zero, false
+		}
+		return item.Value, true
 	}
 	c.mu.RUnlock()
 
@@ -157,28 +183,17 @@ func (c *Cache[T]) Delete(key string) {
 	delete(c.items, key)
 }
 
-// Cleanup removes expired items with early exit to reduce allocations
+// Cleanup removes expired items
 func (c *Cache[T]) Cleanup() {
 	now := time.Now().UnixNano()
 
-	c.mu.RLock()
-	var expired []string
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for k, v := range c.items {
 		if v.Expiration > 0 && now > v.Expiration {
-			expired = append(expired, k)
+			delete(c.items, k)
 		}
 	}
-	c.mu.RUnlock()
-
-	if len(expired) == 0 {
-		return
-	}
-
-	c.mu.Lock()
-	for _, k := range expired {
-		delete(c.items, k)
-	}
-	c.mu.Unlock()
 }
 
 func (c *ShardedCache[T]) Cleanup() {

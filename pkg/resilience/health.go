@@ -157,6 +157,15 @@ func (hc *HealthChecker) CheckSingle(ctx context.Context, name string) *HealthRe
 func (hc *HealthChecker) runCheck(ctx context.Context, check *HealthCheck) *HealthResult {
 	start := time.Now()
 
+	if check == nil || check.Check == nil {
+		return &HealthResult{
+			Name:      "unknown",
+			Status:    HealthStatusUnhealthy,
+			Error:     "health check is nil",
+			Timestamp: time.Now(),
+		}
+	}
+
 	checkCtx, cancel := context.WithTimeout(ctx, check.Timeout)
 	defer cancel()
 

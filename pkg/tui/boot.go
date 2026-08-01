@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,6 +107,13 @@ func bootPendingIcon() string {
 type bootTickMsg time.Time
 type bootDoneMsg struct{}
 
+// bootInitResultMsg carries a service init outcome back to the event loop so a
+// slow InitFunc never blocks the Bubble Tea Update goroutine.
+type bootInitResultMsg struct {
+	index int
+	err   error
+}
+
 // NewBootModel creates a new boot model
 func NewBootModel(cfg StartupConfig, initQueue []ServiceInit) BootModel {
 	s := spinner.New()
@@ -205,21 +213,17 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.results[m.current].Status = "loading"
 				m.results[m.current].Message = "Initializing..."
 
-				// Run initialization in background (simulated for now)
+				// Run initialization off the event loop; the result arrives as
+				// bootInitResultMsg so a slow init cannot freeze the spinner.
 				svc := m.initQueue[m.current]
+				idx := m.current
 				if svc.InitFunc != nil {
-					err := svc.InitFunc()
-					if err != nil {
-						m.results[m.current].Status = "error"
-						m.results[m.current].Message = err.Error()
-					} else {
-						m.results[m.current].Status = "success"
-						m.results[m.current].Message = "Ready"
-					}
-				} else {
-					m.results[m.current].Status = "success"
-					m.results[m.current].Message = "Ready"
+					return m, tea.Batch(m.spinner.Tick, bootTickCmd(), func() tea.Msg {
+						return bootInitResultMsg{index: idx, err: svc.InitFunc()}
+					})
 				}
+				m.results[idx].Status = "success"
+				m.results[idx].Message = "Ready"
 				m.current++
 			}
 
@@ -242,6 +246,21 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.phase == "complete" || m.phase == "error" {
 			return m, tea.Batch(m.spinner.Tick, bootTickCmd())
 		}
+
+	case bootInitResultMsg:
+		if msg.index < len(m.results) {
+			if msg.err != nil {
+				m.results[msg.index].Status = "error"
+				m.results[msg.index].Message = msg.err.Error()
+			} else {
+				m.results[msg.index].Status = "success"
+				m.results[msg.index].Message = "Ready"
+			}
+			if msg.index == m.current {
+				m.current++
+			}
+		}
+		return m, tea.Batch(m.spinner.Tick, bootTickCmd())
 
 	case bootDoneMsg:
 		return m, tea.Quit
@@ -268,7 +287,7 @@ func (m BootModel) View() string {
 
 	// Version and env
 	sub := fmt.Sprintf("v%s • %s environment", m.config.AppVersion, m.config.Env)
-b.WriteString(bootSubStyle().Render(sub))
+	b.WriteString(bootSubStyle().Render(sub))
 	b.WriteString("\n\n")
 
 	// Phase indicator
@@ -412,7 +431,7 @@ func (m BootModel) renderBootServices() string {
 
 // GetResults returns the final results after boot completes
 func (m BootModel) GetResults() []ServiceStatus {
-	return m.results
+	return slices.Clone(m.results)
 }
 
 // HasErrors returns true if any service failed to initialize

@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"fmt"
+	"slices"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"sync"
@@ -42,26 +43,31 @@ func (r *ComponentRegistry) Register(name string, factory ComponentFactory) {
 
 func (r *ComponentRegistry) Initialize(cfg *config.Config, logger *logger.Logger) error {
 	r.factoriesMu.Lock()
-	defer r.factoriesMu.Unlock()
-
-	r.allNames = make([]string, 0, len(r.factories))
-	for name := range r.factories {
-		r.allNames = append(r.allNames, name)
-	}
-	if r.components == nil {
-		r.components = make(map[string]InfrastructureComponent)
-	}
+	factories := make(map[string]ComponentFactory, len(r.factories))
 	for name, factory := range r.factories {
+		factories[name] = factory
+	}
+	r.factoriesMu.Unlock()
+
+	components := make(map[string]InfrastructureComponent, len(factories))
+	names := make([]string, 0, len(factories))
+	for name, factory := range factories {
+		names = append(names, name)
 		component, err := factory(cfg, logger)
 		if err != nil {
 			logger.Error("Failed to initialize infrastructure component", err, "component", name)
 			continue
 		}
 		if component != nil {
-			r.components[name] = component
+			components[name] = component
 			logger.Info(name + " initialized")
 		}
 	}
+
+	r.componentsMu.Lock()
+	r.components = components
+	r.allNames = names
+	r.componentsMu.Unlock()
 	return nil
 }
 
@@ -75,7 +81,9 @@ func (r *ComponentRegistry) SetComponent(name string, component InfrastructureCo
 }
 
 func (r *ComponentRegistry) RegisteredNames() []string {
-	return r.allNames
+	r.componentsMu.RLock()
+	defer r.componentsMu.RUnlock()
+	return slices.Clone(r.allNames)
 }
 
 func (r *ComponentRegistry) Get(name string) (InfrastructureComponent, bool) {

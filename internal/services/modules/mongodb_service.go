@@ -100,6 +100,11 @@ func (s *MongoDBService) listProductsByTenant(c echo.Context) error {
 	return response.Success(c, products, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
 }
 
+// validProduct rejects client-supplied products that would corrupt catalog data.
+func validProduct(p *Product) bool {
+	return p.Name != "" && p.Price >= 0 && p.Quantity >= 0
+}
+
 func (s *MongoDBService) createProduct(c echo.Context) error {
 	tenant := c.Param("tenant")
 	if tenant == "" {
@@ -110,6 +115,11 @@ func (s *MongoDBService) createProduct(c echo.Context) error {
 	if err := request.Bind(c, &product); err != nil {
 		return response.BadRequest(c, "Invalid product data")
 	}
+	if !validProduct(&product) {
+		return response.BadRequest(c, "Product name is required and price/quantity must be non-negative")
+	}
+	// Strip any client-supplied _id: the server assigns the ObjectID.
+	product.ID = primitive.NilObjectID
 
 	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
@@ -178,6 +188,9 @@ func (s *MongoDBService) updateProduct(c echo.Context) error {
 	var product Product
 	if err := request.Bind(c, &product); err != nil {
 		return response.BadRequest(c, "Invalid product data")
+	}
+	if !validProduct(&product) {
+		return response.BadRequest(c, "Product name is required and price/quantity must be non-negative")
 	}
 
 	conn, exists := s.mongoConnectionManager.GetConnection(tenant)

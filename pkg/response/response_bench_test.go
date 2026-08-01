@@ -11,9 +11,9 @@ type dummyWriter struct {
 	header http.Header
 }
 
-func (d *dummyWriter) Header() http.Header { return d.header }
+func (d *dummyWriter) Header() http.Header         { return d.header }
 func (d *dummyWriter) Write(p []byte) (int, error) { return len(p), nil }
-func (d *dummyWriter) WriteHeader(int) {}
+func (d *dummyWriter) WriteHeader(int)             {}
 
 func BenchmarkSuccess(b *testing.B) {
 	e := echo.New()

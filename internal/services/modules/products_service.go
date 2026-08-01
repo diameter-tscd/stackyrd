@@ -1,6 +1,8 @@
 package modules
 
 import (
+	"slices"
+
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
@@ -64,7 +66,7 @@ var products = []ProductItem{
 }
 
 func (s *ProductsService) getProducts(c echo.Context) error {
-	return response.Success(c, products, "Products retrieved successfully")
+	return response.Success(c, slices.Clone(products), "Products retrieved successfully")
 }
 
 func init() {

@@ -60,7 +60,7 @@ func (k *KafkaManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	if k.Producer == nil && len(k.Brokers) == 0 {
+	if k.Producer == nil || len(k.Brokers) == 0 {
 
 		stats["connected"] = false
 		return stats
@@ -186,6 +186,9 @@ func (k *KafkaManager) ConsumeAsync(ctx context.Context, topic string, handler f
 // Sync Methods (for backward compatibility and internal use)
 
 func (k *KafkaManager) Publish(ctx context.Context, topic string, message []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	msg := &sarama.ProducerMessage{
 		Topic: topic,
 		Value: sarama.ByteEncoder(message),
@@ -196,6 +199,9 @@ func (k *KafkaManager) Publish(ctx context.Context, topic string, message []byte
 }
 
 func (k *KafkaManager) PublishWithKey(ctx context.Context, topic string, key, message []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	msg := &sarama.ProducerMessage{
 		Topic: topic,
 		Key:   sarama.ByteEncoder(key),

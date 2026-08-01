@@ -7,10 +7,10 @@ const (
 
 	DefaultBannerPath = "banner.txt"
 
-	DefaultAppName    = "stackyrd"
-	DefaultVersion    = "1.0.0"
-	DefaultEnv        = "development"
-	DefaultServerPort = "8080"
+	DefaultAppName      = "stackyrd"
+	DefaultVersion      = "1.0.0"
+	DefaultEnv          = "development"
+	DefaultServerPort   = "8080"
 	DefaultStartupDelay = 3
 
 	ServiceGrafanaName    = "Grafana"
@@ -21,9 +21,9 @@ const (
 	ServiceMongoDBName    = "MongoDB"
 	ServiceCronName       = "Cron Scheduler"
 
-	ServiceConfigName      = "Configuration"
-	ServiceMiddlewareName  = "Middleware"
-	ServiceMonitoringName  = "Monitoring"
+	ServiceConfigName     = "Configuration"
+	ServiceMiddlewareName = "Middleware"
+	ServiceMonitoringName = "Monitoring"
 
 	MinStartupDelay = 1
 	MaxStartupDelay = 30
@@ -35,9 +35,9 @@ const (
 	ColorReset   = "\033[0m"
 	ColorYellow  = "\033[33m"
 
-	ErrStepFailed          = "step failed"
+	ErrStepFailed             = "step failed"
 	ErrInvalidConfigURLFormat = "invalid config URL format"
-	ErrPortError           = "port error"
+	ErrPortError              = "port error"
 )
 
 type AppStep struct {
@@ -64,7 +64,7 @@ type ServiceInit struct {
 type ServiceStatus int
 
 const (
-	ServiceStatusEnabled  ServiceStatus = iota
+	ServiceStatusEnabled ServiceStatus = iota
 	ServiceStatusDisabled
 )
 

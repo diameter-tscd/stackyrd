@@ -428,9 +428,22 @@ func GetThemeName() string {
 // GetTheme returns the current theme.
 func GetTheme() *Theme {
 	themeMu.RLock()
-	defer themeMu.RUnlock()
 	t := themes[currentThemeName]
+	colors := make(map[string]string, len(t.Colors))
+	for k, v := range t.Colors {
+		colors[k] = v
+	}
+	themeMu.RUnlock()
+	t.Colors = colors
 	return &t
+}
+
+// ThemeExists reports whether a named theme is registered.
+func ThemeExists(name string) bool {
+	themeMu.RLock()
+	defer themeMu.RUnlock()
+	_, ok := themes[name]
+	return ok
 }
 
 // TC returns a color hex string from the current theme by semantic key.

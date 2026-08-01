@@ -30,6 +30,6 @@ func BenchmarkGetProducts(b *testing.B) {
 // dummyResponseWriter implements http.ResponseWriter with no-op methods.
 type dummyResponseWriter struct{}
 
-func (d *dummyResponseWriter) Header() http.Header { return make(http.Header) }
+func (d *dummyResponseWriter) Header() http.Header       { return make(http.Header) }
 func (d *dummyResponseWriter) Write([]byte) (int, error) { return 0, nil }
-func (d *dummyResponseWriter) WriteHeader(int) {}
+func (d *dummyResponseWriter) WriteHeader(int)           {}

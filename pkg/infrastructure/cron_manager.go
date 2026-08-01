@@ -32,6 +32,7 @@ type CronManager struct {
 	pool    *WorkerPool // Worker pool for async job execution
 	poolMu  sync.Mutex
 	poolSet bool
+	closed  bool
 }
 
 // Name returns the display name of the component
@@ -46,14 +47,19 @@ func NewCronManager() *CronManager {
 	}
 }
 
-func (c *CronManager) ensurePool() {
+// getPool returns the worker pool, lazily creating it, or nil once closed.
+func (c *CronManager) getPool() *WorkerPool {
 	c.poolMu.Lock()
 	defer c.poolMu.Unlock()
+	if c.closed {
+		return nil
+	}
 	if !c.poolSet {
 		c.pool = NewWorkerPool(5)
 		c.pool.Start()
 		c.poolSet = true
 	}
+	return c.pool
 }
 
 func (c *CronManager) Start() {
@@ -201,16 +207,17 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 
 	entryID := cron.EntryID(jobID)
 	if job, ok := c.jobs[entryID]; ok {
-		// Remove old job
-		c.cron.Remove(entryID)
-
-		// Re-add with the original stored callback
+		// Add the new entry first so a bad schedule never silently drops the job
 		newID, err := c.cron.AddFunc(newSchedule, job.cmd)
 		if err != nil {
 			return err
 		}
 
+		// Remove old job now that the replacement is in place
+		c.cron.Remove(entryID)
+
 		// Update job info
+		job.ID = int(newID)
 		job.Schedule = newSchedule
 		job.EntryID = newID
 		c.jobs[newID] = job
@@ -226,8 +233,11 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 
 // SubmitAsyncJob submits a job to the worker pool for async execution
 func (c *CronManager) SubmitAsyncJob(job func()) {
-	c.ensurePool()
-	c.pool.Submit(job)
+	if pool := c.getPool(); pool != nil {
+		pool.Submit(job)
+	} else {
+		go utils.GoSafe(nil, job)
+	}
 }
 
 // GetPoolStatus returns the status of the worker pool
@@ -253,8 +263,12 @@ func (c *CronManager) GetPoolStatus() map[string]interface{} {
 // Close closes the cron manager and its worker pool
 func (c *CronManager) Close() error {
 	c.Stop()
-	if c.pool != nil {
-		c.pool.Close()
+	c.poolMu.Lock()
+	pool := c.pool
+	c.closed = true
+	c.poolMu.Unlock()
+	if pool != nil {
+		pool.Close()
 	}
 	return nil
 }

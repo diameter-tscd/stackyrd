@@ -183,10 +183,14 @@ func (m *MongoConnectionManager) GetAllConnections() map[string]*MongoManager {
 // GetStatus returns status for all connections
 func (m *MongoConnectionManager) GetStatus() map[string]interface{} {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	status := make(map[string]interface{})
-
+	connections := make(map[string]*MongoManager, len(m.connections))
 	for name, conn := range m.connections {
+		connections[name] = conn
+	}
+	m.mu.RUnlock()
+
+	status := make(map[string]interface{})
+	for name, conn := range connections {
 		status[name] = conn.GetStatus()
 	}
 
@@ -198,17 +202,26 @@ func (m *MongoConnectionManager) Close() error {
 	return m.CloseAll()
 }
 
-// CloseAll closes all connections
+// CloseAll closes all connections and their worker pools
 func (m *MongoConnectionManager) CloseAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var errs []error
 	for name, conn := range m.connections {
-		if err := conn.Client.Disconnect(context.Background()); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
+		if conn.Pool != nil {
+			conn.Pool.Close()
+		}
+		if conn.Client != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := conn.Client.Disconnect(ctx)
+			cancel()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
+			}
 		}
 	}
+	m.connections = make(map[string]*MongoManager)
 
 	if len(errs) > 0 {
 		return errors.Join(errs...)
@@ -226,14 +239,19 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	m.statusMu.RLock()
 	if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
-		cached := m.statusCache
+		cached := make(map[string]interface{}, len(m.statusCache))
+		for k, v := range m.statusCache {
+			cached[k] = v
+		}
 		m.statusMu.RUnlock()
 		return cached
 	}
 	m.statusMu.RUnlock()
 
 	// Slow path: actually ping the server and collect stats.
-	err := m.Client.Ping(context.Background(), nil)
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err := m.Client.Ping(pingCtx, nil)
+	pingCancel()
 	stats["connected"] = err == nil
 
 	if err != nil {
@@ -245,7 +263,9 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 	}
 
 	// Get database stats
-	dbStats := m.Database.RunCommand(context.Background(), map[string]interface{}{"dbStats": 1})
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	dbStats := m.Database.RunCommand(dbCtx, map[string]interface{}{"dbStats": 1})
+	dbCancel()
 	if dbStats.Err() == nil {
 		var result map[string]interface{}
 		if err := dbStats.Decode(&result); err == nil {

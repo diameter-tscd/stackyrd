@@ -17,6 +17,8 @@ type Service interface {
 
 ## Skeleton
 
+Services that don't need infrastructure use `RegisterService` with a 2-arg factory:
+
 ```go
 package modules
 
@@ -53,7 +55,7 @@ func (s *ThingService) update(c echo.Context) error { return response.Success(c,
 func (s *ThingService) delete(c echo.Context) error { return response.Success(c, nil, "deleted") }
 
 func init() {
-    registry.RegisterService("thing_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterService("thing_service", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
         return &ThingService{cfg: cfg, log: log}
     })
 }
@@ -68,17 +70,26 @@ services:
 
 ## Accessing Infrastructure
 
+Services that consume infrastructure use `RegisterServiceWithDeps` and read
+**typed getters** (each returns `*T` or `nil`):
+
 ```go
 func init() {
-    registry.RegisterService("thing_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    registry.RegisterServiceWithDeps("thing_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
         svc := &ThingService{cfg: cfg, log: log}
-        if comp, ok := deps.Get("redis"); ok {
-            svc.redis = comp.(*infrastructure.RedisManager)
-        }
+        svc.redis = deps.Redis()      // *infrastructure.RedisManager or nil
+        svc.pg = deps.Postgres()      // *infrastructure.PostgresConnectionManager or nil
         return svc
     })
 }
 ```
+
+Typed getters: `Redis()`, `Postgres()`, `Mongo()`, `Kafka()`, `Grafana()`,
+`MinIO()`, `Cron()`. Postgres services then pick a connection via
+`deps.Postgres().GetDefaultConnection()` or `GetConnection(name)`.
+
+The `Dependencies` container is sealed after boot — services may only read it,
+never write. `registry.GetService(name)` returns the running service instance.
 
 ## Testing
 
@@ -88,6 +99,8 @@ Write tests in `tests/services/{name}_service_test.go`. Use `echo.New()` and `ht
 
 - `users_service.go` — full CRUD with validation, pagination, sync.Map
 - `products_service.go` — read-only (minimal template)
-- `tasks_service.go` — event-driven with PluginBridge access
+- `tasks_service.go` — Postgres-backed (uses `RegisterServiceWithDeps` + `deps.Postgres()`)
+- `multi_tenant_service.go` / `mongodb_service.go` — per-tenant connections via `deps.Postgres()` / `deps.Mongo()`
 - All handlers are `func(echo.Context) error` — use `request.Bind()` for body binding
 - Route middleware is applied on the `sub` group inside `RegisterRoutes`
+- Error handling: log the technical error with `s.logger.Error(...)`, return a generic message to the client (never `err.Error()`)

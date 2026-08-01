@@ -978,70 +978,69 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 }
 
-// listThemes logs all available theme names.
+// listThemes logs all available theme names, one per line.
 func (m *TerminalModel) listThemes() tea.Cmd {
 	available := AvailableThemeNames()
 	sort.Strings(available)
-	return m.logCmd("info", "Themes ("+GetThemeName()+" active): "+strings.Join(available, ", "))
+	var b strings.Builder
+	b.WriteString("Themes (" + GetThemeName() + " active):")
+	for _, name := range available {
+		b.WriteString("\n  " + name)
+	}
+	return m.logCmd("info", b.String())
 }
 
-// listAll logs services, infrastructure components, and service endpoints.
+// listAll logs services, infrastructure components, and service endpoints,
+// each on its own line.
 func (m *TerminalModel) listAll() tea.Cmd {
 	var b strings.Builder
 
-	b.WriteString("Services: ")
+	b.WriteString("Services:")
 	if len(m.serviceEntries) == 0 {
-		b.WriteString("none")
-	}
-	for i, s := range m.serviceEntries {
-		if i > 0 {
-			b.WriteString(", ")
+		b.WriteString(" none")
+	} else {
+		for _, s := range m.serviceEntries {
+			mark := "off"
+			if s.Running {
+				mark = "on"
+			}
+			b.WriteString("\n  " + s.Name + ":" + mark)
 		}
-		mark := "off"
-		if s.Running {
-			mark = "on"
-		}
-		b.WriteString(s.Name + ":" + mark)
 	}
 
-	b.WriteString(" | Components: ")
+	b.WriteString("\nComponents:")
 	if len(m.infraEntries) == 0 {
-		b.WriteString("none")
-	}
-	for i, e := range m.infraEntries {
-		if i > 0 {
-			b.WriteString(", ")
+		b.WriteString(" none")
+	} else {
+		for _, e := range m.infraEntries {
+			mark := "off"
+			if e.Connected {
+				mark = "on"
+			}
+			b.WriteString("\n  " + e.Name + ":" + mark)
 		}
-		mark := "off"
-		if e.Connected {
-			mark = "on"
-		}
-		b.WriteString(e.Name + ":" + mark)
 	}
 
-	b.WriteString(" | Endpoints: ")
+	b.WriteString("\nEndpoints:")
 	factories := registry.GetServiceFactories()
 	names := make([]string, 0, len(factories))
 	for name := range factories {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	first := true
+	any := false
 	for _, name := range names {
 		svc, ok := registry.GetService(name).(endpointProvider)
 		if !ok {
 			continue
 		}
 		for _, ep := range svc.Endpoints() {
-			if !first {
-				b.WriteString(", ")
-			}
-			first = false
-			b.WriteString(svc.Name() + " " + ep)
+			any = true
+			b.WriteString("\n  " + svc.Name() + " " + ep)
 		}
 	}
-	if first {
-		b.WriteString("none")
+	if !any {
+		b.WriteString(" none")
 	}
 
 	return m.logCmd("info", b.String())

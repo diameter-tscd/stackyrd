@@ -60,11 +60,14 @@ thing:
 
 ## Access from Services
 
+Services resolve components through the typed getters on `*registry.Dependencies`
+(each returns `*T` or `nil`) — never `deps.Get("name")` + manual type assertion:
+
 ```go
-if comp, ok := deps.Get("thing"); ok {
-    svc.thing = comp.(*infrastructure.ThingManager)
-}
+svc.thing = deps.Thing()  // *infrastructure.ThingManager or nil
 ```
+
+Get the dependencies from a `RegisterServiceWithDeps` factory (see `service.md`).
 
 ## Patterns
 
@@ -82,3 +85,6 @@ if comp, ok := deps.Get("thing"); ok {
 - Async init is handled by `InfraInitManager` — just register the component
 - Thread safety: use `sync.Mutex` for shared state in `GetStatus()`/`Close()`
 - `Close()` is called during server shutdown (10s timeout per component)
+- Constructors that need a logger can accept it variadically: `func NewThing(cfg config.ThingConfig, log ...*logger.Logger)` — see `NewPostgresConnectionManager`
+- Panic safety: route async jobs through the worker pool (`WorkerPool`) or `utils.GoSafe(logger, fn)` — never spawn a bare `go func()` without a recover
+- Avoid log-and-return: log a failure OR return the wrapped error (`fmt.Errorf("...: %w", err)`), not both — the registry/shutdown path logs propagated errors

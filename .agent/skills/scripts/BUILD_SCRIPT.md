@@ -1,30 +1,33 @@
-# BUILD_SCRIPT — Build Manager Script (`scripts/build/build.go`)
+# BUILD_SCRIPT — Build Manager (`stackyrd build`)
 
 ## Overview
 
-`scripts/build/build.go` is the **stackyrd build manager** — a standalone Go CLI tool for building the project binary with optional obfuscation (garble), compression (UPX), version info embedding (goversioninfo), backup archiving, and asset copying.
+`stackyrd build` (implemented in `scripts/internal/build/build.go`) is the **stackyrd build manager** — part of the standalone `scripts/` CLI module. It builds the project binary with optional obfuscation (garble), compression (UPX), version info embedding (goversioninfo), backup archiving, and asset copying.
 
-The script handles the full build pipeline: process management, backup, compilation, compression, and asset deployment — all with color-coded output and interactive prompts with timeout.
+The command handles the full build pipeline: process management, backup, compilation, compression, and asset deployment — all with color-coded output and interactive prompts with timeout.
 
 ---
 
 ## Quick Start
 
 ```bash
+# Build the CLI once (independent go.mod under scripts/)
+cd scripts && go build -o yrd .
+
 # Interactive build (prompts for garble/UPX)
-go run scripts/build/build.go
+./scripts/yrd build
 
 # Non-interactive with garble
-go run scripts/build/build.go -garble
+./scripts/yrd build -garble
 
 # Non-interactive with garble + UPX
-go run scripts/build/build.go -garble -upx
+./scripts/yrd build -garble -upx
 
 # Verbose build
-go run scripts/build/build.go -verbose
+./scripts/yrd build -verbose
 
 # Custom timeout for prompts
-go run scripts/build/build.go -timeout 5
+./scripts/yrd build -timeout 5
 ```
 
 ---
@@ -214,15 +217,15 @@ type BuildContext struct {
 ## Build & Development
 
 ```bash
-# Build (compile check)
-go build -o /dev/null ./scripts/build/
+# Build the CLI once
+cd scripts && go build -o /dev/null .
 
 # Vet
-go vet ./scripts/build/
+go vet ./...
 
 # Run interactive build (from project root)
-go run scripts/build/build.go
+./scripts/yrd build
 
 # Run headless build
-go run scripts/build/build.go -garble -upx -timeout 0
+./scripts/yrd build -garble -upx -timeout 0
 ```

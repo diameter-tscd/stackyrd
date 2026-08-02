@@ -1,10 +1,10 @@
-# DOCKER_SCRIPT — Docker Builder Script (`scripts/docker/docker_build.go`)
+# DOCKER_SCRIPT — Docker Builder (`stackyrd docker`)
 
 ## Overview
 
-`scripts/docker/docker_build.go` is the **stackyrd Docker builder** — a standalone Go CLI tool for building multi-stage Docker images with target selection (test, dev, prod, slim, minimal, ultra variants).
+`stackyrd docker` (implemented in `scripts/internal/docker/docker_build.go`) is the **stackyrd Docker builder** — part of the standalone `scripts/` CLI module for building multi-stage Docker images with target selection (test, dev, prod, slim, minimal, ultra variants).
 
-The script presents an interactive menu for target selection, validates the Docker environment, builds the appropriate stages, and cleans up dangling images.
+The command presents an interactive menu for target selection, validates the Docker environment, builds the appropriate stages, and cleans up dangling images.
 
 ---
 
@@ -12,7 +12,7 @@ The script presents an interactive menu for target selection, validates the Dock
 
 ```bash
 # Interactive mode (prompts for target, app name, image name)
-go run scripts/docker/docker_build.go
+./scripts/yrd docker
 ```
 
 ---
@@ -210,12 +210,12 @@ ultra-prod, ultra-all, ultra-dev, ultra-test
 ## Build & Development
 
 ```bash
-# Build (compile check)
-go build -o /dev/null ./scripts/docker/
+# Build the CLI once
+cd scripts && go build -o /dev/null .
 
 # Vet
-go vet ./scripts/docker/
+go vet ./...
 
 # Run (from project root)
-go run scripts/docker/docker_build.go
+./scripts/yrd docker
 ```

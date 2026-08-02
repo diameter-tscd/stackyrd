@@ -1,0 +1,75 @@
+package modules
+
+import (
+	"io"
+
+	"stackyrd/config"
+	"stackyrd/pkg/interfaces"
+	"stackyrd/pkg/logger"
+	"stackyrd/pkg/response"
+
+	"github.com/labstack/echo/v4"
+{{IMPORTS}}
+)
+
+type {{SERVICE_NAME}} struct {
+	enabled bool
+{{FIELDS}}
+	logger *logger.Logger
+}
+
+func New{{SERVICE_NAME}}(
+	enabled bool,
+{{PARAMS}}
+	logger *logger.Logger,
+) *{{SERVICE_NAME}} {
+	return &{{SERVICE_NAME}}{
+		enabled: enabled,
+{{ASSIGNMENTS}}
+		logger: logger,
+	}
+}
+
+func (s *{{SERVICE_NAME}}) Name() string     { return "{{SERVICE_NAME}} Service" }
+func (s *{{SERVICE_NAME}}) WireName() string { return "{{WIRE_NAME}}" }
+func (s *{{SERVICE_NAME}}) Enabled() bool    { return s.enabled }
+func (s *{{SERVICE_NAME}}) Get() interface{} { return s }
+func (s *{{SERVICE_NAME}}) Endpoints() []string {
+	return []string{"/{{SERVICE_NAME_LOWER}}"}
+}
+
+{{SWAGGER_ANNOTATIONS}}
+func (s *{{SERVICE_NAME}}) RegisterRoutes(g *echo.Group) {
+	sub := g.Group("/{{SERVICE_NAME_LOWER}}")
+	{
+		sub.POST("/publish", s.publishHandler)
+		sub.GET("/subscribe", s.subscribeHandler)
+	}
+}
+
+// publishHandler handles POST /{{SERVICE_NAME_LOWER}}/publish
+func (s *{{SERVICE_NAME}}) publishHandler(c echo.Context) error {
+	// TODO: Implement event publishing logic
+	return response.Success(c, nil, "Event published")
+}
+
+// subscribeHandler handles GET /{{SERVICE_NAME_LOWER}}/subscribe
+func (s *{{SERVICE_NAME}}) subscribeHandler(c echo.Context) error {
+	// TODO: Implement event subscription logic
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().Header().Set("Transfer-Encoding", "chunked")
+
+	// Stream events
+	for {
+		// TODO: Implement event streaming
+		_, err := io.WriteString(c.Response().Writer, "data: {}\n\n")
+		if err != nil {
+			return nil
+		}
+		c.Response().Flush()
+	}
+}
+
+{{INIT_FUNCTION}}

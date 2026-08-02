@@ -18,6 +18,15 @@ type AsyncResult[T any] struct {
 	completeOnce sync.Once
 }
 
+// panicError converts a panic value into an error, preserving the error chain
+// when the panic value is itself an error so errors.Is/As still work.
+func panicError(prefix string, r interface{}) error {
+	if err, ok := r.(error); ok {
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	return fmt.Errorf("%s: %v", prefix, r)
+}
+
 // NewAsyncResult creates a new async result
 func NewAsyncResult[T any]() *AsyncResult[T] {
 	return &AsyncResult[T]{
@@ -89,7 +98,7 @@ func ExecuteAsync[T any](ctx context.Context, operation AsyncOperation[T]) *Asyn
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic in async operation
-				result.Complete(*new(T), fmt.Errorf("async operation panicked: %v", r))
+				result.Complete(*new(T), panicError("async operation panicked", r))
 			}
 		}()
 
@@ -184,7 +193,7 @@ func ExecuteBatchAsync[T any](ctx context.Context, operations []AsyncOperation[T
 			}()
 			defer func() {
 				if r := recover(); r != nil {
-					result.Results[i].Error = fmt.Errorf("batch operation panicked: %v", r)
+					result.Results[i].Error = panicError("batch operation panicked", r)
 					result.CompleteResult(i)
 				}
 			}()

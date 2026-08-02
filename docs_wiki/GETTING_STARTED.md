@@ -109,15 +109,19 @@ curl http://localhost:8080/api/v1/hello
 
 ## Using Scripts
 
-The project includes several CLI scripts:
+All developer tooling is a single standalone CLI. Build it once, then use subcommands:
 
-| Script | Command | Purpose |
-|--------|---------|---------|
-| Build | `go run scripts/build/build.go` | Build binary (garble, UPX, backup) |
-| Docker | `go run scripts/docker/docker_build.go` | Multi-stage Docker image builder |
-| Service | `go run scripts/service/service.go` | Scaffold new service modules |
-| Swagger | `go run scripts/swagger/swagger.go` | Generate OpenAPI docs |
-| Package | `go run scripts/pkg/pkg.go` | Install infrastructure packages |
+```bash
+cd scripts && go build -o yrd .   # builds ./scripts/yrd
+```
+
+| Command | Purpose |
+|---------|---------|
+| `./scripts/yrd build` | Build binary (garble, UPX, backup) |
+| `./scripts/yrd docker` | Multi-stage Docker image builder |
+| `./scripts/yrd service` | Scaffold new service modules |
+| `./scripts/yrd swagger` | Generate OpenAPI docs |
+| `./scripts/yrd pkg` | Install infrastructure packages |
 
 ## Database (Optional)
 

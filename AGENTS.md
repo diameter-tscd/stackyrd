@@ -10,7 +10,8 @@ go mod download         # Install deps
 go run cmd/app/main.go  # Run (needs config.yaml in CWD)
 go test ./...           # All tests
 docker compose up       # Full dev stack (Redis, PG, Kafka, Mongo, Grafana, MinIO)
-go run scripts/build/build.go  # Build (output: dist/)
+cd scripts && go build -o yrd . # Build CLI (output: scripts/yrd)
+./scripts/yrd build # Build server binary (output: dist/stackyrd)
 ```
 
 ## Patterns
@@ -55,7 +56,7 @@ pkg/
   utils/           # System, HTTP, IO, date, numeric, strings, image, broadcast
   webhook/         # Webhook handler
   websocket/       # WebSocket handler
-scripts/           # Build, docker, pkg, swagger, service generator
+scripts/           # Standalone CLI module (build/service/pkg/swagger/docker), independent go.mod
 tests/             # Integration tests (mirrors src layout)
 docs/              # Auto-generated Swagger
 docs_wiki/         # Hand-written docs (update README.md TOC when changed)

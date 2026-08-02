@@ -22,11 +22,6 @@ flowchart TB
         depBag["Dependencies<br/>sealed bag, typed getters<br/>Redis() / Postgres() / ..."]
     end
 
-    subgraph plugin["pkg/plugin/"]
-        plugInit["Init()<br/>scan builtins → instantiate"]
-        plugBridge["PluginBridge<br/>infra component"]
-    end
-
     subgraph mw["internal/middleware/"]
         mwReg["MiddlewareRegistry"]
     end
@@ -44,9 +39,7 @@ flowchart TB
     cfg --> infraInit
     infraInit --> compReg
     compReg --> depBag
-    depBag --> plugInit
-    plugInit --> plugBridge
-    plugBridge --> compReg
+    depBag --> compReg
     compReg --> mwReg
     mwReg --> srv
     mwReg --> svcReg
@@ -64,7 +57,6 @@ sequenceDiagram
     participant infraInit as InfraInitManager
     participant compReg as ComponentRegistry
     participant deps as Dependencies
-    participant plugin as plugin.Init()
     participant mw as MiddlewareRegistry
     participant svc as ServiceRegistry
 
@@ -81,11 +73,6 @@ sequenceDiagram
     srv->>deps: Set(name, component) for each infra
     srv->>deps: Seal() — read-only after boot
     srv->>srv: setConnectionDefaults()
-
-    srv->>plugin: Init(cfg, logger, pluginGroup)
-    plugin->>compReg: scanBuiltinPlugins()
-    plugin->>plugin: instantiatePlugin() per meta
-    plugin->>compReg: SetComponent("plugins", bridge)
 
     srv->>mw: ApplyConfig(cfg)
     srv->>mw: AutoDiscoverMiddlewares()
@@ -128,18 +115,9 @@ flowchart LR
         I5["config.yaml: {redis|postgres|mongo|...}.enabled"]
     end
 
-    subgraph Plugin["Plugin (pkg/plugin/builtin/{name}/)"]
-        P1["Plugin interface<br/>Execute(ctx, args) → Result"]
-        P2["PluginMeta (plugin.yaml)<br/>name / version / entrypoint / limits"]
-        P3["Runtime registry<br/>ts: / goja: / lua: / grpc: / wasm:"]
-        P4["PluginBridge (infra component)"]
-        P5["config.yaml: plugins.enabled / overrides / allowlist"]
-    end
-
     S1 --- S2 --- S3 --- S4
     M1 --- M2 --- M3 --- M4
     I1 --- I2 --- I3 --- I4 --- I5
-    P1 --- P2 --- P3 --- P4 --- P5
 ```
 
 ## Request lifecycle
@@ -168,59 +146,6 @@ flowchart TD
     handler --> bind
     handler --> deps
     handler --> response
-```
-
-## Plugin system architecture
-
-```mermaid
-flowchart TB
-    subgraph BuiltinFS["embed.FS (builtin/)"]
-        p1["plugin.yaml"]
-        ts["ts:scripts/main.ts"]
-        goja["goja:scripts/main.js"]
-        lua["lua:main.lua"]
-        grpc["grpc:./bin/worker"]
-        wasm["wasm:main.wasm"]
-    end
-
-    subgraph PluginInit["plugin.Init()"]
-        scan["scanBuiltinPlugins()<br/>read plugin.yaml → meta"]
-        instantiate["instantiatePlugin()<br/>match entrypoint prefix → Runtime"]
-        store["reg.Store(name, plugin)"]
-        bridge["PluginBridge<br/>SetComponent('plugins', bridge)"]
-    end
-
-    subgraph RuntimeRegistry["runtime_registry.go"]
-        rr["RegisterRuntime(rt)<br/>prefix-based dispatch"]
-    end
-
-    subgraph Runtimes["Runtimes"]
-        tsrt["TSRuntime<br/>transpile → goja VM"]
-        gojart["GojaRuntime<br/>goja VM + program cache"]
-        luart["LuaRuntime<br/>gopher-lua VM"]
-        grpcrt["gRPCRuntime<br/>subprocess stdin/stdout"]
-        wasmrt["WasmRuntime<br/>goja/VM sandbox"]
-    end
-
-    subgraph Execution["PluginBridge.Execute()"]
-        ctx["Context{Logger, Registry, Limits}"]
-        exec["p.Execute(ctx, args)"]
-        metrics["CollectMetrics()<br/>active_execs / goroutines / memory"]
-    end
-
-    BuiltinFS --> scan
-    scan --> instantiate
-    instantiate --> rr
-    rr --> tsrt
-    rr --> gojart
-    rr --> luart
-    rr --> grpcrt
-    rr --> wasmrt
-    instantiate --> store
-    store --> bridge
-    bridge --> Execution
-    ctx --> exec
-    exec --> metrics
 ```
 
 ## Infrastructure component lifecycle
@@ -276,8 +201,7 @@ flowchart LR
         grafana["grafana.GrafanaManager"]
         cron["cron.CronManager"]
         minio["minio.MinIOManager"]
-        plugins["plugin.PluginBridge"]
-    end
+        end
 
     subgraph DepsBag["Dependencies (sealed after boot)"]
         getters["typed getters:<br/>Redis() / Postgres() / Mongo()<br/>Kafka() / Grafana() / Cron() / MinIO()<br/>each returns *T or nil"]

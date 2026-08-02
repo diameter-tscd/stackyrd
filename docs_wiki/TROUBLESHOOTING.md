@@ -214,4 +214,3 @@ Log the loaded config at startup via `-verbose`.
 
 - Check `/health/infrastructure` for component status
 - Enable `-verbose` for detailed startup logs
-- Review the Plugin troubleshooting section for plugin-specific issues

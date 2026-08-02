@@ -7,7 +7,7 @@ Learn to add services, middleware, and infrastructure components to stackyrd.
 ### Via Code Generator (Recommended)
 
 ```bash
-go run scripts/service/service.go
+./scripts/yrd service
 ```
 
 Interactive prompts guide you through: service name, wire name, pattern selection (6 patterns: Basic CRUD, Read-Only, Write-Only, Event-Driven, WebSocket, Batch Processing), custom routes, GORM model, and test generation.
@@ -281,10 +281,11 @@ FLags: `-c` (config URL), `-port`, `-verbose`, `-env`.
 
 ## Scripts Reference
 
-| Script | Usage |
-|--------|-------|
-| Build | `go run scripts/build/build.go [-garble] [-upx]` |
-| Docker | `go run scripts/docker/docker_build.go` |
-| Service Gen | `go run scripts/service/service.go` |
-| Swagger Gen | `go run scripts/swagger/swagger.go [-dry-run]` |
-| Package Mgr | `go run scripts/pkg/pkg.go install\|list\|remove\|upgrade` |
+| Command | Usage |
+|---------|-------|
+| CLI | `cd scripts && go build -o yrd .` (one-time build → `./scripts/yrd`) |
+| Build | `./scripts/yrd build [-garble] [-upx]` |
+| Docker | `./scripts/yrd docker` |
+| Service Gen | `./scripts/yrd service` |
+| Swagger Gen | `./scripts/yrd swagger [-dry-run]` |
+| Package Mgr | `./scripts/yrd pkg install\|list\|remove\|upgrade` |

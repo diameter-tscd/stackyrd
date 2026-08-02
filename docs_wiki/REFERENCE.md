@@ -248,11 +248,12 @@ func init() {
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| Build | `go run scripts/build/build.go` | Build binary with garble/UPX/backup |
-| Docker | `go run scripts/docker/docker_build.go` | Multi-stage Docker build (10 targets) |
-| Service Gen | `go run scripts/service/service.go` | Interactive service code generator |
-| Swagger Gen | `go run scripts/swagger/swagger.go` | OpenAPI doc generation |
-| Package Mgr | `go run scripts/pkg/pkg.go <cmd>` | Package install/list/remove/upgrade |
+| CLI | `cd scripts && go build -o yrd .` | Build standalone CLI (output: `scripts/yrd`) |
+| Build | `./scripts/yrd build` | Build binary with garble/UPX/backup |
+| Docker | `./scripts/yrd docker` | Multi-stage Docker build (10 targets) |
+| Service Gen | `./scripts/yrd service` | Interactive service code generator |
+| Swagger Gen | `./scripts/yrd swagger` | OpenAPI doc generation |
+| Package Mgr | `./scripts/yrd pkg <cmd>` | Package install/list/remove/upgrade |
 
 ## Common Commands
 
@@ -261,25 +262,25 @@ func init() {
 go run cmd/app/main.go
 
 # Build binary
-go run scripts/build/build.go
+./scripts/yrd build
 
 # Build with obfuscation and compression
-go run scripts/build/build.go -garble -upx
+./scripts/yrd build -garble -upx
 
 # Docker images
-go run scripts/docker/docker_build.go
+./scripts/yrd docker
 
 # Generate service code
-go run scripts/service/service.go
+./scripts/yrd service
 
 # Generate Swagger docs
-go run scripts/swagger/swagger.go
+./scripts/yrd swagger
 
 # Install infrastructure package
-go run scripts/pkg/pkg.go install -pkg cloud/aws/ec2@1.0.0
+./scripts/yrd pkg install -pkg cloud/aws/ec2@1.0.0
 
 # List installed packages
-go run scripts/pkg/pkg.go list
+./scripts/yrd pkg list
 
 # Run tests
 go test ./...

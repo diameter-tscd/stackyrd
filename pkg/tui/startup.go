@@ -309,7 +309,6 @@ func (m StartupModel) renderServices() string {
 		line := fmt.Sprintf("  %s %s %s %s",
 			icon,
 			lipgloss.NewStyle().Width(25).Render(name),
-			lipgloss.NewStyle().Width(25).Render(name),
 			iconArrow,
 			style.Render(status),
 		)

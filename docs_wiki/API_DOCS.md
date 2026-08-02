@@ -6,10 +6,10 @@ Documentation generated automatically from code annotations using swaggo/swag vi
 
 ```bash
 # Generate docs (auto-installs swag CLI if missing)
-go run scripts/swagger/swagger.go
+./scripts/yrd swagger
 
 # Dry-run (analyze only, no generation)
-go run scripts/swagger/swagger.go -dry-run
+./scripts/yrd swagger -dry-run
 ```
 
 The script scans `internal/services/modules/`, analyzes annotations, and generates `docs.go`, `swagger.json`, and `swagger.yaml` into `docs/`.
@@ -147,7 +147,7 @@ type User struct {
 
 ```bash
 # Using project script (recommended)
-go run scripts/swagger/swagger.go
+./scripts/yrd swagger
 
 # Direct swag CLI (alternative)
 swag init -g cmd/app/main.go -o docs --outputTypes go,json,yaml

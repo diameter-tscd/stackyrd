@@ -1382,8 +1382,8 @@ func (m *TerminalModel) clearLogs() {
 }
 
 func (m *TerminalModel) calculateWidths() {
-	// Auto-hide sidebar when terminal is too narrow for comfortable side-by-side layout
-	m.sidebarHidden = m.width < 100
+	// Auto-hide sidebar unless terminal is at least 135x42 for a comfortable side-by-side layout
+	m.sidebarHidden = m.width < 135 || m.height < 42
 
 	if m.sidebarHidden {
 		m.sidebarWidth = 0

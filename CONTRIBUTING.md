@@ -67,7 +67,8 @@ go test -v ./pkg/testing/...     # Test helpers
 ### Build
 
 ```bash
-go run scripts/build/build.go
+cd scripts && go build -o yrd .   # one-time: build the CLI
+./scripts/yrd build               # build the server binary
 ```
 
 ### Docker Compose (Full Dev Environment)

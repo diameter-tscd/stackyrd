@@ -24,7 +24,7 @@ server:
 ```bash
 pgrep -x stackyrd | xargs kill
 # or
-go run scripts/build/build.go  # includes process kill step
+./scripts/yrd build  # includes process kill step
 ```
 
 ### Config File Not Found

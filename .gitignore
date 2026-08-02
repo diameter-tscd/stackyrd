@@ -73,10 +73,14 @@ handler.pyc
 # Plugin store (runtime writable overlay)
 store/
 
-# Compiled binaries
-scripts/service/service_generator
-
 # Files
 stackyrd
 ISSUE_TASK.md
 PLUGIN.md
+
+# Scripts
+scripts/assets
+scripts/internal
+scripts/go.mod
+scripts/go.sum
+scripts/main.go

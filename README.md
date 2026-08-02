@@ -46,11 +46,15 @@ go mod download
 # Run the application
 go run cmd/app/main.go
 
-# To build the application
-go run scripts/build/build.go
+# Build the CLI
+cd scripts && go build -o yrd .
 
-# To download package
-go run scripts/pkg/pkg.go
+# To run the CLI tools
+./scripts/yrd build      # or: cd scripts && go run . build
+./scripts/yrd pkg        # package manager
+./scripts/yrd service    # service generator
+./scripts/yrd swagger    # swagger docs
+./scripts/yrd docker     # docker builder
 
 ```
 

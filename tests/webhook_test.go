@@ -196,7 +196,7 @@ func TestWebhook_GetStats(t *testing.T) {
 	wm.Register("evt1", func(event webhook.WebhookEvent) {})
 	wm.Register("evt2", func(event webhook.WebhookEvent) {})
 
-	stats := wm.GetStats()
+	stats := wm.Stats()
 	assert.True(t, stats["enabled"].(bool))
 	assert.Equal(t, "http://hook.example.com", stats["url"])
 	types := stats["event_types"].([]string)

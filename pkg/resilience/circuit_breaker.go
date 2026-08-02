@@ -211,8 +211,8 @@ func (cb *CircuitBreaker) GetState() State {
 	return cb.state
 }
 
-// GetStats returns circuit breaker statistics
-func (cb *CircuitBreaker) GetStats() map[string]interface{} {
+// Stats returns circuit breaker statistics
+func (cb *CircuitBreaker) Stats() map[string]interface{} {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 

@@ -44,7 +44,7 @@ type DashboardModel struct {
 	filteredInfra []InfraStatus
 	filteredSvc   []ServiceStatus
 	filterText    string
-	showFilter    bool
+	showingFilter bool
 	cpuPercent    float64
 	memPercent    float64
 	memUsed       uint64
@@ -54,7 +54,7 @@ type DashboardModel struct {
 	width         int
 	height        int
 	frame         int // For animation frames
-	quitting      bool
+	isQuitting    bool
 }
 
 // Dashboard styles
@@ -185,15 +185,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle text input when filter is active
-		if m.showFilter {
+		if m.showingFilter {
 			switch msg.String() {
 			case "enter":
-				m.showFilter = false
+				m.showingFilter = false
 				m.filterText = m.textinput.Value()
 				m.updateFilteredLists()
 				return m, nil
 			case "esc":
-				m.showFilter = false
+				m.showingFilter = false
 				m.textinput.SetValue("")
 				m.filterText = ""
 				m.updateFilteredLists()
@@ -208,11 +208,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle normal navigation
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
-			m.quitting = true
+			m.isQuitting = true
 			return m, tea.Quit
 		case "/":
 			// Enable filter mode
-			m.showFilter = true
+			m.showingFilter = true
 			m.textinput.Focus()
 			return m, nil
 		case "down", "j":
@@ -278,14 +278,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m DashboardModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 
 	var b strings.Builder
 
 	// Filter input at the top when active
-	if m.showFilter {
+	if m.showingFilter {
 		filterPrompt := dashAccentStyle.Render("Filter: ")
 		b.WriteString(filterPrompt)
 		b.WriteString(m.textinput.View())
@@ -355,7 +355,7 @@ func (m DashboardModel) View() string {
 
 	// Footer with controls
 	var footerText string
-	if m.showFilter {
+	if m.showingFilter {
 		footerText = dashDimStyle.Render("Enter: apply filter │ Esc: cancel")
 	} else {
 		filterInfo := ""

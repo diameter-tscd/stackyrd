@@ -147,8 +147,8 @@ func (h *Hub) SendToClient(clientID string, message []byte) {
 	}
 }
 
-// GetConnectedClients returns the number of connected clients
-func (h *Hub) GetConnectedClients() int {
+// ConnectedClients returns the number of connected clients
+func (h *Hub) ConnectedClients() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
@@ -281,9 +281,9 @@ func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
 	hub.Broadcast(data)
 }
 
-// GetHubStats returns hub statistics
-func GetHubStats(hub *Hub) map[string]interface{} {
+// Stats returns hub statistics
+func (h *Hub) Stats() map[string]interface{} {
 	return map[string]interface{}{
-		"connected_clients": hub.GetConnectedClients(),
+		"connected_clients": h.ConnectedClients(),
 	}
 }

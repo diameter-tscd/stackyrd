@@ -76,7 +76,7 @@ func TestCircuitBreaker_Stats(t *testing.T) {
 	cb := resilience.NewCircuitBreaker(resilience.DefaultCircuitBreakerConfig("stats-test"))
 	_ = cb.Execute(func() error { return errors.New("fail") })
 
-	stats := cb.GetStats()
+	stats := cb.Stats()
 	assert.Equal(t, "stats-test", stats["name"])
 	assert.Equal(t, "closed", stats["state"])
 	assert.Equal(t, 1, stats["failures"])

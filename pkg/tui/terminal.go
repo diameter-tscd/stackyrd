@@ -79,7 +79,7 @@ type TerminalModel struct {
 	startTime       time.Time
 	width           int
 	height          int
-	quitting        bool
+	isQuitting      bool
 	maxLogs         int
 	program         atomic.Pointer[tea.Program]
 
@@ -104,7 +104,8 @@ type TerminalModel struct {
 	sidebarContentWidth int
 	mainWidth           int
 	logWidth            int
-	sidebarHidden       bool
+	isSidebarHidden     bool
+	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
 }
 
 type terminalTickMsg time.Time
@@ -197,7 +198,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dialogCmd := m.exitDialog.Update(msg)
 			if result := m.exitDialog.GetResult(); result != nil {
 				if result.Confirmed {
-					m.quitting = true
+					m.isQuitting = true
 					if m.config.OnShutdown != nil {
 						m.config.OnShutdown()
 					}
@@ -362,7 +363,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the full TUI composed of three components:
 // Sidebar (left) | LogView + CommandBar (right, stacked vertically)
 func (m *TerminalModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 	if m.exitDialog.IsActive() {
@@ -378,7 +379,7 @@ func (m *TerminalModel) View() string {
 
 	rightBlock := lipgloss.JoinVertical(lipgloss.Top, logBlock, cmdBlock)
 
-	if m.sidebarHidden {
+	if m.isSidebarHidden {
 		return rightBlock
 	}
 
@@ -953,7 +954,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name> (colon optional)")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar (colon optional)")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -997,6 +998,14 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		return m.listEndpoints()
 	case "list", "ls":
 		return m.listAll()
+	case "sidebar":
+		hidden := !m.isSidebarHidden
+		m.sidebarManualHidden = &hidden
+		m.calculateWidths()
+		if hidden {
+			return m.logCmd("info", "Sidebar hidden (manual override)")
+		}
+		return m.logCmd("info", "Sidebar shown (manual override)")
 	case "themes":
 		return m.listThemes()
 	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
@@ -1382,10 +1391,16 @@ func (m *TerminalModel) clearLogs() {
 }
 
 func (m *TerminalModel) calculateWidths() {
-	// Auto-hide sidebar unless terminal is at least 135x42 for a comfortable side-by-side layout
-	m.sidebarHidden = m.width < 135 || m.height < 42
+	// If user manually toggled, honour that choice, unless terminal is too small.
+	tooSmall := m.width < 135 || m.height < 42
+	if m.sidebarManualHidden != nil {
+		m.isSidebarHidden = tooSmall || *m.sidebarManualHidden
+	} else {
+		// Auto-hide sidebar unless terminal is at least 135x42 for a comfortable side-by-side layout
+		m.isSidebarHidden = tooSmall
+	}
 
-	if m.sidebarHidden {
+	if m.isSidebarHidden {
 		m.sidebarWidth = 0
 		m.sidebarContentWidth = 0
 		m.mainWidth = m.width

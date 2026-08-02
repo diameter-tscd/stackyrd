@@ -26,13 +26,13 @@ type CronJob struct {
 }
 
 type CronManager struct {
-	cron    *cron.Cron
-	jobs    map[cron.EntryID]*CronJob
-	mu      sync.RWMutex
-	pool    *WorkerPool // Worker pool for async job execution
-	poolMu  sync.Mutex
-	poolSet bool
-	closed  bool
+	cron      *cron.Cron
+	jobs      map[cron.EntryID]*CronJob
+	mu        sync.RWMutex
+	pool      *WorkerPool // Worker pool for async job execution
+	poolMu    sync.Mutex
+	isPoolSet bool
+	isClosed  bool
 }
 
 // Name returns the display name of the component
@@ -51,13 +51,13 @@ func NewCronManager() *CronManager {
 func (c *CronManager) getPool() *WorkerPool {
 	c.poolMu.Lock()
 	defer c.poolMu.Unlock()
-	if c.closed {
+	if c.isClosed {
 		return nil
 	}
-	if !c.poolSet {
+	if !c.isPoolSet {
 		c.pool = NewWorkerPool(5)
 		c.pool.Start()
-		c.poolSet = true
+		c.isPoolSet = true
 	}
 	return c.pool
 }
@@ -265,7 +265,7 @@ func (c *CronManager) Close() error {
 	c.Stop()
 	c.poolMu.Lock()
 	pool := c.pool
-	c.closed = true
+	c.isClosed = true
 	c.poolMu.Unlock()
 	if pool != nil {
 		pool.Close()

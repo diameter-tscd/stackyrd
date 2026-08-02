@@ -44,9 +44,6 @@ go mod download
 # Run the application
 go run cmd/app/main.go
 
-# Build the CLI
-cd scripts && go build -o yrd .
-
 # To run the CLI tools
 ./scripts/yrd build      # or: cd scripts && go run . build
 ./scripts/yrd pkg        # package manager

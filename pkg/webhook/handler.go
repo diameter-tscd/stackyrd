@@ -271,8 +271,8 @@ func (wh *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// GetStats returns webhook statistics
-func (wm *WebhookManager) GetStats() map[string]interface{} {
+// Stats returns webhook statistics
+func (wm *WebhookManager) Stats() map[string]interface{} {
 	wm.mu.RLock()
 	defer wm.mu.RUnlock()
 
@@ -302,7 +302,7 @@ func (wm *WebhookManager) Close() error {
 }
 
 func (wm *WebhookManager) GetStatus() map[string]interface{} {
-	return wm.GetStats()
+	return wm.Stats()
 }
 
 // RouteHandlers returns HTTP routes for receiving webhooks

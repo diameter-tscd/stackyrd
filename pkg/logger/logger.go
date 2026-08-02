@@ -213,8 +213,8 @@ func (l *Logger) WithQuiet(quiet bool) *Logger {
 	return NewWithConfig(cfg)
 }
 
-// GetConfig returns the current logger configuration
-func (l *Logger) GetConfig() LoggerConfig {
+// Config returns the current logger configuration
+func (l *Logger) Config() LoggerConfig {
 	return l.config
 }
 

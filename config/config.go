@@ -50,6 +50,9 @@ func setupViperDefaults() {
 	viper.SetDefault("webhook.timeout_seconds", 30)
 	viper.SetDefault("webhook.max_retries", 3)
 	viper.SetDefault("webhook.endpoint", "/api/v1/webhook")
+	viper.SetDefault("mcp.enabled", false)
+	viper.SetDefault("mcp.endpoint", "/mcp")
+	viper.SetDefault("mcp.token", "")
 }
 
 type Config struct {
@@ -64,6 +67,7 @@ type Config struct {
 	Postgres   PostgresConfig   `mapstructure:"postgres"`
 	Mongo      MongoConfig      `mapstructure:"mongo"`
 	Webhook    WebhookConfig    `mapstructure:"webhook"`
+	MCP        MCPConfig        `mapstructure:"mcp"`
 	Metrics    MetricsConfig    `mapstructure:"metrics"`
 	Grafana    GrafanaConfig    `mapstructure:"grafana"`
 	Cron       CronConfig       `mapstructure:"cron"`
@@ -90,6 +94,12 @@ type WebhookConfig struct {
 	MaxRetries int               `mapstructure:"max_retries"`
 	Headers    map[string]string `mapstructure:"headers"`
 	Endpoint   string            `mapstructure:"endpoint"`
+}
+
+type MCPConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Endpoint string `mapstructure:"endpoint"`
+	Token    string `mapstructure:"token"`
 }
 
 type MinIOConfig struct {

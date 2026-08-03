@@ -67,6 +67,7 @@ func (s *Server) Start() error {
 	s.infraInitManager = infrastructure.NewInfraInitManager(s.logger)
 	s.logger.Info("Starting async infrastructure initialization...")
 	componentRegistry := s.infraInitManager.StartAsyncInitialization(s.config, s.logger)
+	infrastructure.SetInitManager(s.infraInitManager)
 
 	s.dependencies = registry.NewDependencies()
 
@@ -116,6 +117,17 @@ func (s *Server) Start() error {
 	if len(services) <= 0 {
 		s.logger.Warn("No services registered!")
 	}
+
+	svcs := make([]infrastructure.ServiceMeta, 0, len(services))
+	for _, svc := range services {
+		meta := infrastructure.ServiceMeta{Name: svc.Name(), State: registry.GetServiceState(svc.Name())}
+		if wne, ok := svc.Get().(interface{ WireName() string; Endpoints() []string }); ok {
+			meta.WireName = wne.WireName()
+			meta.Endpoints = wne.Endpoints()
+		}
+		svcs = append(svcs, meta)
+	}
+	infrastructure.SetServices(svcs)
 
 	serviceRegistry.Boot(s.e)
 

@@ -147,7 +147,7 @@ func init() {
 - **Dependency Injection**: Two factory types — plain `RegisterService(cfg, logger)` and `RegisterServiceWithDeps(cfg, logger, deps)`; sealed `Dependencies` bag with typed getters (`Redis()`, `Postgres()`, ...) and TTL-cached GetAll()
 - **Async Initialization**: All infrastructure components init in parallel
 - **Multi-connection DB**: Postgres + MongoDB with named connection managers
-
+- **MCP Server**: Model Context Protocol endpoint (`POST /mcp`) exposing internal state (health, services, infra, endpoints) as tools with optional Bearer token auth
 - **TUI Dashboard**: Bubbletea boot sequence + live monitoring dashboard
 - **Prometheus Metrics**: HTTP, DB, cache, circuit breaker, webhook, batch, WebSocket
 - **Resilience**: Circuit breaker, retry with backoff, health checks, timeouts

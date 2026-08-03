@@ -147,6 +147,7 @@ func (m *aferoManager) GetStatus() map[string]interface{} {
 	defer instance.mu.RUnlock()
 	return map[string]interface{}{
 		"initialized": true,
+		"connected":   true,
 		"aliases":     len(instance.aliases),
 	}
 }

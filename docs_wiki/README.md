@@ -21,6 +21,7 @@
 | [**Pagination**](PAGINATION.md) | `pkg/pagination/` | Cursor-based pagination with forward/backward navigation |
 | [**Logging**](LOGGING.md) | `pkg/logger/` | Structured logging, log rotation, sampling |
 | [**Webhooks**](WEBHOOK.md) | `pkg/webhook/` | Webhook sending/receiving, HMAC signing, event handlers |
+| [**MCP Server**](MCP.md) | `pkg/infrastructure/` | Model Context Protocol endpoint, tools, auth |
 | [**Caching**](CACHING.md) | `pkg/cache/` | Redis-backed cache with TTL, cache-aside, batch invalidation |
 | [**Security**](SECURITY.md) | *middleware* | Auth modes, security headers, CORS, encryption, best practices |
 

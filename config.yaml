@@ -116,3 +116,8 @@ encryption:
   rotate_keys: false
   key_rotation_interval: "24h"
 
+mcp:
+  enabled: false
+  endpoint: "/mcp"
+  token: ""  # Bearer token for MCP endpoint authentication; leave empty to disable
+

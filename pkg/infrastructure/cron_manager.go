@@ -117,8 +117,9 @@ func (c *CronManager) GetStatus() map[string]interface{} {
 		return map[string]interface{}{"active": false, "jobs": []interface{}{}}
 	}
 	return map[string]interface{}{
-		"active": true, // Always true if manager exists
-		"jobs":   c.GetJobs(),
+		"active":    true, // Always true if manager exists
+		"connected": true,
+		"jobs":      c.GetJobs(),
 	}
 }
 

@@ -1,6 +1,6 @@
 # Binaries for programs and plugins
-*.exe
-*.exe~
+# *.exe
+# *.exe~
 *.dll
 *.so
 *.dylib
@@ -84,3 +84,4 @@ scripts/internal
 scripts/go.mod
 scripts/go.sum
 scripts/main.go
+scripts/build-all.sh

@@ -36,10 +36,10 @@ func BenchmarkAppStartup_ConfigLoad(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := config.LoadConfig()
 		if err != nil {
-			b.Fatalf("config.LoadConfig() failed on iteration %d: %v", i, err)
+			b.Fatalf("config.LoadConfig() failed: %v", err)
 		}
 	}
 }
@@ -49,7 +49,7 @@ func BenchmarkAppStartup_LoggerInit(b *testing.B) {
 	b.ReportAllocs()
 	_ = os.Stderr
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		l := logger.New(false, nil)
 		_ = l
 	}
@@ -67,7 +67,7 @@ func BenchmarkAppStartup_ServerInitMiddlewareAndServices(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		infraReg := infrastructure.GetGlobalRegistry()
 		if err := infraReg.Initialize(cfg, l); err != nil {
 			b.Logf("infra init note: %v", err)
@@ -94,12 +94,12 @@ func BenchmarkAppStartup_FullStartupConsole(b *testing.B) {
 	b.ResetTimer()
 	_ = os.Stderr
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		start := time.Now()
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			b.Fatalf("config.LoadConfig() failed on iteration %d: %v", i, err)
+			b.Fatalf("config.LoadConfig() failed: %v", err)
 		}
 		cfg.App.EnableTUI = false
 
@@ -135,12 +135,12 @@ func BenchmarkAppStartup_FullStartupTUI(b *testing.B) {
 	b.ResetTimer()
 	_ = os.Stderr
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		start := time.Now()
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			b.Fatalf("config.LoadConfig() failed on iteration %d: %v", i, err)
+			b.Fatalf("config.LoadConfig() failed: %v", err)
 		}
 		cfg.App.EnableTUI = true
 
@@ -187,7 +187,7 @@ func BenchmarkAppStartup_InfraComponentInit(b *testing.B) {
 	l := logger.New(false, nil)
 	_ = l
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		infraReg := infrastructure.GetGlobalRegistry()
 		if err := infraReg.Initialize(cfg, l); err != nil {
 			b.Logf("infra init note: %v", err)
@@ -203,12 +203,12 @@ func BenchmarkStartupSnapshot(b *testing.B) {
 	b.ResetTimer()
 	_ = os.Stderr
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		start := time.Now()
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			b.Fatalf("config.LoadConfig() failed on iteration %d: %v", i, err)
+			b.Fatalf("config.LoadConfig() failed: %v", err)
 		}
 
 		l := logger.New(false, nil)
@@ -297,7 +297,7 @@ func mustBuildDiagnosticRouter(t *testing.T) (*echo.Echo, *registry.Dependencies
 
 	// Register health endpoints (normally done by server.Start())
 	e.GET("/health", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"status":       "ok",
 			"server_ready": true,
 		})
@@ -305,7 +305,7 @@ func mustBuildDiagnosticRouter(t *testing.T) (*echo.Echo, *registry.Dependencies
 	e.GET("/health/dependencies", func(c echo.Context) error {
 		allComponents := deps.GetAll()
 		allFactories := registry.GetServiceFactories()
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"total_infrastructure": len(allComponents),
 			"list_infrastructure":  slices.Collect(maps.Keys(allComponents)),
 			"total_service":        len(allFactories),
@@ -313,7 +313,7 @@ func mustBuildDiagnosticRouter(t *testing.T) (*echo.Echo, *registry.Dependencies
 		})
 	})
 	e.GET("/health/resources", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{})
+		return response.Success(c, map[string]any{})
 	})
 
 	reg.Boot(e)

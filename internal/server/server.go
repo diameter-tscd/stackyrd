@@ -45,7 +45,7 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
 		l.Warn("Endpoint not found", "path", c.Request().URL.Path, "method", c.Request().Method)
-		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]interface{}{
+		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]any{
 			"path":   c.Request().URL.Path,
 			"method": c.Request().Method,
 		})
@@ -161,7 +161,7 @@ func (s *Server) registerHealthEndpoints() {
 		if !ready {
 			status = "initializing"
 		}
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"status":                  status,
 			"server_ready":            ready,
 			"infrastructure":          s.infraInitManager.GetStatus(),
@@ -180,7 +180,7 @@ func (s *Server) registerHealthEndpoints() {
 		for k := range allFactories {
 			svcKeys = append(svcKeys, k)
 		}
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"total_infrastructure": len(allComponents),
 			"list_infrastructure":  infraKeys,
 			"total_service":        len(allFactories),

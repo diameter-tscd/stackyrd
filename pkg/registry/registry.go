@@ -48,7 +48,7 @@ func AutoDiscoverServices(
 ) []interfaces.Service {
 	var services []interfaces.Service
 
-	serviceFactories.Range(func(nameObj, factoryObj interface{}) bool {
+	serviceFactories.Range(func(nameObj, factoryObj any) bool {
 		name, nameOK := nameObj.(string)
 		factory, factoryOK := factoryObj.(ServiceFactory)
 		if !nameOK || !factoryOK {
@@ -72,7 +72,7 @@ func AutoDiscoverServices(
 		return true
 	})
 
-	serviceFactoriesWithDeps.Range(func(nameObj, factoryObj interface{}) bool {
+	serviceFactoriesWithDeps.Range(func(nameObj, factoryObj any) bool {
 		name, nameOK := nameObj.(string)
 		factory, factoryOK := factoryObj.(ServiceFactoryWithDeps)
 		if !nameOK || !factoryOK {
@@ -122,15 +122,15 @@ func NewServiceRegistry(logger *logger.Logger) *ServiceRegistry {
 	}
 }
 
-func GetServiceFactories() map[string]interface{} {
-	result := make(map[string]interface{})
-	serviceFactories.Range(func(key, value interface{}) bool {
+func GetServiceFactories() map[string]any {
+	result := make(map[string]any)
+	serviceFactories.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok {
 			result[k] = value
 		}
 		return true
 	})
-	serviceFactoriesWithDeps.Range(func(key, value interface{}) bool {
+	serviceFactoriesWithDeps.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok {
 			result[k] = value
 		}
@@ -139,7 +139,7 @@ func GetServiceFactories() map[string]interface{} {
 	return result
 }
 
-func GetService(name string) interface{} {
+func GetService(name string) any {
 	val, _ := serviceDiscovered.Load(name)
 	return val
 }
@@ -164,7 +164,7 @@ func GetServiceState(name string) string {
 // GetServiceStates returns a copy of all recorded service states.
 func GetServiceStates() map[string]string {
 	result := make(map[string]string)
-	serviceStates.Range(func(key, value interface{}) bool {
+	serviceStates.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok {
 			s, _ := value.(string)
 			result[k] = s

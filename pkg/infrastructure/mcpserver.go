@@ -1,10 +1,11 @@
 package infrastructure
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 
 	"stackyrd/config"
@@ -50,7 +51,7 @@ var mcpState struct {
 
 func (m *MCPServer) Name() string                       { return "MCP" }
 func (m *MCPServer) Close() error                       { return nil }
-func (m *MCPServer) GetStatus() map[string]interface{}  { return map[string]interface{}{"enabled": m.enabled, "endpoint": m.endpoint, "connected": true} }
+func (m *MCPServer) GetStatus() map[string]any  { return map[string]any{"enabled": m.enabled, "endpoint": m.endpoint, "connected": true} }
 
 // RouteHandlers implements RouteRegistrar so the MCP endpoint is auto-mounted
 // alongside all other infrastructure component routes — no MCP-specific block
@@ -263,7 +264,7 @@ func (m *MCPServer) toolHealth() string {
 	for name, st := range status {
 		comps = append(comps, comp{Name: name, Initialized: st.Initialized, Progress: st.Progress})
 	}
-	sort.Slice(comps, func(i, j int) bool { return comps[i].Name < comps[j].Name })
+	slices.SortFunc(comps, func(a, b comp) int { return cmp.Compare(a.Name, b.Name) })
 	return marshalJSON(map[string]any{
 		"status":     map[bool]string{true: "ready", false: "initializing"}[im.IsReady()],
 		"progress":   im.GetInitializationProgress(),
@@ -284,7 +285,7 @@ func (m *MCPServer) toolInfra() string {
 	for n := range comps {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	out := make([]map[string]any, 0, len(names))
 	for _, n := range names {
 		out = append(out, map[string]any{"name": n, "status": comps[n].GetStatus()})
@@ -322,7 +323,7 @@ func (m *MCPServer) toolEndpoints() string {
 			}
 		}
 	}
-	sort.Strings(eps)
+	slices.Sort(eps)
 	return marshalJSON(eps)
 }
 

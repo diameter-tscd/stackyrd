@@ -53,8 +53,8 @@ func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManag
 	}, nil
 }
 
-func (k *KafkaManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (k *KafkaManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if k == nil {
 		stats["connected"] = false
 		return stats

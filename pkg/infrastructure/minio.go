@@ -20,7 +20,7 @@ type MinIOManager struct {
 	Connected  bool
 	Pool       *WorkerPool // Async worker pool
 
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.RWMutex
 }
@@ -63,9 +63,9 @@ func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
 	}, nil
 }
 
-func (m *MinIOManager) GetStatus() map[string]interface{} {
+func (m *MinIOManager) GetStatus() map[string]any {
 	if m == nil || !m.Connected {
-		return map[string]interface{}{
+		return map[string]any{
 			"connected": false,
 			"error":     "Not configured or connection failed",
 		}
@@ -73,7 +73,7 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 
 	m.statusMu.RLock()
 	if m.statusCache != nil && time.Now().Before(m.statusExpiry) {
-		cached := make(map[string]interface{}, len(m.statusCache))
+		cached := make(map[string]any, len(m.statusCache))
 		for k, v := range m.statusCache {
 			cached[k] = v
 		}
@@ -86,7 +86,7 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 	defer cancel()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
-		stats := map[string]interface{}{
+		stats := map[string]any{
 			"connected":   true,
 			"bucket_name": m.BucketName,
 			"status":      "Bucket not found",
@@ -98,7 +98,7 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"connected":   true,
 		"bucket_name": m.BucketName,
 		"status":      "Healthy",

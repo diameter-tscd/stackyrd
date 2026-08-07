@@ -16,7 +16,7 @@ func NewTestEcho() *echo.Echo {
 }
 
 // NewTestContext creates a new test context with the given method, path, and body
-func NewTestContext(method, path string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
+func NewTestContext(method, path string, body any) (echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	rec := httptest.NewRecorder()
 
@@ -50,7 +50,7 @@ func NewTestContextWithQuery(method, path string, queryParams map[string]string)
 }
 
 // NewTestContextWithParams creates a test context with path parameters
-func NewTestContextWithParams(method, path string, params map[string]string, body interface{}) (echo.Context, *httptest.ResponseRecorder) {
+func NewTestContextWithParams(method, path string, params map[string]string, body any) (echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	rec := httptest.NewRecorder()
 
@@ -78,7 +78,7 @@ func NewTestContextWithParams(method, path string, params map[string]string, bod
 }
 
 // ParseResponse parses the response body into the given struct
-func ParseResponse(t *testing.T, rec *httptest.ResponseRecorder, v interface{}) {
+func ParseResponse(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	t.Helper()
 	if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
@@ -94,9 +94,9 @@ func AssertStatus(t *testing.T, rec *httptest.ResponseRecorder, expected int) {
 }
 
 // AssertJSON asserts the response JSON contains the expected fields
-func AssertJSON(t *testing.T, rec *httptest.ResponseRecorder, expected map[string]interface{}) {
+func AssertJSON(t *testing.T, rec *httptest.ResponseRecorder, expected map[string]any) {
 	t.Helper()
-	var actual map[string]interface{}
+	var actual map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &actual); err != nil {
 		t.Fatalf("failed to parse response JSON: %v", err)
 	}

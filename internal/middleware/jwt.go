@@ -89,7 +89,7 @@ func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 			}
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 
-			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
 				if token.Method != jwt.SigningMethodHS256 {
 					return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
 				}

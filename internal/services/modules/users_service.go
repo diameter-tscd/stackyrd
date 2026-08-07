@@ -56,7 +56,7 @@ func (s *UsersService) Endpoints() []string {
 	}
 }
 
-func (s *UsersService) Get() interface{} {
+func (s *UsersService) Get() any {
 	return s
 }
 

@@ -212,11 +212,11 @@ func (cb *CircuitBreaker) GetState() State {
 }
 
 // Stats returns circuit breaker statistics
-func (cb *CircuitBreaker) Stats() map[string]interface{} {
+func (cb *CircuitBreaker) Stats() map[string]any {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"name":              cb.config.Name,
 		"state":             cb.state.String(),
 		"failures":          cb.failures,

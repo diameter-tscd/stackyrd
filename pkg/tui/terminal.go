@@ -1,11 +1,12 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
@@ -1025,7 +1026,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 func (m *TerminalModel) listMiddleware() tea.Cmd {
 	reg := middleware.GetGlobalMiddlewareRegistry()
 	names := reg.GetNames()
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Middleware (%d):", len(names)))
@@ -1078,7 +1079,7 @@ func (m *TerminalModel) listEndpoints() tea.Cmd {
 	for name := range factories {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var sb strings.Builder
 	sb.WriteString("Endpoints:")
@@ -1118,7 +1119,7 @@ func (m *TerminalModel) infraStatus(name string) tea.Cmd {
 // listThemes prints available themes as plain log text.
 func (m *TerminalModel) listThemes() tea.Cmd {
 	available := AvailableThemeNames()
-	sort.Strings(available)
+	slices.Sort(available)
 	current := GetThemeName()
 
 	var sb strings.Builder
@@ -1176,7 +1177,7 @@ func (m *TerminalModel) listAll() tea.Cmd {
 	for name := range factories {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	any := false
 	for _, name := range names {
 		svc, ok := registry.GetService(name).(endpointProvider)
@@ -1476,8 +1477,7 @@ func (m *TerminalModel) refreshStats() {
 	}
 	// Sort: connected first, then enabled-but-disconnected, then disabled,
 	// each group alphabetically.
-	sort.Slice(infraEntries, func(i, j int) bool {
-		a, b := infraEntries[i], infraEntries[j]
+slices.SortFunc(infraEntries, func(a, b InfraEntry) int {
 		rankA := 0
 		if a.Connected {
 			rankA = 2
@@ -1491,14 +1491,14 @@ func (m *TerminalModel) refreshStats() {
 			rankB = 1
 		}
 		if rankA != rankB {
-			return rankA > rankB
+			return rankA - rankB
 		}
-		return a.Name < b.Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	m.infraEntries = infraEntries
 
 	mwNames := middleware.GetGlobalMiddlewareRegistry().GetNames()
-	sort.Strings(mwNames)
+	slices.Sort(mwNames)
 	mwEntries := make([]MiddlewareEntry, 0, len(mwNames))
 	for _, name := range mwNames {
 		mwEntries = append(mwEntries, MiddlewareEntry{
@@ -1513,7 +1513,7 @@ func (m *TerminalModel) refreshStats() {
 	for name := range factories {
 		svcNames = append(svcNames, name)
 	}
-	sort.Strings(svcNames)
+	slices.Sort(svcNames)
 	serviceEntries := make([]ServiceEntry, 0, len(svcNames))
 	for _, name := range svcNames {
 		switch registry.GetServiceState(name) {
@@ -1528,12 +1528,14 @@ func (m *TerminalModel) refreshStats() {
 		}
 	}
 	// Sort: running services first, then stopped, each group alphabetically.
-	sort.Slice(serviceEntries, func(i, j int) bool {
-		a, b := serviceEntries[i], serviceEntries[j]
+	slices.SortFunc(serviceEntries, func(a, b ServiceEntry) int {
 		if a.Running != b.Running {
-			return a.Running
+			if a.Running {
+				return -1
+			}
+			return 1
 		}
-		return a.Name < b.Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	m.serviceEntries = serviceEntries
 }

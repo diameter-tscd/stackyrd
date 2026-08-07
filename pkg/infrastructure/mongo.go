@@ -26,7 +26,7 @@ type MongoManager struct {
 	// statusCache avoids re-running Ping + dbStats on every /health call.
 	statusTTL    time.Duration
 	statusExpiry time.Time
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusMu     sync.RWMutex
 }
 
@@ -181,7 +181,7 @@ func (m *MongoConnectionManager) GetAllConnections() map[string]*MongoManager {
 }
 
 // GetStatus returns status for all connections
-func (m *MongoConnectionManager) GetStatus() map[string]interface{} {
+func (m *MongoConnectionManager) GetStatus() map[string]any {
 	m.mu.RLock()
 	connections := make(map[string]*MongoManager, len(m.connections))
 	for name, conn := range m.connections {
@@ -189,7 +189,7 @@ func (m *MongoConnectionManager) GetStatus() map[string]interface{} {
 	}
 	m.mu.RUnlock()
 
-	status := make(map[string]interface{})
+	status := make(map[string]any)
 	for name, conn := range connections {
 		status[name] = conn.GetStatus()
 	}
@@ -229,8 +229,8 @@ func (m *MongoConnectionManager) CloseAll() error {
 	return nil
 }
 
-func (m *MongoManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (m *MongoManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if m == nil || m.Client == nil {
 		stats["connected"] = false
 		return stats
@@ -239,7 +239,7 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	m.statusMu.RLock()
 	if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
-		cached := make(map[string]interface{}, len(m.statusCache))
+		cached := make(map[string]any, len(m.statusCache))
 		for k, v := range m.statusCache {
 			cached[k] = v
 		}
@@ -264,10 +264,10 @@ func (m *MongoManager) GetStatus() map[string]interface{} {
 
 	// Get database stats
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	dbStats := m.Database.RunCommand(dbCtx, map[string]interface{}{"dbStats": 1})
+	dbStats := m.Database.RunCommand(dbCtx, map[string]any{"dbStats": 1})
 	dbCancel()
 	if dbStats.Err() == nil {
-		var result map[string]interface{}
+		var result map[string]any
 		if err := dbStats.Decode(&result); err == nil {
 			stats["db_name"] = result["db"]
 			stats["collections"] = result["collections"]
@@ -293,68 +293,68 @@ func (m *MongoManager) Collection(name string) *mongo.Collection {
 }
 
 // InsertOne inserts a single document
-func (m *MongoManager) InsertOne(ctx context.Context, collection string, document interface{}) (*mongo.InsertOneResult, error) {
+func (m *MongoManager) InsertOne(ctx context.Context, collection string, document any) (*mongo.InsertOneResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.InsertOne(ctx, document)
 }
 
 // InsertMany inserts multiple documents
-func (m *MongoManager) InsertMany(ctx context.Context, collection string, documents []interface{}) (*mongo.InsertManyResult, error) {
+func (m *MongoManager) InsertMany(ctx context.Context, collection string, documents []any) (*mongo.InsertManyResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.InsertMany(ctx, documents)
 }
 
 // FindOne finds a single document
-func (m *MongoManager) FindOne(ctx context.Context, collection string, filter interface{}) *mongo.SingleResult {
+func (m *MongoManager) FindOne(ctx context.Context, collection string, filter any) *mongo.SingleResult {
 	coll := m.Database.Collection(collection)
 	return coll.FindOne(ctx, filter)
 }
 
 // Find finds multiple documents
-func (m *MongoManager) Find(ctx context.Context, collection string, filter interface{}) (*mongo.Cursor, error) {
+func (m *MongoManager) Find(ctx context.Context, collection string, filter any, opts ...*options.FindOptions) (*mongo.Cursor, error) {
 	coll := m.Database.Collection(collection)
-	return coll.Find(ctx, filter)
+	return coll.Find(ctx, filter, opts...)
 }
 
 // UpdateOne updates a single document
-func (m *MongoManager) UpdateOne(ctx context.Context, collection string, filter interface{}, update interface{}) (*mongo.UpdateResult, error) {
+func (m *MongoManager) UpdateOne(ctx context.Context, collection string, filter any, update any) (*mongo.UpdateResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.UpdateOne(ctx, filter, update)
 }
 
 // UpdateMany updates multiple documents
-func (m *MongoManager) UpdateMany(ctx context.Context, collection string, filter interface{}, update interface{}) (*mongo.UpdateResult, error) {
+func (m *MongoManager) UpdateMany(ctx context.Context, collection string, filter any, update any) (*mongo.UpdateResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.UpdateMany(ctx, filter, update)
 }
 
 // DeleteOne deletes a single document
-func (m *MongoManager) DeleteOne(ctx context.Context, collection string, filter interface{}) (*mongo.DeleteResult, error) {
+func (m *MongoManager) DeleteOne(ctx context.Context, collection string, filter any) (*mongo.DeleteResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.DeleteOne(ctx, filter)
 }
 
 // DeleteMany deletes multiple documents
-func (m *MongoManager) DeleteMany(ctx context.Context, collection string, filter interface{}) (*mongo.DeleteResult, error) {
+func (m *MongoManager) DeleteMany(ctx context.Context, collection string, filter any) (*mongo.DeleteResult, error) {
 	coll := m.Database.Collection(collection)
 	return coll.DeleteMany(ctx, filter)
 }
 
 // CountDocuments counts documents in a collection
-func (m *MongoManager) CountDocuments(ctx context.Context, collection string, filter interface{}) (int64, error) {
+func (m *MongoManager) CountDocuments(ctx context.Context, collection string, filter any) (int64, error) {
 	coll := m.Database.Collection(collection)
 	return coll.CountDocuments(ctx, filter)
 }
 
 // Aggregate performs aggregation operations
-func (m *MongoManager) Aggregate(ctx context.Context, collection string, pipeline interface{}) (*mongo.Cursor, error) {
+func (m *MongoManager) Aggregate(ctx context.Context, collection string, pipeline any) (*mongo.Cursor, error) {
 	coll := m.Database.Collection(collection)
 	return coll.Aggregate(ctx, pipeline)
 }
 
 // ListCollections returns all collection names
 func (m *MongoManager) ListCollections(ctx context.Context) ([]string, error) {
-	collections, err := m.Database.ListCollectionNames(ctx, map[string]interface{}{})
+	collections, err := m.Database.ListCollectionNames(ctx, map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -373,19 +373,19 @@ func (m *MongoManager) DropCollection(ctx context.Context, name string) error {
 }
 
 // GetDBInfo returns database information
-func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]interface{}, error) {
+func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]any, error) {
 	// Get database stats
-	command := map[string]interface{}{"dbStats": 1}
+	command := map[string]any{"dbStats": 1}
 	result := m.Database.RunCommand(ctx, command)
 
-	var stats map[string]interface{}
+	var stats map[string]any
 	if err := result.Decode(&stats); err != nil {
 		return nil, err
 	}
 
 	// Get server status
-	serverStatus := m.Client.Database("admin").RunCommand(ctx, map[string]interface{}{"serverStatus": 1})
-	var serverInfo map[string]interface{}
+	serverStatus := m.Client.Database("admin").RunCommand(ctx, map[string]any{"serverStatus": 1})
+	var serverInfo map[string]any
 	if serverStatus.Err() == nil {
 		if err := serverStatus.Decode(&serverInfo); err != nil {
 			return nil, fmt.Errorf("failed to decode server status: %w", err)
@@ -398,7 +398,7 @@ func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]interface{}, e
 		collections = []string{}
 	}
 
-	info := map[string]interface{}{
+	info := map[string]any{
 		"database":    m.Database.Name(),
 		"collections": collections,
 		"stats":       stats,
@@ -412,16 +412,16 @@ func (m *MongoManager) GetDBInfo(ctx context.Context) (map[string]interface{}, e
 }
 
 // ExecuteRawQuery executes a raw MongoDB query and returns results as a slice of maps
-func (m *MongoManager) ExecuteRawQuery(ctx context.Context, collection string, query map[string]interface{}) ([]map[string]interface{}, error) {
+func (m *MongoManager) ExecuteRawQuery(ctx context.Context, collection string, query map[string]any) ([]map[string]any, error) {
 	cursor, err := m.Find(ctx, collection, query)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []map[string]interface{}
+	var results []map[string]any
 	for cursor.Next(ctx) {
-		var result map[string]interface{}
+		var result map[string]any
 		if err := cursor.Decode(&result); err != nil {
 			return nil, err
 		}
@@ -460,21 +460,21 @@ func StringToStringSlice(s string) []string {
 // Async MongoDB Operations
 
 // InsertOneAsync asynchronously inserts a single document
-func (m *MongoManager) InsertOneAsync(ctx context.Context, collection string, document interface{}) *AsyncResult[*mongo.InsertOneResult] {
+func (m *MongoManager) InsertOneAsync(ctx context.Context, collection string, document any) *AsyncResult[*mongo.InsertOneResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.InsertOneResult, error) {
 		return m.InsertOne(ctx, collection, document)
 	})
 }
 
 // InsertManyAsync asynchronously inserts multiple documents
-func (m *MongoManager) InsertManyAsync(ctx context.Context, collection string, documents []interface{}) *AsyncResult[*mongo.InsertManyResult] {
+func (m *MongoManager) InsertManyAsync(ctx context.Context, collection string, documents []any) *AsyncResult[*mongo.InsertManyResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.InsertManyResult, error) {
 		return m.InsertMany(ctx, collection, documents)
 	})
 }
 
 // FindOneAsync asynchronously finds a single document
-func (m *MongoManager) FindOneAsync(ctx context.Context, collection string, filter interface{}) *AsyncResult[*mongo.SingleResult] {
+func (m *MongoManager) FindOneAsync(ctx context.Context, collection string, filter any) *AsyncResult[*mongo.SingleResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.SingleResult, error) {
 		result := m.FindOne(ctx, collection, filter)
 		return result, nil // Note: SingleResult cannot be directly returned from async
@@ -482,49 +482,49 @@ func (m *MongoManager) FindOneAsync(ctx context.Context, collection string, filt
 }
 
 // FindAsync asynchronously finds multiple documents
-func (m *MongoManager) FindAsync(ctx context.Context, collection string, filter interface{}) *AsyncResult[*mongo.Cursor] {
+func (m *MongoManager) FindAsync(ctx context.Context, collection string, filter any) *AsyncResult[*mongo.Cursor] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.Cursor, error) {
 		return m.Find(ctx, collection, filter)
 	})
 }
 
 // UpdateOneAsync asynchronously updates a single document
-func (m *MongoManager) UpdateOneAsync(ctx context.Context, collection string, filter interface{}, update interface{}) *AsyncResult[*mongo.UpdateResult] {
+func (m *MongoManager) UpdateOneAsync(ctx context.Context, collection string, filter any, update any) *AsyncResult[*mongo.UpdateResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.UpdateResult, error) {
 		return m.UpdateOne(ctx, collection, filter, update)
 	})
 }
 
 // UpdateManyAsync asynchronously updates multiple documents
-func (m *MongoManager) UpdateManyAsync(ctx context.Context, collection string, filter interface{}, update interface{}) *AsyncResult[*mongo.UpdateResult] {
+func (m *MongoManager) UpdateManyAsync(ctx context.Context, collection string, filter any, update any) *AsyncResult[*mongo.UpdateResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.UpdateResult, error) {
 		return m.UpdateMany(ctx, collection, filter, update)
 	})
 }
 
 // DeleteOneAsync asynchronously deletes a single document
-func (m *MongoManager) DeleteOneAsync(ctx context.Context, collection string, filter interface{}) *AsyncResult[*mongo.DeleteResult] {
+func (m *MongoManager) DeleteOneAsync(ctx context.Context, collection string, filter any) *AsyncResult[*mongo.DeleteResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.DeleteResult, error) {
 		return m.DeleteOne(ctx, collection, filter)
 	})
 }
 
 // DeleteManyAsync asynchronously deletes multiple documents
-func (m *MongoManager) DeleteManyAsync(ctx context.Context, collection string, filter interface{}) *AsyncResult[*mongo.DeleteResult] {
+func (m *MongoManager) DeleteManyAsync(ctx context.Context, collection string, filter any) *AsyncResult[*mongo.DeleteResult] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.DeleteResult, error) {
 		return m.DeleteMany(ctx, collection, filter)
 	})
 }
 
 // CountDocumentsAsync asynchronously counts documents in a collection
-func (m *MongoManager) CountDocumentsAsync(ctx context.Context, collection string, filter interface{}) *AsyncResult[int64] {
+func (m *MongoManager) CountDocumentsAsync(ctx context.Context, collection string, filter any) *AsyncResult[int64] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (int64, error) {
 		return m.CountDocuments(ctx, collection, filter)
 	})
 }
 
 // AggregateAsync asynchronously performs aggregation operations
-func (m *MongoManager) AggregateAsync(ctx context.Context, collection string, pipeline interface{}) *AsyncResult[*mongo.Cursor] {
+func (m *MongoManager) AggregateAsync(ctx context.Context, collection string, pipeline any) *AsyncResult[*mongo.Cursor] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*mongo.Cursor, error) {
 		return m.Aggregate(ctx, collection, pipeline)
 	})
@@ -554,15 +554,15 @@ func (m *MongoManager) DropCollectionAsync(ctx context.Context, name string) *As
 }
 
 // GetDBInfoAsync asynchronously returns database information
-func (m *MongoManager) GetDBInfoAsync(ctx context.Context) *AsyncResult[map[string]interface{}] {
-	return ExecuteAsync(ctx, func(ctx context.Context) (map[string]interface{}, error) {
+func (m *MongoManager) GetDBInfoAsync(ctx context.Context) *AsyncResult[map[string]any] {
+	return ExecuteAsync(ctx, func(ctx context.Context) (map[string]any, error) {
 		return m.GetDBInfo(ctx)
 	})
 }
 
 // ExecuteRawQueryAsync asynchronously executes a raw MongoDB query
-func (m *MongoManager) ExecuteRawQueryAsync(ctx context.Context, collection string, query map[string]interface{}) *AsyncResult[[]map[string]interface{}] {
-	return ExecuteAsync(ctx, func(ctx context.Context) ([]map[string]interface{}, error) {
+func (m *MongoManager) ExecuteRawQueryAsync(ctx context.Context, collection string, query map[string]any) *AsyncResult[[]map[string]any] {
+	return ExecuteAsync(ctx, func(ctx context.Context) ([]map[string]any, error) {
 		return m.ExecuteRawQuery(ctx, collection, query)
 	})
 }
@@ -572,7 +572,7 @@ func (m *MongoManager) ExecuteRawQueryAsync(ctx context.Context, collection stri
 // InsertBatchAsync asynchronously inserts multiple documents across different collections
 func (m *MongoManager) InsertBatchAsync(ctx context.Context, inserts []struct {
 	Collection string
-	Document   interface{}
+	Document   any
 }) *BatchAsyncResult[*mongo.InsertOneResult] {
 	operations := make([]AsyncOperation[*mongo.InsertOneResult], len(inserts))
 
@@ -589,8 +589,8 @@ func (m *MongoManager) InsertBatchAsync(ctx context.Context, inserts []struct {
 // UpdateBatchAsync asynchronously updates multiple documents
 func (m *MongoManager) UpdateBatchAsync(ctx context.Context, updates []struct {
 	Collection string
-	Filter     interface{}
-	Update     interface{}
+	Filter     any
+	Update     any
 }) *BatchAsyncResult[*mongo.UpdateResult] {
 	operations := make([]AsyncOperation[*mongo.UpdateResult], len(updates))
 

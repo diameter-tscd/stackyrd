@@ -83,7 +83,7 @@ func (im *InfraInitManager) startAsyncInitialization(cfg *config.Config, logger 
 
 				// Perform health check with timeout so a hung component can
 				// never wedge WaitForInitialization.
-				statusCh := make(chan map[string]interface{}, 1)
+				statusCh := make(chan map[string]any, 1)
 				go func() {
 					statusCh <- comp.GetStatus()
 				}()

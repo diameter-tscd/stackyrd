@@ -26,7 +26,7 @@ func init() {
 }
 
 // Bind binds and validates request data
-func Bind(c echo.Context, req interface{}) error {
+func Bind(c echo.Context, req any) error {
 	if err := c.Bind(req); err != nil {
 		return fmt.Errorf("invalid request format: %w", err)
 	}
@@ -39,7 +39,7 @@ func Bind(c echo.Context, req interface{}) error {
 }
 
 // Validate validates a struct using validator tags
-func Validate(req interface{}) error {
+func Validate(req any) error {
 	if err := validate.Struct(req); err != nil {
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
 			return &ValidationError{

@@ -59,7 +59,7 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 			latency := time.Since(start)
 			statusCode := c.Response().Status
 
-			fields := map[string]interface{}{
+			fields := map[string]any{
 				"method":     c.Request().Method,
 				"path":       path,
 				"query":      query,
@@ -94,7 +94,7 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 				fields["headers"] = headers
 			}
 
-			keyvals := make([]interface{}, 0, len(fields)*2)
+			keyvals := make([]any, 0, len(fields)*2)
 			for k, v := range fields {
 				keyvals = append(keyvals, k, v)
 			}

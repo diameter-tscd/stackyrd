@@ -139,7 +139,7 @@ func RateLimitWithConfig(rate int, window time.Duration) echo.MiddlewareFunc {
 			ip := c.RealIP()
 
 			if !limiter.isAllowed(ip) {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}
@@ -160,7 +160,7 @@ func RateLimitPerUser(rate int, window time.Duration) echo.MiddlewareFunc {
 			}
 
 			if !limiter.isAllowed(userID) {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}
@@ -225,7 +225,7 @@ func RedisRateLimitWithConfig(log *logger.Logger, client *redis.Client, rate int
 				return next(c)
 			}
 			if !allowed {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}

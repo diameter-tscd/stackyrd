@@ -32,7 +32,7 @@ type EncryptionService struct {
 	logger        *logger.Logger
 }
 
-func NewEncryptionService(enabled bool, cfg map[string]interface{}, log ...*logger.Logger) *EncryptionService {
+func NewEncryptionService(enabled bool, cfg map[string]any, log ...*logger.Logger) *EncryptionService {
 	algorithm := "aes-256-gcm"
 	key := ""
 
@@ -79,7 +79,7 @@ func NewEncryptionService(enabled bool, cfg map[string]interface{}, log ...*logg
 func (s *EncryptionService) Name() string     { return "Encryption Service" }
 func (s *EncryptionService) WireName() string { return "encryption-service" }
 func (s *EncryptionService) Enabled() bool    { return s.enabled }
-func (s *EncryptionService) Get() interface{} { return s }
+func (s *EncryptionService) Get() any { return s }
 func (s *EncryptionService) Endpoints() []string {
 	return []string{"/encryption/encrypt", "/encryption/decrypt", "/encryption/status", "/encryption/key-rotate"}
 }
@@ -280,7 +280,7 @@ func (s *EncryptionService) RotateKey(c echo.Context) error {
 	}, "Key rotation successful")
 }
 
-func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
+func (s *EncryptionService) EncryptJSON(data any) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal JSON: %w", err)
@@ -288,7 +288,7 @@ func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
 	return s.encrypt(jsonData)
 }
 
-func (s *EncryptionService) DecryptJSON(encryptedData string, target interface{}) error {
+func (s *EncryptionService) DecryptJSON(encryptedData string, target any) error {
 	decrypted, err := s.decrypt(encryptedData)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt: %w", err)
@@ -298,7 +298,7 @@ func (s *EncryptionService) DecryptJSON(encryptedData string, target interface{}
 
 func init() {
 	registry.RegisterService("encryption_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
-		encryptionConfig := map[string]interface{}{
+		encryptionConfig := map[string]any{
 			"algorithm": config.Encryption.Algorithm,
 			"key":       config.Encryption.Key,
 		}

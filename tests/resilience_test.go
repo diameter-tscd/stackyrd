@@ -178,7 +178,7 @@ func TestRetry_CustomRetryIf(t *testing.T) {
 }
 
 func TestRetryWithContext_Cancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	cfg := resilience.DefaultRetryConfig()

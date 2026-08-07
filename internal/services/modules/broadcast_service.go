@@ -72,12 +72,12 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 	events := []struct {
 		Type    string
 		Message string
-		Data    map[string]interface{}
+		Data    map[string]any
 	}{
-		{"demo_notification", "Service H notification", map[string]interface{}{"priority": "low"}},
-		{"demo_metric", "Metric update", map[string]interface{}{"value": 42}},
-		{"demo_alert", "System alert", map[string]interface{}{"level": "info"}},
-		{"demo_update", "Data updated", map[string]interface{}{"records": 100}},
+		{"demo_notification", "Service H notification", map[string]any{"priority": "low"}},
+		{"demo_metric", "Metric update", map[string]any{"value": 42}},
+		{"demo_alert", "System alert", map[string]any{"level": "info"}},
+		{"demo_update", "Data updated", map[string]any{"records": 100}},
 	}
 
 	i := 0
@@ -91,7 +91,7 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 
 			// Shallow-copy the template map: each broadcast must carry its own
 			// map so previously delivered events never mutate under a client.
-			data := make(map[string]interface{}, len(event.Data)+2)
+			data := make(map[string]any, len(event.Data)+2)
 			for k, v := range event.Data {
 				data[k] = v
 			}
@@ -132,7 +132,7 @@ func NewBroadcastService(enabled bool, logger *logger.Logger) *BroadcastService 
 func (s *BroadcastService) Name() string     { return "Broadcast Service" }
 func (s *BroadcastService) WireName() string { return "broadcast-service" }
 func (s *BroadcastService) Enabled() bool    { return s.enabled }
-func (s *BroadcastService) Get() interface{} { return s }
+func (s *BroadcastService) Get() any { return s }
 func (s *BroadcastService) Endpoints() []string {
 	return []string{"/events/stream/{stream_id}", "/events/broadcast", "/events/streams"}
 }
@@ -160,7 +160,7 @@ func (s *BroadcastService) streamEvents(c echo.Context) error {
 		ID:        "connected",
 		Type:      "connection",
 		Message:   "Connected to stream: " + streamID,
-		Data:      map[string]interface{}{"stream_id": streamID, "service": "broadcast_service"},
+		Data:      map[string]any{"stream_id": streamID, "service": "broadcast_service"},
 		Timestamp: time.Now().Unix(),
 		StreamID:  streamID,
 	}
@@ -192,7 +192,7 @@ func (s *BroadcastService) broadcastEvent(c echo.Context) error {
 		StreamID string                 `json:"stream_id,omitempty"`
 		Type     string                 `json:"type" validate:"required"`
 		Message  string                 `json:"message" validate:"required"`
-		Data     map[string]interface{} `json:"data,omitempty"`
+		Data     map[string]any `json:"data,omitempty"`
 	}
 
 	var req BroadcastRequest
@@ -218,15 +218,15 @@ func (s *BroadcastService) getActiveStreams(c echo.Context) error {
 	totalClients := s.broadcaster.GetTotalClients()
 	streamCount := s.broadcaster.GetStreamCount()
 
-	streamInfo := make(map[string]interface{})
+	streamInfo := make(map[string]any)
 	for streamID, clientCount := range activeStreams {
-		streamInfo[streamID] = map[string]interface{}{
+		streamInfo[streamID] = map[string]any{
 			"clients": clientCount,
 			"active":  true,
 		}
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"streams":       streamInfo,
 		"total_clients": totalClients,
 		"stream_count":  streamCount,
@@ -271,7 +271,7 @@ func (s *BroadcastService) stopStream(c echo.Context) error {
 }
 
 var sseBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &bytes.Buffer{}
 	},
 }

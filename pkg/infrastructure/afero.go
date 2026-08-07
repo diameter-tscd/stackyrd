@@ -139,13 +139,13 @@ func (m *aferoManager) resolveAlias(alias string) (string, error) {
 
 func (m *aferoManager) Name() string { return "Afero Filesystem" }
 
-func (m *aferoManager) GetStatus() map[string]interface{} {
+func (m *aferoManager) GetStatus() map[string]any {
 	if instance == nil {
-		return map[string]interface{}{"initialized": false}
+		return map[string]any{"initialized": false}
 	}
 	instance.mu.RLock()
 	defer instance.mu.RUnlock()
-	return map[string]interface{}{
+	return map[string]any{
 		"initialized": true,
 		"connected":   true,
 		"aliases":     len(instance.aliases),

@@ -112,11 +112,11 @@ func (c *CronManager) GetJobs() []CronJob {
 	}
 	return list
 }
-func (c *CronManager) GetStatus() map[string]interface{} {
+func (c *CronManager) GetStatus() map[string]any {
 	if c == nil {
-		return map[string]interface{}{"active": false, "jobs": []interface{}{}}
+		return map[string]any{"active": false, "jobs": []any{}}
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"active":    true, // Always true if manager exists
 		"connected": true,
 		"jobs":      c.GetJobs(),
@@ -242,20 +242,20 @@ func (c *CronManager) SubmitAsyncJob(job func()) {
 }
 
 // GetPoolStatus returns the status of the worker pool
-func (c *CronManager) GetPoolStatus() map[string]interface{} {
+func (c *CronManager) GetPoolStatus() map[string]any {
 	c.poolMu.Lock()
 	pool := c.pool
 	c.poolMu.Unlock()
 
 	if pool == nil {
-		return map[string]interface{}{
+		return map[string]any{
 			"available": false,
 			"workers":   0,
 		}
 	}
 
 	// Note: WorkerPool doesn't expose internal stats, so we return basic info
-	return map[string]interface{}{
+	return map[string]any{
 		"available": true,
 		"workers":   5, // We know this from initialization
 	}

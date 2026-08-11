@@ -107,6 +107,7 @@ type TerminalModel struct {
 	logWidth            int
 	isSidebarHidden     bool
 	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
+	sidebarForced       *bool // nil = auto-hide logic applies; non-nil = forced show/hide
 }
 
 type terminalTickMsg time.Time
@@ -955,7 +956,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar (colon optional)")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -1002,11 +1003,22 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	case "sidebar":
 		hidden := !m.isSidebarHidden
 		m.sidebarManualHidden = &hidden
+		m.sidebarForced = nil
 		m.calculateWidths()
 		if hidden {
 			return m.logCmd("info", "Sidebar hidden (manual override)")
 		}
 		return m.logCmd("info", "Sidebar shown (manual override)")
+	case "sidebar force-show":
+		forcedVisible := true
+		m.sidebarForced = &forcedVisible
+		m.calculateWidths()
+		return m.logCmd("info", "Sidebar force-shown (overrides auto-hide)")
+	case "sidebar force-hide":
+		forcedVisible := false
+		m.sidebarForced = &forcedVisible
+		m.calculateWidths()
+		return m.logCmd("info", "Sidebar force-hidden (overrides auto-hide)")
 	case "themes":
 		return m.listThemes()
 	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
@@ -1391,13 +1403,33 @@ func (m *TerminalModel) clearLogs() {
 	m.filterText = ""
 }
 
+// Terminal layout thresholds — tune these to change how the sidebar and log
+// panel respond to terminal size.
+const (
+	// Below these dimensions the sidebar auto-hides (unless forced) and logs
+	// take the full terminal width.
+	sidebarHideMinWidth  = 135
+	sidebarHideMinHeight = 42
+
+	// Sidebar share of terminal width while visible, in percent.
+	sidebarWidthPercent = 30
+	// Sidebar is clamped to a hard minimum width and a maximum share of the
+	// terminal width, in percent.
+	sidebarMinWidth = 34
+	sidebarMaxPct   = 50
+
+	// Minimum widths the main/log panel is allowed to shrink to.
+	mainMinWidth = 40
+)
+
 func (m *TerminalModel) calculateWidths() {
-	// If user manually toggled, honour that choice, unless terminal is too small.
-	tooSmall := m.width < 135 || m.height < 42
-	if m.sidebarManualHidden != nil {
+	tooSmall := m.width < sidebarHideMinWidth || m.height < sidebarHideMinHeight
+	if m.sidebarForced != nil {
+		m.isSidebarHidden = !*m.sidebarForced
+	} else if m.sidebarManualHidden != nil {
 		m.isSidebarHidden = tooSmall || *m.sidebarManualHidden
 	} else {
-		// Auto-hide sidebar unless terminal is at least 135x42 for a comfortable side-by-side layout
+		// Auto-hide sidebar unless terminal is at least sidebarHideMinWidth x sidebarHideMinHeight
 		m.isSidebarHidden = tooSmall
 	}
 
@@ -1405,16 +1437,16 @@ func (m *TerminalModel) calculateWidths() {
 		m.sidebarWidth = 0
 		m.sidebarContentWidth = 0
 		m.mainWidth = m.width
-		if m.mainWidth < 40 {
-			m.mainWidth = 40
+		if m.mainWidth < mainMinWidth {
+			m.mainWidth = mainMinWidth
 		}
 	} else {
-		sidebarWidth := m.width * 30 / 100
-		if sidebarWidth < 34 {
-			sidebarWidth = 34
+		sidebarWidth := m.width * sidebarWidthPercent / 100
+		if sidebarWidth < sidebarMinWidth {
+			sidebarWidth = sidebarMinWidth
 		}
-		if sidebarWidth > m.width/2 {
-			sidebarWidth = m.width / 2
+		if sidebarWidth > m.width*sidebarMaxPct/100 {
+			sidebarWidth = m.width * sidebarMaxPct / 100
 		}
 		m.sidebarWidth = sidebarWidth
 		m.sidebarContentWidth = sidebarWidth
@@ -1423,13 +1455,13 @@ func (m *TerminalModel) calculateWidths() {
 		}
 		// -1 reserves the thin "│" separator column between sidebar and main panel
 		m.mainWidth = m.width - m.sidebarWidth - 1
-		if m.mainWidth < 40 {
-			m.mainWidth = 40
+		if m.mainWidth < mainMinWidth {
+			m.mainWidth = mainMinWidth
 		}
 	}
 	m.logWidth = m.mainWidth - 4
-	if m.logWidth < 40 {
-		m.logWidth = 40
+	if m.logWidth < mainMinWidth {
+		m.logWidth = mainMinWidth
 	}
 }
 

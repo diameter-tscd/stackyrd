@@ -45,11 +45,14 @@ go mod download
 go run cmd/app/main.go
 
 # To run the CLI tools
-./scripts/yrd build      # or: cd scripts && go run . build
+./scripts/yrd      # Linux/macOS - auto-selects dist binary
+.\scripts\yrd.cmd  # Windows
+
 ./scripts/yrd pkg        # package manager
 ./scripts/yrd service    # service generator
 ./scripts/yrd swagger    # swagger docs
 ./scripts/yrd docker     # docker builder
+./scripts/yrd build      # compile app
 
 ```
 

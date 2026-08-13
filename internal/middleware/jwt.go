@@ -1,22 +1,22 @@
 package middleware
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/samber/oops"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v4"
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
-
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/labstack/echo/v4"
 )
 
 func init() {
 	RegisterMiddleware("jwt", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		if cfg.Auth.Type != "jwt" || cfg.Auth.Secret == "" {
-			return nil, fmt.Errorf("jwt middleware requires auth.type=jwt and a non-empty auth.secret")
+			return nil, oops.In("jwt-middleware").Tags("auth").Code("jwt_missing_secret").With("auth_type", cfg.Auth.Type).Public("JWT middleware requires a valid secret").Errorf("jwt middleware requires auth.type=jwt and a non-empty auth.secret")
 		}
 		return JWTRequired(cfg.Auth.Secret), nil
 	})
@@ -51,7 +51,7 @@ const (
 
 func GenerateToken(userID, username, email, role, secretKey string, expiration time.Duration) (string, error) {
 	if len(secretKey) < 16 {
-		return "", fmt.Errorf("secretKey must be at least 16 bytes")
+		return "", oops.In("token-generation").Tags("jwt").Code("secret_too_short").Public("Secret key must be at least 16 bytes").With("secret_len", len(secretKey)).Errorf("secret key must be at least 16 bytes")
 	}
 	claims := JWTClaims{
 		UserID:   userID,
@@ -89,12 +89,12 @@ func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 			}
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 
-			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
-				if token.Method != jwt.SigningMethodHS256 {
-					return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
-				}
-				return []byte(config.SecretKey), nil
-			}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
+parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, oops.In("jwt-middleware").Tags("jwt", "auth").Code("unexpected_signing_method").With("method", token.Method.Alg()).Errorf("unexpected signing method: %s", token.Method.Alg())
+			}
+			return []byte(config.SecretKey), nil
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
 				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience),
 				jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))
 			if err != nil || !parsedToken.Valid {

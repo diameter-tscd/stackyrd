@@ -14,6 +14,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
+	"github.com/samber/oops"
 )
 
 func init() {
@@ -29,7 +30,7 @@ func init() {
 			pingErr := client.Ping(pingCtx).Err()
 			pingCancel()
 			if pingErr != nil {
-				return nil, fmt.Errorf("redis rate limiter: failed to connect: %w", pingErr)
+				return nil, oops.In("ratelimit-middleware").Tags("redis", "middleware-init").With("addr", cfg.Redis.Address).Wrapf(pingErr, "redis rate limiter: failed to connect")
 			}
 			return RedisRateLimitWithConfig(logger, client, 60, time.Minute), nil
 		}
@@ -202,12 +203,12 @@ func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, er
 
 	cmders, err := pipe.Exec(ctx)
 	if err != nil {
-		return false, fmt.Errorf("redis rate limiter: %w", err)
+		return false, oops.In("ratelimit-middleware").Tags("redis").With("key", key).Wrapf(err, "redis rate limiter: pipeline exec failed")
 	}
 
 	countCmd, ok := cmders[2].(*redis.IntCmd)
 	if !ok {
-		return false, fmt.Errorf("redis rate limiter: unexpected pipeline result type")
+		return false, oops.In("ratelimit-middleware").Tags("redis").With("key", key).Errorf("redis rate limiter: unexpected pipeline result type")
 	}
 	return countCmd.Val() <= int64(rl.rate), nil
 }

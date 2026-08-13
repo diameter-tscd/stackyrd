@@ -4,36 +4,28 @@
 
 | Document | Description |
 |----------|-------------|
-| [**Getting Started**](GETTING_STARTED.md) | Prerequisites, installation, configuration, hello-world service, scripts overview |
-| [**Architecture Overview**](ARCHITECTURE.md) | Boot sequence, request flow, project structure, core abstractions (Service, Infrastructure, Middleware) |
-| [**Development Guide**](DEVELOPMENT.md) | Adding services/middleware/infrastructure, request validation, DI, pagination, resilience patterns, testing |
-| [**API Documentation**](API_DOCS.md) | Swagger annotations, response format, helpers reference, doc generation |
-| [**Technical Reference**](REFERENCE.md) | Full config.yaml reference, health endpoints, component registry, middleware list, common commands |
+| [Getting Started](GETTING_STARTED.md) | Install, run, and configure the framework |
+| [Architecture Overview](ARCHITECTURE.md) | Project layout and boot sequence |
+| [Development Guide](DEVELOPMENT.md) | Add services, middleware, and infra |
+| [API Docs](API_DOCS.md) | Swagger-generated endpoints |
 
-## Package Deep Dives
+## Core Packages
 
-| Document | Package | Description |
-|----------|---------|-------------|
-| [**Resilience**](RESILIENCE.md) | `pkg/resilience/` | Circuit breaker, health checks, retry, timeout patterns |
-| [**WebSocket**](WEBSOCKET.md) | `pkg/websocket/` | Real-time bidirectional communication |
-| [**Metrics**](METRICS.md) | `pkg/metrics/` | Prometheus metrics, custom metrics, dashboards |
-| [**Batch Processing**](BATCH.md) | `pkg/batch/` | Batch processing with worker pools, writers, readers |
-| [**Pagination**](PAGINATION.md) | `pkg/pagination/` | Cursor-based pagination with forward/backward navigation |
-| [**Logging**](LOGGING.md) | `pkg/logger/` | Structured logging, log rotation, sampling |
-| [**Webhooks**](WEBHOOK.md) | `pkg/webhook/` | Webhook sending/receiving, HMAC signing, event handlers |
-| [**MCP Server**](MCP.md) | `pkg/infrastructure/` | Model Context Protocol endpoint, tools, auth |
-| [**Caching**](CACHING.md) | `pkg/cache/` | Redis-backed cache with TTL, cache-aside, batch invalidation |
-| [**Security**](SECURITY.md) | *middleware* | Auth modes, security headers, CORS, encryption, best practices |
+| Package | Feature |
+|---------|---------|
+| `pkg/resilience` | Circuit breakers and retry/timeout helpers |
+| `pkg/websocket` | Hub‑based real‑time communication |
+| `pkg/metrics` | Prometheus metrics collection |
+| `pkg/webhook` | HTTP webhook client & server |
+| `pkg/infrastructure` | MCP server, redis, postgres, etc |
+| `pkg/logger` | Structured JSON logging |
 
 ## Operations
 
-| Document | Description |
-|----------|-------------|
-| [**Testing Guide**](TESTING.md) | Unit tests, integration tests, mocks, test helpers, CI pipeline |
-| [**Troubleshooting**](TROUBLESHOOTING.md) | Common issues, debugging, health checks, error codes |
+| Doc | Purpose |
+|------|---------|
+| `TESTING.md` | Unit & integration testing patterns |
+| `TROUBLESHOOTING.md` | Common issues |
 
-## Examples
-
-| File | Description |
-|------|-------------|
-| [`examples/response_examples.go`](examples/response_examples.go) | API response usage examples |
+---
+Doc brevity kept; see individual files for details.

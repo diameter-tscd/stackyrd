@@ -319,7 +319,10 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.calculateWidths()
-		m.maxVisibleLines = m.height - 5
+		// Header: "▪ Live Logs" + blank line = 2
+		// Command bar: input line + footer line = 2
+		// Separator between log header and content accounted in renderLogView
+		m.maxVisibleLines = m.height - 4
 		if m.maxVisibleLines < 5 {
 			m.maxVisibleLines = 5
 		}

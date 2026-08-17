@@ -267,8 +267,11 @@ func CalculateMeta(page, perPage int, total int64, extra ...map[string]any) *Met
 	if page < 1 {
 		page = 1
 	}
+	if total > math.MaxInt {
+		total = math.MaxInt
+	}
 	totalPages := int(total) / perPage
-	if int(total)%perPage > 0 {
+	if total%int64(perPage) > 0 {
 		totalPages++
 	}
 

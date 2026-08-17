@@ -1598,7 +1598,6 @@ func (m *TerminalModel) termProgressBar(percent float64, width int) string {
 	return bar
 }
 
-// ponytail: pastel progress stops at 3 thresholds — add more if smoother gradient needed
 func (m *TerminalModel) percentStyle(percent float64) lipgloss.Style {
 	switch {
 	case percent < 50:

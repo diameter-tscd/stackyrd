@@ -12,7 +12,7 @@ type EventData struct {
 	ID        string                 `json:"id"`
 	Type      string                 `json:"type"`
 	Message   string                 `json:"message"`
-	Data      map[string]interface{} `json:"data,omitempty"`
+	Data      map[string]any `json:"data,omitempty"`
 	Timestamp int64                  `json:"timestamp"`
 	StreamID  string                 `json:"stream_id,omitempty"`
 }
@@ -33,6 +33,8 @@ type EventBroadcaster struct {
 	mu        sync.RWMutex
 	nextID    int
 	clientTTL time.Duration
+	stopCh    chan struct{}
+	startOnce sync.Once
 }
 
 // NewEventBroadcaster creates a new event broadcaster
@@ -42,17 +44,16 @@ func NewEventBroadcaster() *EventBroadcaster {
 		clients:   make(map[string]*StreamClient),
 		nextID:    1,
 		clientTTL: 24 * time.Hour, // Clients automatically removed after 24 hours
+		stopCh:    make(chan struct{}),
 	}
 
 	// Start cleanup routine
-	go eb.cleanupRoutine()
+	eb.startOnce.Do(func() { go eb.cleanupRoutine() })
 
 	return eb
 }
 
-// ExpireStaleClients removes clients whose TTL has expired.  Can be called
-// synchronously by tests or the background ticker.
-func (eb *EventBroadcaster) ExpireStaleClients() {
+func (eb *EventBroadcaster) expireStaleClients() {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 	eb.expireStaleClientsLocked()
@@ -79,12 +80,9 @@ func (eb *EventBroadcaster) unsubscribeNoLock(clientID string) {
 	// Remove from clients map
 	delete(eb.clients, clientID)
 
-	// Close channel safely
-	select {
-	case <-client.Channel:
-	default:
-		close(client.Channel)
-	}
+	// Close the channel unconditionally: Broadcast holds RLock while sending,
+	// so no sender can be mid-send here, and the receiver drains on the way out.
+	close(client.Channel)
 }
 
 func (eb *EventBroadcaster) expireStaleClientsLocked() {
@@ -101,8 +99,24 @@ func (eb *EventBroadcaster) expireStaleClientsLocked() {
 func (eb *EventBroadcaster) cleanupRoutine() {
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		eb.ExpireStaleClients()
+	for {
+		select {
+		case <-ticker.C:
+			eb.expireStaleClients()
+		case <-eb.stopCh:
+			return
+		}
+	}
+}
+
+// Close stops the background cleanup goroutine.
+func (eb *EventBroadcaster) Close() {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+	select {
+	case <-eb.stopCh:
+	default:
+		close(eb.stopCh)
 	}
 }
 
@@ -132,51 +146,39 @@ func (eb *EventBroadcaster) Subscribe(streamID string) *StreamClient {
 func (eb *EventBroadcaster) Unsubscribe(clientID string) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
+	eb.unsubscribeNoLock(clientID)
+}
 
-	client, exists := eb.clients[clientID]
-	if !exists {
-		return
+// copyData shallow-copies a caller-supplied map so a mutation by the producer
+// can never race a consumer encoding the queued event.
+func copyData(data map[string]any) map[string]any {
+	if data == nil {
+		return nil
 	}
-
-	// Remove from streams
-	if clients, ok := eb.streams[client.StreamID]; ok {
-		for i, c := range clients {
-			if c.ID == clientID {
-				eb.streams[client.StreamID] = append(clients[:i], clients[i+1:]...)
-				break
-			}
-		}
+	copied := make(map[string]any, len(data))
+	for k, v := range data {
+		copied[k] = v
 	}
-
-	// Remove from clients map
-	delete(eb.clients, clientID)
-
-	// Close channel safely
-	select {
-	case <-client.Channel:
-	default:
-		close(client.Channel)
-	}
+	return copied
 }
 
 // Broadcast sends an event to all clients subscribed to a stream
-func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]interface{}) {
-	eb.mu.RLock()
-	clients := eb.streams[streamID]
-	eb.mu.RUnlock()
-
+func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]any) {
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
 		Message:   message,
-		Data:      data,
+		Data:      copyData(data),
 		Timestamp: time.Now().Unix(),
 		StreamID:  streamID,
 	}
 
 	var toUnsubscribe []string
 
-	for _, client := range clients {
+	// Hold RLock across the send so Unsubscribe (which needs Lock to close
+	// Channel) cannot race a send on a closed channel. Sends are non-blocking.
+	eb.mu.RLock()
+	for _, client := range eb.streams[streamID] {
 		select {
 		case client.Channel <- event:
 			// Update last-seen on successful delivery so TTL cleanup keeps
@@ -191,6 +193,7 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 			}
 		}
 	}
+	eb.mu.RUnlock()
 
 	if len(toUnsubscribe) > 0 {
 		eb.mu.Lock()
@@ -202,42 +205,31 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 }
 
 // BroadcastToAll sends an event to all clients across all streams
-func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]interface{}) {
-	eb.mu.RLock()
-	// Snapshot all clients across all streams while holding the lock
-	type streamClient struct {
-		client *StreamClient
-	}
-	var snapshot []streamClient
-	for _, streamClients := range eb.streams {
-		for _, client := range streamClients {
-			snapshot = append(snapshot, streamClient{client: client})
-		}
-	}
-	eb.mu.RUnlock()
-
+func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]any) {
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
 		Message:   message,
-		Data:      data,
+		Data:      copyData(data),
 		Timestamp: time.Now().Unix(),
 	}
 
 	var toUnsubscribe []string
-
-	for _, sc := range snapshot {
-		select {
-		case sc.client.Channel <- event:
-			sc.client.lastSeen.Store(time.Now().Unix())
-		default:
-			// Channel full — count and queue for unsubscription
-			sc.client.droppedMessages.Add(1)
-			if sc.client.droppedMessages.Load() > 100 {
-				toUnsubscribe = append(toUnsubscribe, sc.client.ID)
+	eb.mu.RLock()
+	for _, streamClients := range eb.streams {
+		for _, client := range streamClients {
+			select {
+			case client.Channel <- event:
+				client.lastSeen.Store(time.Now().Unix())
+			default:
+				client.droppedMessages.Add(1)
+				if client.droppedMessages.Load() > 100 {
+					toUnsubscribe = append(toUnsubscribe, client.ID)
+				}
 			}
 		}
 	}
+	eb.mu.RUnlock()
 
 	if len(toUnsubscribe) > 0 {
 		eb.mu.Lock()
@@ -252,22 +244,10 @@ func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, dat
 func (eb *EventBroadcaster) GetActiveStreams() map[string]int {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
-
-	result := make(map[string]int)
+	result := make(map[string]int, len(eb.streams))
 	for streamID, clients := range eb.streams {
 		result[streamID] = len(clients)
 	}
-	return result
-}
-
-// GetStreamClients returns clients for a specific stream
-func (eb *EventBroadcaster) GetStreamClients(streamID string) []*StreamClient {
-	eb.mu.RLock()
-	defer eb.mu.RUnlock()
-
-	clients := eb.streams[streamID]
-	result := make([]*StreamClient, len(clients))
-	copy(result, clients)
 	return result
 }
 
@@ -275,7 +255,6 @@ func (eb *EventBroadcaster) GetStreamClients(streamID string) []*StreamClient {
 func (eb *EventBroadcaster) GetTotalClients() int {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
-
 	total := 0
 	for _, clients := range eb.streams {
 		total += len(clients)
@@ -287,15 +266,5 @@ func (eb *EventBroadcaster) GetTotalClients() int {
 func (eb *EventBroadcaster) GetStreamCount() int {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
-
 	return len(eb.streams)
-}
-
-// IsStreamActive checks if a stream has any connected clients
-func (eb *EventBroadcaster) IsStreamActive(streamID string) bool {
-	eb.mu.RLock()
-	defer eb.mu.RUnlock()
-
-	clients, exists := eb.streams[streamID]
-	return exists && len(clients) > 0
 }

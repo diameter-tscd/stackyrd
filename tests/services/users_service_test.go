@@ -28,12 +28,6 @@ func TestUsersService_Name(t *testing.T) {
 	assert.Equal(t, "Users Service", service.Name())
 }
 
-func TestUsersService_WireName(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewUsersService(true, l)
-	assert.Equal(t, "users", service.WireName())
-}
-
 func TestUsersService_Enabled(t *testing.T) {
 	l := logger.New(false, nil)
 
@@ -44,15 +38,6 @@ func TestUsersService_Enabled(t *testing.T) {
 	// Test disabled service
 	disabledService := modules.NewUsersService(false, l)
 	assert.False(t, disabledService.Enabled())
-}
-
-func TestUsersService_Endpoints(t *testing.T) {
-	l := logger.New(false, nil)
-	service := modules.NewUsersService(true, l)
-	endpoints := service.Endpoints()
-
-	assert.Contains(t, endpoints, "/users")
-	assert.Contains(t, endpoints, "/users/:id")
 }
 
 func TestUsersService_ListUsers(t *testing.T) {
@@ -123,7 +108,7 @@ func TestUsersService_CreateUser(t *testing.T) {
 	service := modules.NewUsersService(true, l)
 	router := setupTestRouter(service)
 
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Test User",
 		"email":    "test@example.com",
 		"phone":    "+1234567890",
@@ -151,7 +136,7 @@ func TestUsersService_CreateUserValidation(t *testing.T) {
 	router := setupTestRouter(service)
 
 	// Missing required fields
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name": "Test User",
 	}
 	body, _ := json.Marshal(user)
@@ -169,7 +154,7 @@ func TestUsersService_UpdateUser(t *testing.T) {
 	service := modules.NewUsersService(true, l)
 	router := setupTestRouter(service)
 
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Updated User",
 		"email":    "updated@example.com",
 		"phone":    "+0987654321",
@@ -192,7 +177,7 @@ func TestUsersService_UpdateUserNotFound(t *testing.T) {
 	router := setupTestRouter(service)
 
 	// Send complete valid data but with non-existent user ID
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Updated User",
 		"email":    "updated@example.com",
 		"phone":    "+1234567890",

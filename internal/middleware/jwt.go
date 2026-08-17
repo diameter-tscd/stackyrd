@@ -1,25 +1,24 @@
 package middleware
 
 import (
-	"errors"
 	"strings"
 	"time"
+
+	"github.com/samber/oops"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v4"
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/response"
-
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/labstack/echo/v4"
 )
 
 func init() {
 	RegisterMiddleware("jwt", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		secretKey := "your-secret-key"
-		if cfg.Auth.Type == "jwt" && cfg.Auth.Secret != "" {
-			secretKey = cfg.Auth.Secret
+		if cfg.Auth.Type != "jwt" || cfg.Auth.Secret == "" {
+			return nil, oops.In("jwt-middleware").Tags("auth").Code("jwt_missing_secret").With("auth_type", cfg.Auth.Type).Public("JWT middleware requires a valid secret").Errorf("jwt middleware requires auth.type=jwt and a non-empty auth.secret")
 		}
-		return JWTRequired(secretKey), nil
+		return JWTRequired(cfg.Auth.Secret), nil
 	})
 }
 
@@ -43,7 +42,17 @@ var defaultJWTConfig = JWTConfig{
 	SigningMethod: jwt.SigningMethodHS256.Name,
 }
 
+// jwtIssuer and jwtAudience bound tokens to this service so a token minted
+// here is rejected elsewhere even with the same signing secret.
+const (
+	jwtIssuer   = "stackyrd"
+	jwtAudience = "stackyrd-api"
+)
+
 func GenerateToken(userID, username, email, role, secretKey string, expiration time.Duration) (string, error) {
+	if len(secretKey) < 16 {
+		return "", oops.In("token-generation").Tags("jwt").Code("secret_too_short").Public("Secret key must be at least 16 bytes").With("secret_len", len(secretKey)).Errorf("secret key must be at least 16 bytes")
+	}
 	claims := JWTClaims{
 		UserID:   userID,
 		Username: username,
@@ -52,93 +61,47 @@ func GenerateToken(userID, username, email, role, secretKey string, expiration t
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    jwtIssuer,
+			Audience:  jwt.ClaimStrings{jwtAudience},
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secretKey))
 }
 
 func JWTRequired(secretKey string) echo.MiddlewareFunc {
-	config := defaultJWTConfig
-	config.SecretKey = secretKey
-	return JWT(config)
-}
-
-func JWT(config JWTConfig) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			token, err := extractToken(c, config.TokenLookup)
-			if err != nil {
-				return response.Unauthorized(c, "Missing or invalid token")
-			}
-
-			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-				return []byte(config.SecretKey), nil
-			})
-
-			if err != nil || !parsedToken.Valid {
-				return response.Unauthorized(c, "Invalid token")
-			}
-
-			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
-				c.Set("user_id", claims.UserID)
-				c.Set("username", claims.Username)
-				c.Set("email", claims.Email)
-				c.Set("role", claims.Role)
-			}
-
-			return next(c)
-		}
-	}
-}
-
-func extractToken(c echo.Context, tokenLookup string) (string, error) {
-	parts := strings.Split(tokenLookup, ":")
-	if len(parts) != 2 {
-		return c.Request().Header.Get("Authorization"), nil
-	}
-
-	source := parts[0]
-	key := parts[1]
-
-	switch source {
-	case "header":
-		authHeader := c.Request().Header.Get(key)
-		if authHeader == "" {
-			return "", errors.New("authorization header not found")
-		}
-		return strings.TrimPrefix(authHeader, "Bearer "), nil
-
-	case "query":
-		return c.QueryParam(key), nil
-
-	case "cookie":
-		cookie, err := c.Cookie(key)
-		if err != nil {
-			return "", err
-		}
-		return cookie.Value, nil
-
-	default:
-		return c.Request().Header.Get("Authorization"), nil
-	}
+	return JWT(JWTConfig{SecretKey: secretKey, TokenLookup: "header:Authorization", SigningMethod: jwt.SigningMethodHS256.Name}, false)
 }
 
 func JWTOptional(secretKey string) echo.MiddlewareFunc {
+	return JWT(JWTConfig{SecretKey: secretKey, TokenLookup: "header:Authorization", SigningMethod: jwt.SigningMethodHS256.Name}, true)
+}
+
+func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			token, err := extractToken(c, defaultJWTConfig.TokenLookup)
-			if err != nil {
-				return next(c)
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				if optional {
+					return next(c)
+				}
+				return response.Unauthorized(c, "Missing or invalid token")
 			}
+			token := strings.TrimPrefix(authHeader, "Bearer ")
 
-			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-				return []byte(secretKey), nil
-			})
-
+parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, oops.In("jwt-middleware").Tags("jwt", "auth").Code("unexpected_signing_method").With("method", token.Method.Alg()).Errorf("unexpected signing method: %s", token.Method.Alg())
+			}
+			return []byte(config.SecretKey), nil
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
+				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience),
+				jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))
 			if err != nil || !parsedToken.Valid {
-				return next(c)
+				if optional {
+					return next(c)
+				}
+				return response.Unauthorized(c, "Invalid token")
 			}
 
 			if claims, ok := parsedToken.Claims.(*JWTClaims); ok {
@@ -160,18 +123,15 @@ func RequireRole(roles ...string) echo.MiddlewareFunc {
 			if userRole == nil {
 				return response.Forbidden(c, "Insufficient permissions")
 			}
-
 			roleStr, ok := userRole.(string)
 			if !ok {
 				return response.Forbidden(c, "Insufficient permissions")
 			}
-
 			for _, role := range roles {
 				if roleStr == role {
 					return next(c)
 				}
 			}
-
 			return response.Forbidden(c, "Insufficient permissions")
 		}
 	}
@@ -182,28 +142,22 @@ func RequireAdmin() echo.MiddlewareFunc {
 }
 
 func GetUserID(c echo.Context) string {
-	if id := c.Get("user_id"); id != nil {
-		if idStr, ok := id.(string); ok {
-			return idStr
-		}
+	if id, ok := c.Get("user_id").(string); ok {
+		return id
 	}
 	return ""
 }
 
 func GetUsername(c echo.Context) string {
-	if username := c.Get("username"); username != nil {
-		if usernameStr, ok := username.(string); ok {
-			return usernameStr
-		}
+	if username, ok := c.Get("username").(string); ok {
+		return username
 	}
 	return ""
 }
 
 func GetUserRole(c echo.Context) string {
-	if role := c.Get("role"); role != nil {
-		if roleStr, ok := role.(string); ok {
-			return roleStr
-		}
+	if role, ok := c.Get("role").(string); ok {
+		return role
 	}
 	return ""
 }

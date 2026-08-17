@@ -1,32 +1,24 @@
 # Getting Started
 
-Quick setup guide for **stackyrd** — an enterprise-grade modular Go service framework built on **Echo v4**.
+Quick setup guide.
 
-## Prerequisites
+## Prereqs
 
-- **Go 1.25.3+**
-- **Git**
-- **Docker + Docker Compose** (for full dev environment with databases)
+- Go 1.25.3+
+- Docker Compose (optional, for databases)
 
-## Installation
+## Run
 
 ```bash
-git clone https://github.com/diameter-tscd/stackyrd.git
-cd stackyrd
 go mod download
 go run cmd/app/main.go
 ```
 
-With full infrastructure (Redis, PostgreSQL, Kafka, MongoDB, Grafana, MinIO):
+With docker: `docker-compose up -d`
 
-```bash
-docker-compose up -d
-go run cmd/app/main.go
-```
+## Config
 
-## Configuration
-
-Edit `config.yaml`:
+Create `config.yaml`:
 
 ```yaml
 app:
@@ -40,107 +32,49 @@ server:
 
 services:
   users_service: true
-  products_service: true
 
-middleware:
-  cors: true
-  logger: true
+infrastructure:
+  redis: false
+  postgres: false
 ```
 
-## Hello World Service
-
-Create `internal/services/modules/hello_service.go`:
+## Hello Service
 
 ```go
-package modules
+type HelloService struct{ enabled bool }
 
-import (
-    "stackyrd/config"
-    "stackyrd/pkg/interfaces"
-    "stackyrd/pkg/logger"
-    "stackyrd/pkg/registry"
-    "stackyrd/pkg/response"
-    "github.com/labstack/echo/v4"
-)
-
-type HelloService struct {
-    enabled bool
-    logger  *logger.Logger
-}
-
-func NewHelloService(enabled bool, logger *logger.Logger) *HelloService {
-    return &HelloService{enabled: enabled, logger: logger}
-}
-
-func (s *HelloService) Name() string        { return "Hello Service" }
-func (s *HelloService) WireName() string    { return "hello-service" }
+func (s *HelloService) Name() string        { return "Hello" }
 func (s *HelloService) Enabled() bool       { return s.enabled }
-func (s *HelloService) Endpoints() []string { return []string{"GET /hello"} }
-func (s *HelloService) Get() interface{}    { return s }
-
 func (s *HelloService) RegisterRoutes(g *echo.Group) {
-    g.GET("/hello", s.handleHello)
+    g.GET("/hello", func(c echo.Context) error { return response.Success(c, "👋") })
 }
+func (s *HelloService) Get() any              { return s }
+```
 
-func (s *HelloService) handleHello(c echo.Context) error {
-    return response.Success(c, map[string]string{"msg": "Hello!"})
-}
+Register:
 
+```go
 func init() {
-    registry.RegisterService("hello_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("hello_service") {
-            return nil
-        }
-        return NewHelloService(true, log)
+    registry.RegisterService("hello", func(cfg *config.Config, l *logger.Logger) interfaces.Service {
+        if !cfg.Services.IsEnabled("hello") { return nil }
+        return &HelloService{}
     })
 }
 ```
 
-Enable in `config.yaml`:
-```yaml
-services:
-  hello_service: true
-```
+Enable: `services.hello: true`
 
-Test:
-```bash
-curl http://localhost:8080/api/v1/hello
-```
+Test: `curl http://localhost:8080/api/v1/hello`
 
-## Using Scripts
+## Scripts CLI
 
-The project includes several CLI scripts:
-
-| Script | Command | Purpose |
-|--------|---------|---------|
-| Build | `go run scripts/build/build.go` | Build binary (garble, UPX, backup) |
-| Docker | `go run scripts/docker/docker_build.go` | Multi-stage Docker image builder |
-| Service | `go run scripts/service/service.go` | Scaffold new service modules |
-| Swagger | `go run scripts/swagger/swagger.go` | Generate OpenAPI docs |
-| Package | `go run scripts/pkg/pkg.go` | Install infrastructure packages |
-
-## Database (Optional)
+Build once:
 
 ```bash
-# Full dev environment
-docker-compose up -d
-
-# Or individual services:
-docker run -d --name postgres -e POSTGRES_PASSWORD=pass -p 5432:5432 postgres:16
-docker run -d --name redis -p 6379:6379 redis:7
-docker run -d --name mongo -p 27017:27017 mongo:7
-```
-
-Configure in `config.yaml`:
-```yaml
-postgres:
-  enabled: true
-  connections:
-    - name: "default"
-      host: "localhost"
-      port: 5432
-      user: "postgres"
-      password: "pass"
-      dbname: "mydb"
-      sslmode: "disable"
+cd scripts && go build -o yrd .
+./yrd build       # binary → dist/stackyrd
+./yrd docker      # multi-stage images
+./yrd service     # scaffold new service
+./yrd swagger     # generate OpenAPI docs
+./yrd pkg ...     # package manager
 ```

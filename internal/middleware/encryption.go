@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"bytes"
+	"bufio"
 	"compress/gzip"
-	"encoding/base64"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -17,75 +17,14 @@ import (
 )
 
 func init() {
-	RegisterMiddleware("encryption", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		return EncryptionMiddleware(cfg, logger), nil
-	})
-
 	RegisterMiddleware("gzip", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
 		return GzipMiddleware(), nil
 	})
 }
 
-func EncryptionMiddleware(cfg *config.Config, l *logger.Logger) echo.MiddlewareFunc {
-	if !cfg.Encryption.Enabled {
-		return func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error {
-				return next(c)
-			}
-		}
-	}
-
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			w := &encryptionResponseWriter{
-				ResponseWriter: c.Response().Writer,
-				body:           &bytes.Buffer{},
-				config:         cfg,
-				logger:         l,
-			}
-			c.Response().Writer = w
-
-			err := next(c)
-
-			if w.body.Len() > 0 {
-				contentType := c.Response().Header().Get("Content-Type")
-				if strings.Contains(contentType, "application/json") {
-					encoded := base64.StdEncoding.EncodeToString(w.body.Bytes())
-					c.Response().Header().Set("X-Obfuscated", "true")
-					c.Response().Header().Set("Content-Length", strconv.Itoa(len(encoded)))
-					c.Response().WriteHeader(w.statusCode)
-					_, _ = c.Response().Writer.Write([]byte(encoded))
-				} else {
-					c.Response().WriteHeader(w.statusCode)
-					_, _ = c.Response().Writer.Write(w.body.Bytes())
-				}
-			}
-
-			return err
-		}
-	}
-}
-
-type encryptionResponseWriter struct {
-	http.ResponseWriter
-	body       *bytes.Buffer
-	config     *config.Config
-	logger     *logger.Logger
-	once       sync.Once
-	statusCode int
-}
-
-func (w *encryptionResponseWriter) Write(b []byte) (int, error) {
-	return w.body.Write(b)
-}
-
-func (w *encryptionResponseWriter) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
-}
-
 func GzipMiddleware() echo.MiddlewareFunc {
 	var gzPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return gzip.NewWriter(io.Discard)
 		},
 	}
@@ -129,5 +68,35 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.Header().Del("Content-Length")
+	// A bodyless response must not carry Content-Encoding: gzip.
+	if statusCode >= 100 && statusCode < 200 ||
+		statusCode == http.StatusNoContent || statusCode == http.StatusNotModified {
+		w.ResponseWriter.Header().Del("Content-Encoding")
+	}
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+// Flush keeps streaming/SSE responses from stalling: flush the gzip buffer,
+// then the underlying writer.
+func (w *gzipResponseWriter) Flush() {
+	if f, ok := w.Writer.(http.Flusher); ok {
+		f.Flush()
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack lets WebSocket upgrades pass through the gzip wrapper.
+func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
+	}
+	return h.Hijack()
+}
+
+// Unwrap restores the underlying writer for http.ResponseController.
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

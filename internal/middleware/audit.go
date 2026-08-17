@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"stackyrd/config"
@@ -58,7 +59,7 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 			latency := time.Since(start)
 			statusCode := c.Response().Status
 
-			fields := map[string]interface{}{
+			fields := map[string]any{
 				"method":     c.Request().Method,
 				"path":       path,
 				"query":      query,
@@ -87,15 +88,13 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 						}
 					}
 					if !skip {
-						for _, v := range values {
-							headers[name] = v
-						}
+						headers[name] = strings.Join(values, ",")
 					}
 				}
 				fields["headers"] = headers
 			}
 
-			keyvals := make([]interface{}, 0, len(fields)*2)
+			keyvals := make([]any, 0, len(fields)*2)
 			for k, v := range fields {
 				keyvals = append(keyvals, k, v)
 			}

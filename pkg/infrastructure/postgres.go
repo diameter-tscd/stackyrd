@@ -3,9 +3,11 @@ package infrastructure
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -22,7 +24,7 @@ type PostgresManager struct {
 	// statusCache avoids re-running Ping on every /health call.
 	statusTTL    time.Duration
 	statusExpiry time.Time
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusMu     sync.RWMutex
 }
 
@@ -56,14 +58,37 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 	}
 
 	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
 	}
+
+	// Bound the connection pool. Zero values fall back to safe defaults instead
+	// of Go's defaults (unlimited MaxOpenConns, MaxIdleConns=2).
+	maxOpen := cfg.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 25
+	}
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = maxOpen
+	}
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxIdle)
+
+	maxLifetime := 5 * time.Minute
+	if cfg.ConnMaxLifetime != "" {
+		if d, err := time.ParseDuration(cfg.ConnMaxLifetime); err == nil && d > 0 {
+			maxLifetime = d
+		}
+	}
+	sqlDB.SetConnMaxLifetime(maxLifetime)
 
 	// Initialize GORM with the existing SQL connection
 	gormDB, err := gorm.Open(postgres.New(postgres.Config{
 		Conn: sqlDB,
 	}), &gorm.Config{})
 	if err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("failed to initialize GORM: %w", err)
 	}
 
@@ -78,9 +103,14 @@ func NewPostgresDB(cfg config.PostgresConnectionConfig) (*PostgresManager, error
 	}, nil
 }
 
-func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectionManager, error) {
+func NewPostgresConnectionManager(cfg config.PostgresConfig, log ...*logger.Logger) (*PostgresConnectionManager, error) {
 	if !cfg.Enabled {
 		return nil, nil
+	}
+
+	var l *logger.Logger
+	if len(log) > 0 {
+		l = log[0]
 	}
 
 	manager := &PostgresConnectionManager{
@@ -96,6 +126,9 @@ func NewPostgresConnectionManager(cfg config.PostgresConfig) (*PostgresConnectio
 		if err != nil {
 			// Log error but continue with other connections
 			// Don't fail the entire manager initialization
+			if l != nil {
+				l.Warn("Skipping postgres connection", "name", connCfg.Name, "error", err.Error())
+			}
 			continue
 		}
 
@@ -138,12 +171,16 @@ func (m *PostgresConnectionManager) GetAllConnections() map[string]*PostgresMana
 }
 
 // GetStatus returns status for all connections
-func (m *PostgresConnectionManager) GetStatus() map[string]interface{} {
+func (m *PostgresConnectionManager) GetStatus() map[string]any {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	status := make(map[string]interface{})
-
+	connections := make(map[string]*PostgresManager, len(m.connections))
 	for name, conn := range m.connections {
+		connections[name] = conn
+	}
+	m.mu.RUnlock()
+
+	status := make(map[string]any)
+	for name, conn := range connections {
 		status[name] = conn.GetStatus()
 	}
 
@@ -155,26 +192,32 @@ func (m *PostgresConnectionManager) Close() error {
 	return m.CloseAll()
 }
 
-// CloseAll closes all connections
+// CloseAll closes all connections and their worker pools
 func (m *PostgresConnectionManager) CloseAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var errors []error
+	var errs []error
 	for name, conn := range m.connections {
-		if err := conn.DB.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close connection '%s': %w", name, err))
+		if conn.Pool != nil {
+			conn.Pool.Close()
+		}
+		if conn.DB != nil {
+			if err := conn.DB.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("failed to close connection '%s': %w", name, err))
+			}
 		}
 	}
+	m.connections = make(map[string]*PostgresManager)
 
-	if len(errors) > 0 {
-		return fmt.Errorf("errors closing connections: %v", errors)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }
 
-func (p *PostgresManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (p *PostgresManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if p == nil || p.DB == nil {
 		stats["connected"] = false
 		return stats
@@ -183,7 +226,10 @@ func (p *PostgresManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	p.statusMu.RLock()
 	if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
-		cached := p.statusCache
+		cached := make(map[string]any, len(p.statusCache))
+		for k, v := range p.statusCache {
+			cached[k] = v
+		}
 		p.statusMu.RUnlock()
 		return cached
 	}
@@ -210,27 +256,27 @@ func (p *PostgresManager) GetStatus() map[string]interface{} {
 }
 
 // Query executes a query that returns rows, typically a SELECT.
-func (p *PostgresManager) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (p *PostgresManager) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return p.DB.QueryContext(ctx, query, args...)
 }
 
 // QueryRow executes a query that is expected to return at most one row.
-func (p *PostgresManager) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (p *PostgresManager) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	return p.DB.QueryRowContext(ctx, query, args...)
 }
 
 // Exec executes a query without returning any rows.
-func (p *PostgresManager) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (p *PostgresManager) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return p.DB.ExecContext(ctx, query, args...)
 }
 
 // Select is a semantic alias for Query.
-func (p *PostgresManager) Select(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (p *PostgresManager) Select(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return p.Query(ctx, query, args...)
 }
 
 // Insert executes an INSERT statement and returns the number of rows affected.
-func (p *PostgresManager) Insert(ctx context.Context, query string, args ...interface{}) (int64, error) {
+func (p *PostgresManager) Insert(ctx context.Context, query string, args ...any) (int64, error) {
 	res, err := p.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -239,18 +285,18 @@ func (p *PostgresManager) Insert(ctx context.Context, query string, args ...inte
 }
 
 var rawQueryPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &rawQueryRow{}
 	},
 }
 
 type rawQueryRow struct {
-	values    []interface{}
-	valuePtrs []interface{}
+	values    []any
+	valuePtrs []any
 }
 
 // ExecuteRawQuery executes a raw SQL query and returns the results as a slice of maps
-func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ []map[string]interface{}, err error) {
+func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ []map[string]any, err error) {
 	if p.DB == nil {
 		return nil, fmt.Errorf("database connection is nil")
 	}
@@ -273,13 +319,13 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ 
 	numCols := len(columns)
 
 	// Initialize with make to ensure empty slice [] instead of nil
-	results := make([]map[string]interface{}, 0)
+	results := make([]map[string]any, 0)
 
 	for rows.Next() {
 		r := rawQueryPool.Get().(*rawQueryRow)
 		if cap(r.values) < numCols {
-			r.values = make([]interface{}, numCols)
-			r.valuePtrs = make([]interface{}, numCols)
+			r.values = make([]any, numCols)
+			r.valuePtrs = make([]any, numCols)
 		} else {
 			r.values = r.values[:numCols]
 			r.valuePtrs = r.valuePtrs[:numCols]
@@ -293,7 +339,7 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ 
 			return nil, err
 		}
 
-		rowMap := make(map[string]interface{}, numCols)
+		rowMap := make(map[string]any, numCols)
 		for i, col := range columns {
 			val := r.values[i]
 
@@ -313,11 +359,15 @@ func (p *PostgresManager) ExecuteRawQuery(ctx context.Context, query string) (_ 
 		rawQueryPool.Put(r)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return results, nil
 }
 
 // Update executes an UPDATE statement and returns the number of rows affected.
-func (p *PostgresManager) Update(ctx context.Context, query string, args ...interface{}) (int64, error) {
+func (p *PostgresManager) Update(ctx context.Context, query string, args ...any) (int64, error) {
 	res, err := p.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -326,7 +376,7 @@ func (p *PostgresManager) Update(ctx context.Context, query string, args ...inte
 }
 
 // Delete executes a DELETE statement and returns the number of rows affected.
-func (p *PostgresManager) Delete(ctx context.Context, query string, args ...interface{}) (int64, error) {
+func (p *PostgresManager) Delete(ctx context.Context, query string, args ...any) (int64, error) {
 	res, err := p.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -367,7 +417,7 @@ func (p *PostgresManager) GetRunningQueries(ctx context.Context) (_ []PGQuery, e
 		var user, db, state, query sql.NullString
 		var duration sql.NullString
 		if err := rows.Scan(&q.Pid, &user, &db, &state, &duration, &query); err != nil {
-			continue
+			return nil, err
 		}
 		q.User = user.String
 		q.DB = db.String
@@ -375,6 +425,9 @@ func (p *PostgresManager) GetRunningQueries(ctx context.Context) (_ []PGQuery, e
 		q.Duration = duration.String
 		q.Query = query.String
 		queries = append(queries, q)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return queries, nil
 }
@@ -385,38 +438,21 @@ func (p *PostgresManager) GetSessionCount(ctx context.Context) (int, error) {
 	return count, err
 }
 
-func (p *PostgresManager) GetDBInfo(ctx context.Context) (map[string]interface{}, error) {
-	var version, dbName, user, sslMode string
+func (p *PostgresManager) GetDBInfo(ctx context.Context) (map[string]any, error) {
+	var version, size, dbName, user, sslMode string
 
-	// Fetch Version
-	if err := p.DB.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Size (formatted)
-	var size string
-	if err := p.DB.QueryRowContext(ctx, "SELECT pg_size_pretty(pg_database_size(current_database()))").Scan(&size); err != nil {
-		return nil, err
-	}
-
-	// Fetch DB Name
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_database()").Scan(&dbName); err != nil {
-		return nil, err
-	}
-
-	// Fetch Current User
-	if err := p.DB.QueryRowContext(ctx, "SELECT current_user").Scan(&user); err != nil {
-		return nil, err
-	}
-
-	// Fetch SSL Status
-	// Note: checks if usage of SSL is active for this backend
-	err := p.DB.QueryRowContext(ctx, "SELECT COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')").Scan(&sslMode)
+	err := p.DB.QueryRowContext(ctx, `
+		SELECT version(),
+		       pg_size_pretty(pg_database_size(current_database())),
+		       current_database(),
+		       current_user,
+		       COALESCE((SELECT 'enable' FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl = true), 'disable')
+	`).Scan(&version, &size, &dbName, &user, &sslMode)
 	if err != nil {
-		sslMode = "unknown"
+		return nil, err
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"version":  version,
 		"size":     size,
 		"db_name":  dbName,
@@ -428,14 +464,14 @@ func (p *PostgresManager) GetDBInfo(ctx context.Context) (map[string]interface{}
 // Async Postgres Operations
 
 // QueryAsync asynchronously executes a query that returns rows.
-func (p *PostgresManager) QueryAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[*sql.Rows] {
+func (p *PostgresManager) QueryAsync(ctx context.Context, query string, args ...any) *AsyncResult[*sql.Rows] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*sql.Rows, error) {
 		return p.Query(ctx, query, args...)
 	})
 }
 
 // QueryRowAsync asynchronously executes a query that returns at most one row.
-func (p *PostgresManager) QueryRowAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[*sql.Row] {
+func (p *PostgresManager) QueryRowAsync(ctx context.Context, query string, args ...any) *AsyncResult[*sql.Row] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (*sql.Row, error) {
 		row := p.QueryRow(ctx, query, args...)
 		return row, nil // Note: sql.Row cannot be directly returned from async, this is a limitation
@@ -443,36 +479,36 @@ func (p *PostgresManager) QueryRowAsync(ctx context.Context, query string, args 
 }
 
 // ExecAsync asynchronously executes a query without returning rows.
-func (p *PostgresManager) ExecAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[sql.Result] {
+func (p *PostgresManager) ExecAsync(ctx context.Context, query string, args ...any) *AsyncResult[sql.Result] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (sql.Result, error) {
 		return p.Exec(ctx, query, args...)
 	})
 }
 
 // InsertAsync asynchronously executes an INSERT statement.
-func (p *PostgresManager) InsertAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[int64] {
+func (p *PostgresManager) InsertAsync(ctx context.Context, query string, args ...any) *AsyncResult[int64] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (int64, error) {
 		return p.Insert(ctx, query, args...)
 	})
 }
 
 // UpdateAsync asynchronously executes an UPDATE statement.
-func (p *PostgresManager) UpdateAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[int64] {
+func (p *PostgresManager) UpdateAsync(ctx context.Context, query string, args ...any) *AsyncResult[int64] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (int64, error) {
 		return p.Update(ctx, query, args...)
 	})
 }
 
 // DeleteAsync asynchronously executes a DELETE statement.
-func (p *PostgresManager) DeleteAsync(ctx context.Context, query string, args ...interface{}) *AsyncResult[int64] {
+func (p *PostgresManager) DeleteAsync(ctx context.Context, query string, args ...any) *AsyncResult[int64] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (int64, error) {
 		return p.Delete(ctx, query, args...)
 	})
 }
 
 // ExecuteRawQueryAsync asynchronously executes a raw SQL query.
-func (p *PostgresManager) ExecuteRawQueryAsync(ctx context.Context, query string) *AsyncResult[[]map[string]interface{}] {
-	return ExecuteAsync(ctx, func(ctx context.Context) ([]map[string]interface{}, error) {
+func (p *PostgresManager) ExecuteRawQueryAsync(ctx context.Context, query string) *AsyncResult[[]map[string]any] {
+	return ExecuteAsync(ctx, func(ctx context.Context) ([]map[string]any, error) {
 		return p.ExecuteRawQuery(ctx, query)
 	})
 }
@@ -492,8 +528,8 @@ func (p *PostgresManager) GetSessionCountAsync(ctx context.Context) *AsyncResult
 }
 
 // GetDBInfoAsync asynchronously gets database information.
-func (p *PostgresManager) GetDBInfoAsync(ctx context.Context) *AsyncResult[map[string]interface{}] {
-	return ExecuteAsync(ctx, func(ctx context.Context) (map[string]interface{}, error) {
+func (p *PostgresManager) GetDBInfoAsync(ctx context.Context) *AsyncResult[map[string]any] {
+	return ExecuteAsync(ctx, func(ctx context.Context) (map[string]any, error) {
 		return p.GetDBInfo(ctx)
 	})
 }
@@ -501,7 +537,7 @@ func (p *PostgresManager) GetDBInfoAsync(ctx context.Context) *AsyncResult[map[s
 // GORM Async Operations
 
 // GORMCreateAsync asynchronously creates a record using GORM.
-func (p *PostgresManager) GORMCreateAsync(ctx context.Context, value interface{}) *AsyncResult[struct{}] {
+func (p *PostgresManager) GORMCreateAsync(ctx context.Context, value any) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := p.ORM.WithContext(ctx).Create(value).Error
 		return struct{}{}, err
@@ -509,7 +545,7 @@ func (p *PostgresManager) GORMCreateAsync(ctx context.Context, value interface{}
 }
 
 // GORMFindAsync asynchronously finds records using GORM.
-func (p *PostgresManager) GORMFindAsync(ctx context.Context, dest interface{}, conds ...interface{}) *AsyncResult[struct{}] {
+func (p *PostgresManager) GORMFindAsync(ctx context.Context, dest any, conds ...any) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := p.ORM.WithContext(ctx).Find(dest, conds...).Error
 		return struct{}{}, err
@@ -517,7 +553,7 @@ func (p *PostgresManager) GORMFindAsync(ctx context.Context, dest interface{}, c
 }
 
 // GORMFirstAsync asynchronously finds first record using GORM.
-func (p *PostgresManager) GORMFirstAsync(ctx context.Context, dest interface{}, conds ...interface{}) *AsyncResult[struct{}] {
+func (p *PostgresManager) GORMFirstAsync(ctx context.Context, dest any, conds ...any) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := p.ORM.WithContext(ctx).First(dest, conds...).Error
 		return struct{}{}, err
@@ -525,15 +561,18 @@ func (p *PostgresManager) GORMFirstAsync(ctx context.Context, dest interface{}, 
 }
 
 // GORMUpdateAsync asynchronously updates records using GORM.
-func (p *PostgresManager) GORMUpdateAsync(ctx context.Context, model interface{}, updates interface{}, conds ...interface{}) *AsyncResult[struct{}] {
+func (p *PostgresManager) GORMUpdateAsync(ctx context.Context, model any, updates any, conds ...any) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
+		if len(conds) == 0 {
+			return struct{}{}, fmt.Errorf("GORMUpdateAsync requires at least one condition")
+		}
 		err := p.ORM.WithContext(ctx).Model(model).Where(conds[0], conds[1:]...).Updates(updates).Error
 		return struct{}{}, err
 	})
 }
 
 // GORMDeleteAsync asynchronously deletes records using GORM.
-func (p *PostgresManager) GORMDeleteAsync(ctx context.Context, value interface{}, conds ...interface{}) *AsyncResult[struct{}] {
+func (p *PostgresManager) GORMDeleteAsync(ctx context.Context, value any, conds ...any) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := p.ORM.WithContext(ctx).Delete(value, conds...).Error
 		return struct{}{}, err
@@ -543,12 +582,13 @@ func (p *PostgresManager) GORMDeleteAsync(ctx context.Context, value interface{}
 // Batch Operations
 
 // ExecuteBatchAsync asynchronously executes multiple queries.
-func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []string, args [][]interface{}) *BatchAsyncResult[sql.Result] {
+func (p *PostgresManager) ExecuteBatchAsync(ctx context.Context, queries []string, args [][]any) *BatchAsyncResult[sql.Result] {
 	if len(queries) != len(args) {
 		// Create a batch result with an error
 		result := NewBatchAsyncResult[sql.Result](len(queries), 20)
 		for i := range result.Results {
-			result.Results[i].Complete(nil, fmt.Errorf("queries and args length mismatch"))
+			result.Results[i].Error = fmt.Errorf("queries and args length mismatch")
+			result.CompleteResult(i)
 		}
 		return result
 	}
@@ -571,8 +611,7 @@ func (p *PostgresManager) SubmitAsyncJob(job func()) {
 	if p.Pool != nil {
 		p.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 
@@ -592,6 +631,6 @@ func init() {
 		if !cfg.Postgres.Enabled {
 			return nil, nil
 		}
-		return NewPostgresConnectionManager(cfg.Postgres)
+		return NewPostgresConnectionManager(cfg.Postgres, log)
 	})
 }

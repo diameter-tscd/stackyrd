@@ -1,7 +1,9 @@
 package modules
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
@@ -14,6 +16,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Product struct {
@@ -51,7 +55,7 @@ func (s *MongoDBService) Enabled() bool    { return s.enabled }
 func (s *MongoDBService) Endpoints() []string {
 	return []string{"/products/{tenant}", "/products/{tenant}/{id}"}
 }
-func (s *MongoDBService) Get() interface{} { return s }
+func (s *MongoDBService) Get() any { return s }
 
 func (s *MongoDBService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/products")
@@ -77,24 +81,51 @@ func (s *MongoDBService) listProductsByTenant(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	cursor, err := conn.Find(ctx, "products", bson.M{})
+
+	var req response.PaginationRequest
+	if err := request.Bind(c, &req); err != nil {
+		return response.BadRequest(c, "Invalid pagination parameters")
+	}
+	perPage := req.GetPerPage()
+	offset := req.GetOffset()
+
+	total, err := conn.CountDocuments(ctx, "products", bson.M{})
+	if err != nil {
+		s.logger.Error("Failed to count products", err, "tenant", tenant)
+		return response.InternalServerError(c, "Failed to query tenant database")
+	}
+
+	opts := options.Find().SetLimit(int64(perPage)).SetSkip(int64(offset)).SetSort(bson.D{{Key: "_id", Value: -1}})
+	cursor, err := conn.Find(ctx, "products", bson.M{}, opts)
 	if err != nil {
 		s.logger.Error("Failed to query products", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to query tenant database")
 	}
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			s.logger.Error("Failed to close MongoDB cursor", err)
+			s.logger.Error("Failed to close MongoDB cursor", err, "tenant", tenant)
 		}
 	}()
 
 	var products []Product
 	if err := cursor.All(ctx, &products); err != nil {
-		s.logger.Error("Failed to decode products", err)
+		s.logger.Error("Failed to decode products", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to decode products")
 	}
 
-	return response.Success(c, products, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
+	meta := &response.Meta{
+		Page:       req.GetPage(),
+		PerPage:    perPage,
+		Total:      total,
+		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
+	}
+
+	return response.SuccessWithMeta(c, products, meta, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
+}
+
+// validProduct rejects client-supplied products that would corrupt catalog data.
+func validProduct(p *Product) bool {
+	return p.Name != "" && p.Price >= 0 && p.Quantity >= 0
 }
 
 func (s *MongoDBService) createProduct(c echo.Context) error {
@@ -107,6 +138,11 @@ func (s *MongoDBService) createProduct(c echo.Context) error {
 	if err := request.Bind(c, &product); err != nil {
 		return response.BadRequest(c, "Invalid product data")
 	}
+	if !validProduct(&product) {
+		return response.BadRequest(c, "Product name is required and price/quantity must be non-negative")
+	}
+	// Strip any client-supplied _id: the server assigns the ObjectID.
+	product.ID = primitive.NilObjectID
 
 	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
 	if !exists {
@@ -120,7 +156,7 @@ func (s *MongoDBService) createProduct(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to create product")
 	}
 
-	return response.Created(c, map[string]interface{}{
+	return response.Created(c, map[string]any{
 		"id":      result.InsertedID,
 		"tenant":  tenant,
 		"product": product,
@@ -149,7 +185,11 @@ func (s *MongoDBService) getProductByTenant(c echo.Context) error {
 	var product Product
 	err = conn.FindOne(ctx, "products", bson.M{"_id": objectID}).Decode(&product)
 	if err != nil {
-		return response.NotFound(c, "Product not found")
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return response.NotFound(c, "Product not found")
+		}
+		s.logger.Error("Failed to fetch product", err, "tenant", tenant)
+		return response.InternalServerError(c, "Failed to fetch product")
 	}
 
 	return response.Success(c, product, "Product retrieved successfully")
@@ -171,6 +211,9 @@ func (s *MongoDBService) updateProduct(c echo.Context) error {
 	var product Product
 	if err := request.Bind(c, &product); err != nil {
 		return response.BadRequest(c, "Invalid product data")
+	}
+	if !validProduct(&product) {
+		return response.BadRequest(c, "Product name is required and price/quantity must be non-negative")
 	}
 
 	conn, exists := s.mongoConnectionManager.GetConnection(tenant)
@@ -252,11 +295,17 @@ func (s *MongoDBService) searchProducts(c echo.Context) error {
 	ctx := c.Request().Context()
 	var filter bson.M
 	if query != "" {
+		// Treat input as a literal substring, not a regex: QuoteMeta neutralizes
+		// ReDoS / regex-injection payloads in user-supplied search terms.
+		if len(query) > 100 {
+			return response.BadRequest(c, "Search query too long")
+		}
+		escaped := regexp.QuoteMeta(query)
 		filter = bson.M{
 			"$or": []bson.M{
-				{"name": bson.M{"$regex": query, "$options": "i"}},
-				{"description": bson.M{"$regex": query, "$options": "i"}},
-				{"category": bson.M{"$regex": query, "$options": "i"}},
+				{"name": bson.M{"$regex": escaped, "$options": "i"}},
+				{"description": bson.M{"$regex": escaped, "$options": "i"}},
+				{"category": bson.M{"$regex": escaped, "$options": "i"}},
 			},
 		}
 	} else {
@@ -265,18 +314,18 @@ func (s *MongoDBService) searchProducts(c echo.Context) error {
 
 	cursor, err := conn.Find(ctx, "products", filter)
 	if err != nil {
-		s.logger.Error("Failed to search products", err)
+		s.logger.Error("Failed to search products", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to search products")
 	}
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			s.logger.Error("Failed to close MongoDB cursor", err)
+			s.logger.Error("Failed to close MongoDB cursor", err, "tenant", tenant)
 		}
 	}()
 
 	var products []Product
 	if err := cursor.All(ctx, &products); err != nil {
-		s.logger.Error("Failed to decode products", err)
+		s.logger.Error("Failed to decode products", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to decode products")
 	}
 
@@ -301,19 +350,19 @@ func (s *MongoDBService) getProductAnalytics(c echo.Context) error {
 				"_id":        "$category",
 				"count":      bson.M{"$sum": 1},
 				"avgPrice":   bson.M{"$avg": "$price"},
-				"totalValue": bson.M{"$sum": bson.M{"$multiply": []interface{}{"$price", "$quantity"}}},
+				"totalValue": bson.M{"$sum": bson.M{"$multiply": []any{"$price", "$quantity"}}},
 			},
 		},
 	}
 
 	cursor, err := conn.Aggregate(ctx, "products", pipeline)
 	if err != nil {
-		s.logger.Error("Failed to get analytics", err)
+		s.logger.Error("Failed to get analytics", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to get analytics")
 	}
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			s.logger.Error("Failed to close MongoDB cursor", err)
+			s.logger.Error("Failed to close MongoDB cursor", err, "tenant", tenant)
 		}
 	}()
 
@@ -327,18 +376,18 @@ func (s *MongoDBService) getProductAnalytics(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("mongodb_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterServiceWithDeps("mongodb_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
 
 		if !helper.IsServiceEnabled("mongodb_service") {
 			return nil
 		}
 
-		mongoManager, ok := registry.GetTyped[infrastructure.MongoConnectionManager](deps, "mongo")
-		if !helper.RequireDependency("MongoConnectionManager", ok) {
+		mongoConnectionManager := deps.Mongo()
+		if !helper.RequireDependency("MongoConnectionManager", mongoConnectionManager != nil) {
 			return nil
 		}
 
-		return NewMongoDBService(&mongoManager, true, logger)
+		return NewMongoDBService(mongoConnectionManager, true, logger)
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"stackyrd/pkg/utils"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -47,9 +48,9 @@ type LiveModel struct {
 	startTime       time.Time
 	width           int
 	height          int
-	quitting        bool
+	isQuitting      bool
 	maxLogs         int
-	program         *tea.Program
+	program         atomic.Pointer[tea.Program]
 
 	// Reusable dialog components
 	exitDialog   *template.DialogModel
@@ -61,31 +62,31 @@ type LiveModel struct {
 var (
 	liveBannerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#ffffffff"))
+			Foreground(lipgloss.Color(TC("text")))
 
 	liveInfoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveStatusStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5"))
+			Foreground(lipgloss.Color(TC("primary")))
 
 	liveDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#626262ff"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	// Single cyan color for progress bar
-	liveProgressColor = "#8daea5"
+	liveProgressColor = TC("primary")
 )
 
 // NewLiveModel creates a new live TUI model
 func NewLiveModel(cfg LiveConfig) *LiveModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 
 	// Initialize text input for filtering
 	ti := textinput.New()
@@ -94,7 +95,7 @@ func NewLiveModel(cfg LiveConfig) *LiveModel {
 	ti.Width = 30
 	// Make sure the text input is visible with a border
 	ti.Prompt = ""
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#8daea5"))
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("primary")))
 
 	// Initialize reusable dialogs
 	exitDialog := template.NewExitConfirmationDialog()
@@ -131,7 +132,6 @@ func liveTickCmd() tea.Cmd {
 func (m *LiveModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		liveTickCmd(),
 	)
 }
 
@@ -146,7 +146,7 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result := m.exitDialog.GetResult(); result != nil {
 				if result.Confirmed {
 					// Confirm exit
-					m.quitting = true
+					m.isQuitting = true
 					// Call the shutdown callback if provided
 					if m.config.OnShutdown != nil {
 						m.config.OnShutdown()
@@ -265,41 +265,6 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.allLogs = m.allLogs[len(m.allLogs)-m.maxLogs:]
 		}
 		m.updateFilteredLogs()
-
-		// Auto-scroll to bottom if enabled
-		if m.autoScroll {
-			logsToShow := m.filteredLogs
-			if m.filterText == "" {
-				logsToShow = m.allLogs
-			}
-
-			// Calculate available height (same as in View method)
-			totalHeight := m.height
-			if totalHeight == 0 {
-				totalHeight = 24 // default fallback
-			}
-
-			headerHeight := 7 // banner(1) + title(1) + status(1) + spacing(1) + logs header(1) + border(1) + spacing(1)
-			if m.config.Banner != "" {
-				headerHeight++ // extra line for banner
-			}
-			if m.filterDialog.IsActive() {
-				headerHeight += 3 // filter input (1) + spacing (2)
-			}
-
-			footerHeight := 2                                                // footer + spacing
-			availableHeight := totalHeight - headerHeight - footerHeight - 2 // reduced padding
-			if availableHeight < 3 {
-				availableHeight = 3
-			}
-
-			// Auto-scroll to bottom
-			m.scrollOffset = len(logsToShow) - availableHeight
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
-		}
-
 		m.logsMutex.Unlock()
 		return m, nil
 	}
@@ -308,7 +273,7 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *LiveModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 
@@ -336,17 +301,8 @@ func (m *LiveModel) View() string {
 	// Update max visible lines based on calculated available space
 	m.maxVisibleLines = availableHeight
 
-	// If auto-scroll is enabled, ensure we're at the bottom
-	if m.autoScroll {
-		logsToShow := m.filteredLogs
-		if m.filterText == "" {
-			logsToShow = m.allLogs
-		}
-		m.scrollOffset = len(logsToShow) - availableHeight
-		if m.scrollOffset < 0 {
-			m.scrollOffset = 0
-		}
-	}
+	// If auto-scroll is enabled, render picks the last availableHeight physical
+	// lines; scrollOffset is only consulted for manual scrolling.
 
 	var b strings.Builder
 
@@ -365,7 +321,6 @@ func (m *LiveModel) View() string {
 
 	// Header with app info (cyan accent)
 	cyanStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(liveProgressColor)).Bold(true)
-
 	header := fmt.Sprintf("%s %s v%s %s",
 		cyanStyle.Render(" "),
 		liveTitleStyle.Render(m.config.AppName),
@@ -400,18 +355,22 @@ func (m *LiveModel) View() string {
 
 	stickyLogsHeader := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#626262ff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Render("▪ Live Logs")
 	mainContent.WriteString(stickyLogsHeader)
 	mainContent.WriteString("\n")
-	mainContent.WriteString(DividerLine.Render(strings.Repeat("─", logWidth)))
+	mainContent.WriteString(DividerLine().Render(strings.Repeat("─", logWidth)))
 	mainContent.WriteString("\n")
 
 	// SCROLLABLE CONTENT - Only the log entries (no header/border)
 	logLines := m.renderLogEntriesOnly()
 	if len(logLines) > availableHeight {
-		// Apply scrolling offset to log entries only
 		startLine := m.scrollOffset
+		if m.autoScroll {
+			// Follow the newest logs: show the last availableHeight physical
+			// lines so word-wrapped entries never shift the viewport.
+			startLine = len(logLines) - availableHeight
+		}
 		if startLine >= len(logLines) {
 			startLine = len(logLines) - 1
 		}
@@ -427,10 +386,14 @@ func (m *LiveModel) View() string {
 		logLines = logLines[startLine:endLine]
 	}
 
-	// Render visible log entries
-	for _, line := range logLines {
+	// Render visible log entries. Join without a trailing newline so the
+	// content is exactly availableHeight lines tall, then pad to keep the
+	// footer pinned and the layout within the terminal height.
+	for i, line := range logLines {
+		if i > 0 {
+			mainContent.WriteString("\n")
+		}
 		mainContent.WriteString(line)
-		mainContent.WriteString("\n")
 	}
 
 	// Fill remaining space to push footer to bottom
@@ -512,27 +475,35 @@ func (m *LiveModel) renderLogEntriesOnly() []string {
 			timeStr := log.Time.Format("15:04:05")
 			icon := m.getLevelIcon(log.Level)
 
-			// Calculate max message length and truncate before styling
+			// Calculate max message length and word-wrap instead of truncating.
 			maxMsgLen := logWidth - 22
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
-			msg := log.Message
-			if len(msg) > maxMsgLen {
-				msg = msg[:maxMsgLen-3] + "..."
-			}
+			// Long error blobs are flattened to one line by wrapLogMessage.
+			msgLines := wrapLogMessage(log.Message, maxMsgLen)
 
-			// Build the line with proper formatting
-			line := fmt.Sprintf("  %s %s %s",
-				liveDimStyle.Render(timeStr),
-				levelStyle.Render(icon),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2")).Render(msg),
-			)
-			lines = append(lines, line)
+			prefix := fmt.Sprintf("  %s %s", liveDimStyle.Render(timeStr), levelStyle.Render(icon))
+			indent := strings.Repeat(" ", 13)
+			for i, ml := range msgLines {
+				styled := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(ml)
+				if i == 0 {
+					lines = append(lines, prefix+" "+styled)
+				} else {
+					lines = append(lines, indent+styled)
+				}
+			}
 		}
 	}
 
 	return lines
+}
+
+// logLineCount returns the number of physical lines the log view renders.
+// Word-wrapped entries occupy more than one line, so scroll bounds must be
+// based on physical lines, not log-entry counts.
+func (m *LiveModel) logLineCount() int {
+	return len(m.renderLogEntriesOnly())
 }
 
 func (m *LiveModel) getLevelIcon(level string) string {
@@ -555,24 +526,24 @@ func (m *LiveModel) getLevelIcon(level string) string {
 func (m *LiveModel) getLevelStyle(level string) lipgloss.Style {
 	switch strings.ToLower(level) {
 	case "debug":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#b3ebf8ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 	case "info":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#9af8b1ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 	case "warn", "warning":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f5fac0ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 	case "error":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f67373ff"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))
 	case "fatal":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f82626ff")).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error"))).Bold(true)
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 	}
 }
 
 // AddLog adds a log entry to the TUI
 func (m *LiveModel) AddLog(level, message string) {
-	if m.program != nil {
-		m.program.Send(logMsg{
+	if p := m.program.Load(); p != nil {
+		p.Send(logMsg{
 			Time:    time.Now(),
 			Level:   level,
 			Message: message,
@@ -582,7 +553,7 @@ func (m *LiveModel) AddLog(level, message string) {
 
 // SetProgram sets the tea.Program reference for sending messages
 func (m *LiveModel) SetProgram(p *tea.Program) {
-	m.program = p
+	m.program.Store(p)
 }
 
 // LiveTUI manages the live TUI instance
@@ -724,12 +695,7 @@ func (m *LiveModel) queryCmd(query string) tea.Cmd {
 
 // Scroll methods for navigating through logs
 func (m *LiveModel) scrollDown() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-
-	if m.scrollOffset < len(logsToShow)-m.maxVisibleLines {
+	if m.scrollOffset < m.logLineCount()-m.maxVisibleLines {
 		m.scrollOffset++
 		m.autoScroll = false // Disable auto-scroll when user manually scrolls
 	}
@@ -743,13 +709,8 @@ func (m *LiveModel) scrollUp() {
 }
 
 func (m *LiveModel) pageDown() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-
 	m.scrollOffset += m.maxVisibleLines
-	maxOffset := len(logsToShow) - m.maxVisibleLines
+	maxOffset := m.logLineCount() - m.maxVisibleLines
 	if m.scrollOffset > maxOffset {
 		m.scrollOffset = maxOffset
 	}
@@ -773,12 +734,8 @@ func (m *LiveModel) scrollToTop() {
 }
 
 func (m *LiveModel) scrollToBottom() {
-	logsToShow := m.filteredLogs
-	if m.filterText == "" {
-		logsToShow = m.allLogs
-	}
-
-	m.scrollOffset = len(logsToShow) - m.maxVisibleLines
+	// Use physical line count so the offset matches scrollDown/pageDown math.
+	m.scrollOffset = m.logLineCount() - m.maxVisibleLines
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}

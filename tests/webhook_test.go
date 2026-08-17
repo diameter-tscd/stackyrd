@@ -2,7 +2,6 @@ package main_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +30,7 @@ func TestWebhook_RegisterAndTrigger(t *testing.T) {
 
 	event := webhook.WebhookEvent{
 		Type: "test.event",
-		Data: map[string]interface{}{"key": "value"},
+		Data: map[string]any{"key": "value"},
 	}
 	wm.Trigger(event)
 
@@ -76,7 +75,7 @@ func TestWebhook_SignAndVerify(t *testing.T) {
 
 func TestWebhook_SendDisabled(t *testing.T) {
 	wm := webhook.NewWebhookManager(webhook.WebhookConfig{Enabled: false})
-	_, err := wm.Send(context.Background(), webhook.WebhookEvent{})
+	_, err := wm.Send(t.Context(), webhook.WebhookEvent{})
 	assert.ErrorContains(t, err, "disabled")
 }
 
@@ -95,9 +94,9 @@ func TestWebhook_SendToServer(t *testing.T) {
 		MaxRetries: 0,
 	})
 
-	resp, err := wm.Send(context.Background(), webhook.WebhookEvent{
+	resp, err := wm.Send(t.Context(), webhook.WebhookEvent{
 		Type: "test",
-		Data: map[string]interface{}{"msg": "hello"},
+		Data: map[string]any{"msg": "hello"},
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -121,7 +120,7 @@ func TestWebhook_SendRetriesOnFailure(t *testing.T) {
 		RetryDelay: 1 * time.Millisecond,
 	})
 
-	_, err := wm.Send(context.Background(), webhook.WebhookEvent{Type: "test"})
+	_, err := wm.Send(t.Context(), webhook.WebhookEvent{Type: "test"})
 	assert.Error(t, err)
 	assert.Equal(t, int32(3), attempts.Load()) // initial + 2 retries
 }
@@ -134,7 +133,7 @@ func TestWebhook_HandleIncoming(t *testing.T) {
 	handler := webhook.NewWebhookHandler(wm)
 	rec := httptest.NewRecorder()
 
-	body, _ := json.Marshal(webhook.WebhookEvent{Type: "incoming", Data: map[string]interface{}{}})
+	body, _ := json.Marshal(webhook.WebhookEvent{Type: "incoming", Data: map[string]any{}})
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -196,7 +195,7 @@ func TestWebhook_GetStats(t *testing.T) {
 	wm.Register("evt1", func(event webhook.WebhookEvent) {})
 	wm.Register("evt2", func(event webhook.WebhookEvent) {})
 
-	stats := wm.GetStats()
+	stats := wm.Stats()
 	assert.True(t, stats["enabled"].(bool))
 	assert.Equal(t, "http://hook.example.com", stats["url"])
 	types := stats["event_types"].([]string)

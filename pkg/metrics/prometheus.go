@@ -3,8 +3,10 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -13,6 +15,8 @@ import (
 
 // Metrics holds all Prometheus metrics
 type Metrics struct {
+	registry *prometheus.Registry
+
 	HTTPRequestsTotal    *prometheus.CounterVec
 	HTTPRequestDuration  *prometheus.HistogramVec
 	HTTPRequestSize      *prometheus.HistogramVec
@@ -32,17 +36,23 @@ type Metrics struct {
 	ErrorRate            *prometheus.CounterVec
 }
 
-// NewMetrics creates new Prometheus metrics
+// NewMetrics creates new Prometheus metrics on a per-instance registry so
+// repeated construction (tests, multiple instances) can never panic with
+// "duplicate registration" against the process-global default registry.
 func NewMetrics() *Metrics {
+	reg := prometheus.NewRegistry()
+	f := promauto.With(reg)
+
 	return &Metrics{
-		HTTPRequestsTotal: promauto.NewCounterVec(
+		registry: reg,
+		HTTPRequestsTotal: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "http_requests_total",
 				Help: "Total number of HTTP requests",
 			},
 			[]string{"method", "path", "status"},
 		),
-		HTTPRequestDuration: promauto.NewHistogramVec(
+		HTTPRequestDuration: f.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "http_request_duration_seconds",
 				Help:    "HTTP request duration in seconds",
@@ -50,7 +60,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"method", "path", "status"},
 		),
-		HTTPRequestSize: promauto.NewHistogramVec(
+		HTTPRequestSize: f.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "http_request_size_bytes",
 				Help:    "HTTP request size in bytes",
@@ -58,7 +68,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"method", "path"},
 		),
-		HTTPResponseSize: promauto.NewHistogramVec(
+		HTTPResponseSize: f.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "http_response_size_bytes",
 				Help:    "HTTP response size in bytes",
@@ -66,55 +76,55 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"method", "path"},
 		),
-		ActiveConnections: promauto.NewGauge(
+		ActiveConnections: f.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "active_connections",
 				Help: "Number of active connections",
 			},
 		),
-		DatabaseConnections: promauto.NewGaugeVec(
+		DatabaseConnections: f.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "database_connections",
 				Help: "Number of database connections",
 			},
 			[]string{"database", "state"},
 		),
-		CacheHits: promauto.NewCounterVec(
+		CacheHits: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "cache_hits_total",
 				Help: "Total number of cache hits",
 			},
 			[]string{"cache", "operation"},
 		),
-		CacheMisses: promauto.NewCounterVec(
+		CacheMisses: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "cache_misses_total",
 				Help: "Total number of cache misses",
 			},
 			[]string{"cache", "operation"},
 		),
-		CircuitBreakerState: promauto.NewGaugeVec(
+		CircuitBreakerState: f.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "circuit_breaker_state",
 				Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
 			},
 			[]string{"name"},
 		),
-		CircuitBreakerTrips: promauto.NewCounterVec(
+		CircuitBreakerTrips: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "circuit_breaker_trips_total",
 				Help: "Total number of circuit breaker trips",
 			},
 			[]string{"name"},
 		),
-		WebhookEvents: promauto.NewCounterVec(
+		WebhookEvents: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "webhook_events_total",
 				Help: "Total number of webhook events",
 			},
 			[]string{"event_type", "status"},
 		),
-		WebhookDuration: promauto.NewHistogramVec(
+		WebhookDuration: f.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "webhook_duration_seconds",
 				Help:    "Webhook request duration in seconds",
@@ -122,20 +132,20 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"event_type"},
 		),
-		WebSocketConnections: promauto.NewGauge(
+		WebSocketConnections: f.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "websocket_connections",
 				Help: "Number of WebSocket connections",
 			},
 		),
-		BatchOperations: promauto.NewCounterVec(
+		BatchOperations: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "batch_operations_total",
 				Help: "Total number of batch operations",
 			},
 			[]string{"operation", "status"},
 		),
-		BatchDuration: promauto.NewHistogramVec(
+		BatchDuration: f.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "batch_duration_seconds",
 				Help:    "Batch operation duration in seconds",
@@ -143,14 +153,14 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"operation"},
 		),
-		LogEntries: promauto.NewCounterVec(
+		LogEntries: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "log_entries_total",
 				Help: "Total number of log entries",
 			},
 			[]string{"level", "service"},
 		),
-		ErrorRate: promauto.NewCounterVec(
+		ErrorRate: f.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "errors_total",
 				Help: "Total number of errors",
@@ -163,11 +173,29 @@ func NewMetrics() *Metrics {
 // RecordHTTPRequest records HTTP request metrics
 func (m *Metrics) RecordHTTPRequest(method, path string, status int, duration time.Duration, requestSize, responseSize int64) {
 	statusStr := strconv.Itoa(status)
+	path = sanitizeLabel(path)
+	method = sanitizeLabel(method)
 
 	m.HTTPRequestsTotal.WithLabelValues(method, path, statusStr).Inc()
 	m.HTTPRequestDuration.WithLabelValues(method, path, statusStr).Observe(duration.Seconds())
 	m.HTTPRequestSize.WithLabelValues(method, path).Observe(float64(requestSize))
 	m.HTTPResponseSize.WithLabelValues(method, path).Observe(float64(responseSize))
+}
+
+// sanitizeLabel keeps Prometheus label values valid UTF-8 and bounded so a
+// dynamic/non-UTF-8 request path can never panic WithLabelValues or balloon
+// cardinality without limit.
+func sanitizeLabel(s string) string {
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "?")
+	}
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	if s == "" {
+		s = "unknown"
+	}
+	return s
 }
 
 // RecordCacheHit records a cache hit
@@ -229,7 +257,7 @@ func (m *Metrics) SetDatabaseConnections(database, state string, count int) {
 
 // Handler returns Prometheus metrics HTTP handler
 func (m *Metrics) Handler() http.Handler {
-	return promhttp.Handler()
+	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 
 var globalMetrics *Metrics

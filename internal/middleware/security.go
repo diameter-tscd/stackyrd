@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"strings"
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
@@ -42,6 +43,11 @@ func Security() echo.MiddlewareFunc {
 }
 
 func SecurityWithConfig(config SecurityConfig) echo.MiddlewareFunc {
+	// Precompute HSTS header once at init; the value is immutable per config.
+	if config.StrictTransportSecurity != "" && strings.Contains(config.StrictTransportSecurity, "%d") {
+		config.StrictTransportSecurity = fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge)
+	}
+
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Response().Header().Set("Content-Security-Policy", config.ContentSecurityPolicy)
@@ -50,8 +56,9 @@ func SecurityWithConfig(config SecurityConfig) echo.MiddlewareFunc {
 			c.Response().Header().Set("X-XSS-Protection", config.XXSSProtection)
 			c.Response().Header().Set("Referrer-Policy", config.ReferrerPolicy)
 			c.Response().Header().Set("Permissions-Policy", config.PermissionsPolicy)
-			c.Response().Header().Set("Strict-Transport-Security",
-				fmt.Sprintf(config.StrictTransportSecurity, config.StrictTransportSecurityMaxAge))
+			if config.StrictTransportSecurity != "" {
+				c.Response().Header().Set("Strict-Transport-Security", config.StrictTransportSecurity)
+			}
 
 			return next(c)
 		}

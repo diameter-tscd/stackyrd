@@ -8,26 +8,53 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/utils"
+	"strings"
 )
 
 // ConfigManager handles all configuration loading and validation
 type ConfigManager struct {
 	configURL string
+	port      string
+	env       string
 }
 
 // NewConfigManager creates a new configuration manager
-func NewConfigManager(configURL string) *ConfigManager {
-	return &ConfigManager{
+func NewConfigManager(configURL string, overrides ...string) *ConfigManager {
+	cm := &ConfigManager{
 		configURL: configURL,
 	}
+	if len(overrides) > 0 {
+		cm.port = overrides[0]
+	}
+	if len(overrides) > 1 {
+		cm.env = overrides[1]
+	}
+	return cm
 }
 
 // LoadConfig loads configuration from local file or URL
 func (cm *ConfigManager) LoadConfig() (*config.Config, error) {
+	var (
+		cfg *config.Config
+		err error
+	)
 	if cm.configURL != "" {
-		return cm.loadConfigFromURL(cm.configURL)
+		cfg, err = cm.loadConfigFromURL(cm.configURL)
+	} else {
+		cfg, err = cm.loadConfigFromFile()
 	}
-	return cm.loadConfigFromFile()
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply CLI overrides on top of the loaded config.
+	if cm.port != "" {
+		cfg.Server.Port = cm.port
+	}
+	if cm.env != "" {
+		cfg.App.Env = cm.env
+	}
+	return cfg, nil
 }
 
 // loadConfigFromURL loads configuration from a URL
@@ -39,12 +66,7 @@ func (cm *ConfigManager) loadConfigFromURL(configURL string) (*config.Config, er
 		return nil, fmt.Errorf("%s: %w", ErrInvalidConfigURLFormat, err)
 	}
 
-	// Load config from URL
-	if err := utils.LoadConfigFromURL(configURL); err != nil {
-		return nil, fmt.Errorf("failed to load config from URL: %w", err)
-	}
-
-	// Parse the loaded configuration
+	// Load and parse config from URL (LoadConfigWithURL owns the fetch + SSRF guard)
 	cfg, err := config.LoadConfigWithURL(configURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config from URL: %w", err)
@@ -64,6 +86,9 @@ func (cm *ConfigManager) loadConfigFromFile() (*config.Config, error) {
 
 // ValidateConfig validates the loaded configuration
 func (cm *ConfigManager) ValidateConfig(cfg *config.Config) error {
+	if cfg == nil || cfg.Server == (config.ServerConfig{}) {
+		return fmt.Errorf("configuration is empty or invalid")
+	}
 	// Validate port availability
 	if err := utils.CheckPortAvailability(cfg.Server.Port); err != nil {
 		return fmt.Errorf("%s: %w", ErrPortError, err)
@@ -92,9 +117,15 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 	if !filepath.IsAbs(bannerPath) {
 		bannerPath = filepath.Join(".", bannerPath)
 	}
+	// Confine relative banner paths to the working directory; reject traversal.
+	bannerPath = filepath.Clean(bannerPath)
+	if bannerPath == ".." || strings.HasPrefix(bannerPath, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("banner path escapes working directory")
+	}
 
 	banner, err := os.ReadFile(bannerPath)
 	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warn: banner not found at %s: %v\n", bannerPath, err)
 		return "", nil
 	}
 
@@ -136,7 +167,7 @@ func (cm *ConfigManager) CreateServiceQueue(cfg *config.Config) []ServiceInit {
 	}
 
 	// Add monitoring last
-	initQueue = append(initQueue, ServiceInit{Name: ServiceMonitoringName, InitFunc: nil})
+	initQueue = append(initQueue, ServiceInit{Name: ServiceMonitoringName, Enabled: true, InitFunc: nil})
 
 	return initQueue
 }

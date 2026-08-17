@@ -2,9 +2,11 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -18,7 +20,7 @@ type MinIOManager struct {
 	Connected  bool
 	Pool       *WorkerPool // Async worker pool
 
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.RWMutex
 }
@@ -42,7 +44,9 @@ func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
 	}
 
 	// Basic check
-	_, err = client.ListBuckets(context.Background())
+	checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_, err = client.ListBuckets(checkCtx)
+	checkCancel()
 	if err != nil {
 		return &MinIOManager{Connected: false}, err
 	}
@@ -59,9 +63,9 @@ func NewMinIOManager(cfg config.MinIOConfig) (*MinIOManager, error) {
 	}, nil
 }
 
-func (m *MinIOManager) GetStatus() map[string]interface{} {
+func (m *MinIOManager) GetStatus() map[string]any {
 	if m == nil || !m.Connected {
-		return map[string]interface{}{
+		return map[string]any{
 			"connected": false,
 			"error":     "Not configured or connection failed",
 		}
@@ -69,16 +73,20 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 
 	m.statusMu.RLock()
 	if m.statusCache != nil && time.Now().Before(m.statusExpiry) {
-		cached := m.statusCache
+		cached := make(map[string]any, len(m.statusCache))
+		for k, v := range m.statusCache {
+			cached[k] = v
+		}
 		m.statusMu.RUnlock()
 		return cached
 	}
 	m.statusMu.RUnlock()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	exists, err := m.Client.BucketExists(ctx, m.BucketName)
 	if err != nil || !exists {
-		stats := map[string]interface{}{
+		stats := map[string]any{
 			"connected":   true,
 			"bucket_name": m.BucketName,
 			"status":      "Bucket not found",
@@ -90,7 +98,7 @@ func (m *MinIOManager) GetStatus() map[string]interface{} {
 		return stats
 	}
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"connected":   true,
 		"bucket_name": m.BucketName,
 		"status":      "Healthy",
@@ -205,13 +213,13 @@ func (m *MinIOManager) UploadFile(ctx context.Context, objectName string, reader
 }
 
 // GetFileUrl generates a presigned URL for the object.
-func (m *MinIOManager) GetFileUrl(objectName string) string {
+func (m *MinIOManager) GetFileUrl(objectName string) (string, error) {
 	// Generate a presigned URL (expires in 7 days)
 	url, err := m.Client.PresignedGetObject(context.Background(), m.BucketName, objectName, 7*24*time.Hour, nil)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to presign URL for %s: %w", objectName, err)
 	}
-	return url.String()
+	return url.String(), nil
 }
 
 // Worker Pool Operations
@@ -221,8 +229,7 @@ func (m *MinIOManager) SubmitAsyncJob(job func()) {
 	if m.Pool != nil {
 		m.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 

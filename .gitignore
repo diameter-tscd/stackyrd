@@ -1,6 +1,6 @@
 # Binaries for programs and plugins
-*.exe
-*.exe~
+# *.exe
+# *.exe~
 *.dll
 *.so
 *.dylib
@@ -64,6 +64,7 @@ Thumbs.db
 # Workspace
 .workspace/
 .kilo
+opencode.json
 
 # Python artifacts
 *.pyc
@@ -73,10 +74,15 @@ handler.pyc
 # Plugin store (runtime writable overlay)
 store/
 
-# Compiled binaries
-scripts/service/service_generator
-
 # Files
 stackyrd
 ISSUE_TASK.md
 PLUGIN.md
+
+# Scripts
+scripts/assets
+scripts/internal
+scripts/go.mod
+scripts/go.sum
+scripts/main.go
+scripts/build-all.sh

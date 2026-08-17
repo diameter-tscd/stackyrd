@@ -1,4 +1,13 @@
 meta:
     last_updated: ""
     index_url: https://raw.githubusercontent.com/diameter-tscd/stackyrd-pkg/master/index
-packages: {}
+packages:
+    pkg/infrastructure/cloud/google/firebase:
+        name: pkg/infrastructure/cloud/google/firebase
+        version: 1.0.0
+        installed_at: "2026-08-02T16:17:38+07:00"
+        updated_at: "2026-08-02T16:17:38+07:00"
+        files:
+            - google_firebase.go
+        install_root: pkg/infrastructure
+        source: index

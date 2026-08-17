@@ -24,7 +24,7 @@ func NewServiceHelper(config *config.Config, logger *logger.Logger, deps *Depend
 // RequireDependency validates dependency is available
 func (h *ServiceHelper) RequireDependency(name string, available bool) bool {
 	if !available {
-		h.logger.Warn(name + " not available, skipping service")
+		h.logger.Warn("Dependency not available, skipping service", "dependency", name)
 		return false
 	}
 	return true

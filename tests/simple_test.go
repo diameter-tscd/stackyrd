@@ -230,30 +230,30 @@ type simpleMockLogger struct {
 type mockLogEntry struct {
 	Level   string
 	Message string
-	Args    []interface{}
+	Args    []any
 }
 
-func (m *simpleMockLogger) Debug(msg string, args ...interface{}) {
+func (m *simpleMockLogger) Debug(msg string, args ...any) {
 	m.mu.Lock()
 	m.logs = append(m.logs, mockLogEntry{"DEBUG", msg, args})
 	m.mu.Unlock()
 }
-func (m *simpleMockLogger) Info(msg string, args ...interface{}) {
+func (m *simpleMockLogger) Info(msg string, args ...any) {
 	m.mu.Lock()
 	m.logs = append(m.logs, mockLogEntry{"INFO", msg, args})
 	m.mu.Unlock()
 }
-func (m *simpleMockLogger) Warn(msg string, args ...interface{}) {
+func (m *simpleMockLogger) Warn(msg string, args ...any) {
 	m.mu.Lock()
 	m.logs = append(m.logs, mockLogEntry{"WARN", msg, args})
 	m.mu.Unlock()
 }
-func (m *simpleMockLogger) Error(msg string, args ...interface{}) {
+func (m *simpleMockLogger) Error(msg string, args ...any) {
 	m.mu.Lock()
 	m.logs = append(m.logs, mockLogEntry{"ERROR", msg, args})
 	m.mu.Unlock()
 }
-func (m *simpleMockLogger) Fatal(msg string, args ...interface{}) {
+func (m *simpleMockLogger) Fatal(msg string, args ...any) {
 	m.mu.Lock()
 	m.logs = append(m.logs, mockLogEntry{"FATAL", msg, args})
 	m.mu.Unlock()
@@ -269,13 +269,13 @@ func (m *simpleMockLogger) Clear() { m.mu.Lock(); m.logs = m.logs[:0]; m.mu.Unlo
 
 type simpleMockRedisManager struct {
 	mu      sync.RWMutex
-	storage map[string]interface{}
+	storage map[string]any
 }
 
-func (m *simpleMockRedisManager) Set(_ context.Context, key string, value interface{}, _ time.Duration) error {
+func (m *simpleMockRedisManager) Set(_ context.Context, key string, value any, _ time.Duration) error {
 	m.mu.Lock()
 	if m.storage == nil {
-		m.storage = make(map[string]interface{})
+		m.storage = make(map[string]any)
 	}
 	m.storage[key] = value
 	m.mu.Unlock()

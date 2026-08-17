@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ type BootModel struct {
 	initQueue     []ServiceInit
 	results       []ServiceStatus
 	current       int
-	done          bool
+	isDone        bool
 	config        StartupConfig
 	startTime     time.Time
 	width         int
@@ -42,51 +43,76 @@ var bootFrames = []string{
 	"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
 }
 
-// Boot styles
-var (
-	bootBannerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#8daea5"))
+// Boot style functions - return fresh styles each call for theme-aware colors
+func bootBannerStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(TC("primary")))
+}
 
-	bootSubStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
-			Italic(true)
+func bootSubStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("dim"))).
+		Italic(true)
+}
 
-	bootCompleteStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#545454ff"))
+func bootCompleteStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(TC("dim")))
+}
 
-	bootErrorStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#ffaeaeff"))
+func bootErrorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(TC("error")))
+}
 
-	bootPhaseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#faffc7ff")).
-			Bold(true)
+func bootPhaseStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("warning"))).
+		Bold(true)
+}
 
-	bootInfoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#c7f5ffff"))
+func bootInfoStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("secondary")))
+}
 
-	bootSuccessIcon = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#b0ffc4ff")).
-			Render("✓")
+func bootSuccessIcon() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("success"))).
+		Render("✓")
+}
 
-	bootErrorIcon = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ff9b9bff")).
-			Render("✗")
+func bootErrorIcon() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("error"))).
+		Render("✗")
+}
 
-	bootSkipIcon = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
-			Render("○")
+func bootSkipIcon() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("dim"))).
+		Render("○")
+}
 
-	bootPendingIcon = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
-			Render("◦")
-)
+func bootPendingIcon() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(TC("dim"))).
+		Render("◦")
+}
 
 // Messages for boot model
 type bootTickMsg time.Time
 type bootDoneMsg struct{}
+
+// bootInitResultMsg carries a service init outcome back to the event loop so a
+// slow InitFunc never blocks the Bubble Tea Update goroutine.
+type bootInitResultMsg struct {
+	index int
+	err   error
+}
 
 // NewBootModel creates a new boot model
 func NewBootModel(cfg StartupConfig, initQueue []ServiceInit) BootModel {
@@ -169,7 +195,7 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if m.current >= len(m.initQueue) {
 				m.phase = "complete"
-				m.done = true
+				m.isDone = true
 				// Start countdown if configured
 				if m.config.IdleSeconds > 0 {
 					m.countdown = m.config.IdleSeconds
@@ -187,21 +213,17 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.results[m.current].Status = "loading"
 				m.results[m.current].Message = "Initializing..."
 
-				// Run initialization in background (simulated for now)
+				// Run initialization off the event loop; the result arrives as
+				// bootInitResultMsg so a slow init cannot freeze the spinner.
 				svc := m.initQueue[m.current]
+				idx := m.current
 				if svc.InitFunc != nil {
-					err := svc.InitFunc()
-					if err != nil {
-						m.results[m.current].Status = "error"
-						m.results[m.current].Message = err.Error()
-					} else {
-						m.results[m.current].Status = "success"
-						m.results[m.current].Message = "Ready"
-					}
-				} else {
-					m.results[m.current].Status = "success"
-					m.results[m.current].Message = "Ready"
+					return m, tea.Batch(m.spinner.Tick, bootTickCmd(), func() tea.Msg {
+						return bootInitResultMsg{index: idx, err: svc.InitFunc()}
+					})
 				}
+				m.results[idx].Status = "success"
+				m.results[idx].Message = "Ready"
 				m.current++
 			}
 
@@ -225,6 +247,21 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, bootTickCmd())
 		}
 
+	case bootInitResultMsg:
+		if msg.index < len(m.results) {
+			if msg.err != nil {
+				m.results[msg.index].Status = "error"
+				m.results[msg.index].Message = msg.err.Error()
+			} else {
+				m.results[msg.index].Status = "success"
+				m.results[msg.index].Message = "Ready"
+			}
+			if msg.index == m.current {
+				m.current++
+			}
+		}
+		return m, tea.Batch(m.spinner.Tick, bootTickCmd())
+
 	case bootDoneMsg:
 		return m, tea.Quit
 	}
@@ -241,16 +278,16 @@ func (m BootModel) View() string {
 
 	// Banner (ASCII art) or app name fallback
 	if m.config.Banner != "" {
-		b.WriteString(bootBannerStyle.Render(m.config.Banner))
+		b.WriteString(bootBannerStyle().Render(m.config.Banner))
 	} else {
 		title := fmt.Sprintf(" %s ", m.config.AppName)
-		b.WriteString(bootBannerStyle.Bold(true).Render(title))
+		b.WriteString(bootBannerStyle().Bold(true).Render(title))
 	}
 	b.WriteString("\n")
 
 	// Version and env
 	sub := fmt.Sprintf("v%s • %s environment", m.config.AppVersion, m.config.Env)
-	b.WriteString(bootSubStyle.Render(sub))
+	b.WriteString(bootSubStyle().Render(sub))
 	b.WriteString("\n\n")
 
 	// Phase indicator
@@ -271,7 +308,7 @@ func (m BootModel) View() string {
 		phaseText = "Boot failed!"
 		phaseIcon = "✗"
 	}
-	fmt.Fprintf(&b, "%s %s\n\n", phaseIcon, bootPhaseStyle.Render(phaseText))
+	fmt.Fprintf(&b, "%s %s\n\n", phaseIcon, bootPhaseStyle().Render(phaseText))
 
 	// Simple progress text
 	completed := 0
@@ -294,17 +331,17 @@ func (m BootModel) View() string {
 	b.WriteString("\n")
 
 	// Final message
-	if m.done {
+	if m.isDone {
 		elapsed := time.Since(m.startTime).Round(time.Millisecond)
 
 		switch m.phase {
 		case "complete":
 			msg := fmt.Sprintf("\n Server ready at http://localhost:%s", m.config.Port)
-			b.WriteString(bootCompleteStyle.Render(msg))
+			b.WriteString(bootCompleteStyle().Render(msg))
 			b.WriteString("\n")
-			b.WriteString(bootInfoStyle.Render(fmt.Sprintf(" Started in %s", elapsed)))
+			b.WriteString(bootInfoStyle().Render(fmt.Sprintf(" Started in %s", elapsed)))
 		case "error":
-			b.WriteString(bootErrorStyle.Render("\n  Boot sequence encountered errors"))
+			b.WriteString(bootErrorStyle().Render("\n  Boot sequence encountered errors"))
 		}
 		b.WriteString("\n")
 	}
@@ -315,7 +352,7 @@ func (m BootModel) View() string {
 		// Countdown timer display
 		countdownStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#ffdab3ff"))
+			Foreground(lipgloss.Color(TC("warning")))
 
 		footerText = fmt.Sprintf("\n  %s Starting server in %s seconds...\n  Press 'q' to skip and continue now",
 			bootFrames[m.animFrame%len(bootFrames)],
@@ -327,7 +364,7 @@ func (m BootModel) View() string {
 	}
 
 	footer := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#56575eff")).
+		Foreground(lipgloss.Color(TC("dim"))).
 		Render(footerText)
 	b.WriteString("\n")
 	b.WriteString(footer)
@@ -342,10 +379,10 @@ func (m BootModel) renderBootServices() string {
 
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#f0ca8c")).
+		Foreground(lipgloss.Color(TC("warning"))).
 		Render("◆ Boot Sequence")
 	lines = append(lines, header)
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Render(strings.Repeat("─", 100)))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Render(strings.Repeat("─", 100)))
 
 	for i, r := range m.results {
 		var icon, status string
@@ -353,32 +390,32 @@ func (m BootModel) renderBootServices() string {
 
 		switch r.Status {
 		case "pending":
-			icon = bootPendingIcon
+			icon = bootPendingIcon()
 			status = "waiting"
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6272A4"))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
 		case "loading":
 			icon = m.spinner.View()
 			status = r.Message
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ca8c"))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning")))
 		case "success":
-			icon = bootSuccessIcon
+			icon = bootSuccessIcon()
 			status = r.Message
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#95ffafff"))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success")))
 		case "error":
-			icon = bootErrorIcon
+			icon = bootErrorIcon()
 			status = r.Message
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))
 		case "skipped":
-			icon = bootSkipIcon
+			icon = bootSkipIcon()
 			status = "disabled"
-			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A")).Italic(true)
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim"))).Italic(true)
 		}
 
 		nameStyle := lipgloss.NewStyle().Width(60)
 		if i == m.current-1 && r.Status == "loading" {
-			nameStyle = nameStyle.Foreground(lipgloss.Color("#FFB86C")).Bold(true)
+			nameStyle = nameStyle.Foreground(lipgloss.Color(TC("warning"))).Bold(true)
 		} else {
-			nameStyle = nameStyle.Foreground(lipgloss.Color("#F8F8F2"))
+			nameStyle = nameStyle.Foreground(lipgloss.Color(TC("text")))
 		}
 
 		line := fmt.Sprintf("  %s %s → %s",
@@ -394,7 +431,7 @@ func (m BootModel) renderBootServices() string {
 
 // GetResults returns the final results after boot completes
 func (m BootModel) GetResults() []ServiceStatus {
-	return m.results
+	return slices.Clone(m.results)
 }
 
 // HasErrors returns true if any service failed to initialize

@@ -2,9 +2,14 @@ package websocket
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -12,9 +17,21 @@ import (
 
 var _ = &Hub{} // suppress unused lint; imported by other packages
 
+var wsClientSeq atomic.Int64
+
 var upgrader = websocket.Upgrader{
+	// Reject cross-origin browsers (CSWSH) while allowing non-browser clients
+	// and same-origin pages.
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return strings.EqualFold(u.Host, r.Host)
 	},
 }
 
@@ -39,7 +56,7 @@ type Hub struct {
 // Message represents a WebSocket message
 type Message struct {
 	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
+	Payload any `json:"payload"`
 	Room    string      `json:"room,omitempty"`
 }
 
@@ -48,9 +65,11 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:     make(map[*Client]bool),
 		clientsByID: make(map[string]*Client),
-		broadcast:   make(chan []byte),
-		register:    make(chan *Client),
-		unregister:  make(chan *Client),
+		// Buffered so producers never block on a single slow consumer even if
+		// Run is briefly paused; sized well above realistic burst.
+		broadcast:  make(chan []byte, 256),
+		register:   make(chan *Client, 64),
+		unregister: make(chan *Client, 64),
 	}
 }
 
@@ -60,6 +79,14 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.mu.Lock()
+			if _, exists := h.clientsByID[client.ID]; exists {
+				h.mu.Unlock()
+				// Duplicate ID: reject the newcomer so clientsByID never points
+				// at a connection that is silently shadowed by another.
+				close(client.Send)
+				log.Printf("Rejected duplicate client: %s", client.ID)
+				continue
+			}
 			h.clients[client] = true
 			h.clientsByID[client.ID] = client
 			h.mu.Unlock()
@@ -69,14 +96,18 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				delete(h.clientsByID, client.ID)
+				if h.clientsByID[client.ID] == client {
+					delete(h.clientsByID, client.ID)
+				}
 				close(client.Send)
 			}
 			h.mu.Unlock()
 			log.Printf("Client disconnected: %s", client.ID)
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			// Write lock: we mutate the map (close + delete) here, and the
+			// unregister path closes client.Send too — RLock would race it.
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.Send <- message:
@@ -85,7 +116,7 @@ func (h *Hub) Run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
@@ -97,25 +128,27 @@ func (h *Hub) Broadcast(message []byte) {
 
 // SendToClient sends a message to a specific client
 func (h *Hub) SendToClient(clientID string, message []byte) {
-	h.mu.RLock()
+	// Hold the write lock across the send: closes of client.Send only happen
+	// under this lock, so this can never panic with "send on closed channel".
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	client, ok := h.clientsByID[clientID]
-	h.mu.RUnlock()
 	if !ok {
 		return
 	}
 	select {
 	case client.Send <- message:
 	default:
-		h.mu.Lock()
 		delete(h.clients, client)
-		delete(h.clientsByID, client.ID)
+		if h.clientsByID[clientID] == client {
+			delete(h.clientsByID, clientID)
+		}
 		close(client.Send)
-		h.mu.Unlock()
 	}
 }
 
-// GetConnectedClients returns the number of connected clients
-func (h *Hub) GetConnectedClients() int {
+// ConnectedClients returns the number of connected clients
+func (h *Hub) ConnectedClients() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
@@ -132,7 +165,9 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 
 		clientID := c.QueryParam("client_id")
 		if clientID == "" {
-			clientID = c.RealIP()
+			// Server-assigned unique ID: a bare RealIP would collide for NAT
+			// clients and shadow each other's connection.
+			clientID = fmt.Sprintf("ws-%d-%d", time.Now().UnixNano(), wsClientSeq.Add(1))
 		}
 
 		client := &Client{
@@ -154,9 +189,19 @@ func HandleWebSocket(hub *Hub) echo.HandlerFunc {
 // readPump reads messages from the WebSocket connection
 func (c *Client) readPump() {
 	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in readPump: %v", r)
+		}
 		c.Hub.unregister <- c
 		_ = c.Conn.Close()
 	}()
+
+	// Bound message size and drop silent dead connections.
+	c.Conn.SetReadLimit(1 << 20)
+	_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.Conn.SetPongHandler(func(string) error {
+		return c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
 
 	for {
 		_, message, err := c.Conn.ReadMessage()
@@ -179,9 +224,18 @@ func (c *Client) readPump() {
 
 // writePump writes messages to the WebSocket connection
 func (c *Client) writePump() {
-	defer func() { _ = c.Conn.Close() }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in writePump: %v", r)
+		}
+		// Deregister so a wedged readPump can't leave the client registered
+		// forever. The hub's membership check makes a second unregister no-op.
+		c.Hub.unregister <- c
+		_ = c.Conn.Close()
+	}()
 
 	for message := range c.Send {
+		_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 			log.Printf("WebSocket write error: %v", err)
 			break
@@ -197,8 +251,12 @@ func (c *Client) handleMessage(msg Message) {
 			Type:    "pong",
 			Payload: "pong",
 		}
-		data, _ := json.Marshal(response)
-		c.Send <- data
+		data, err := json.Marshal(response)
+		if err != nil {
+			return
+		}
+		// Route through the hub so the send is serialized against channel close.
+		c.Hub.SendToClient(c.ID, data)
 
 	case "broadcast":
 		data, _ := json.Marshal(msg)
@@ -210,7 +268,7 @@ func (c *Client) handleMessage(msg Message) {
 }
 
 // BroadcastMessage broadcasts a message to all connected clients
-func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
+func BroadcastMessage(hub *Hub, messageType string, payload any) {
 	msg := Message{
 		Type:    messageType,
 		Payload: payload,
@@ -223,9 +281,9 @@ func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
 	hub.Broadcast(data)
 }
 
-// GetHubStats returns hub statistics
-func GetHubStats(hub *Hub) map[string]interface{} {
-	return map[string]interface{}{
-		"connected_clients": hub.GetConnectedClients(),
+// Stats returns hub statistics
+func (h *Hub) Stats() map[string]any {
+	return map[string]any{
+		"connected_clients": h.ConnectedClients(),
 	}
 }

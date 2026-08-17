@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,10 +14,14 @@ import (
 	"github.com/spf13/afero"
 )
 
+// ErrNotInitialized is returned when the afero manager is used before Init.
+var ErrNotInitialized = errors.New("afero manager not initialized")
+
 // assets is the global singleton Afero manager
 var (
-	instance *aferoManager
-	once     sync.Once
+	instance    *aferoManager
+	initOnce    sync.Once
+	factoryOnce sync.Once
 )
 
 // aferoManager represents the singleton Afero filesystem manager
@@ -26,12 +31,10 @@ type aferoManager struct {
 	mu      sync.RWMutex
 }
 
-
-
 // Init initializes the singleton Afero manager with the given configuration
 // This function is safe to call multiple times - subsequent calls will be ignored
 func Init(embedFS embed.FS, aliasMap map[string]string, isDev bool) {
-	once.Do(func() {
+	initOnce.Do(func() {
 		instance = &aferoManager{
 			aliases: make(map[string]string),
 		}
@@ -60,7 +63,7 @@ func Init(embedFS embed.FS, aliasMap map[string]string, isDev bool) {
 // Returns the file content as bytes and any error encountered
 func Read(alias string) ([]byte, error) {
 	if instance == nil {
-		return nil, fmt.Errorf("afero manager not initialized. Call Init() first")
+		return nil, fmt.Errorf("afero manager not initialized: %w", ErrNotInitialized)
 	}
 
 	instance.mu.RLock()
@@ -80,7 +83,7 @@ func Read(alias string) ([]byte, error) {
 // The caller is responsible for closing the returned ReadCloser
 func Stream(alias string) (io.ReadCloser, error) {
 	if instance == nil {
-		return nil, fmt.Errorf("afero manager not initialized. Call Init() first")
+		return nil, fmt.Errorf("afero manager not initialized: %w", ErrNotInitialized)
 	}
 
 	instance.mu.RLock()
@@ -134,76 +137,33 @@ func (m *aferoManager) resolveAlias(alias string) (string, error) {
 	return physicalPath, nil
 }
 
-// GetAliases returns a copy of all configured aliases
-// This is useful for debugging or introspection
-func GetAliases() map[string]string {
+func (m *aferoManager) Name() string { return "Afero Filesystem" }
+
+func (m *aferoManager) GetStatus() map[string]any {
 	if instance == nil {
-		return make(map[string]string)
-	}
-
-	instance.mu.RLock()
-	defer instance.mu.RUnlock()
-
-	// Return a copy to prevent external mutations
-	aliases := make(map[string]string)
-	for alias, path := range instance.aliases {
-		aliases[alias] = path
-	}
-
-	return aliases
-}
-
-// GetFileSystem returns the underlying Afero filesystem
-// This is useful for advanced operations that need direct filesystem access
-func GetFileSystem() afero.Fs {
-	if instance == nil {
-		return nil
-	}
-
-	instance.mu.RLock()
-	defer instance.mu.RUnlock()
-
-	return instance.fs
-}
-
-// ResetForTesting resets the singleton for testing purposes
-// This function should only be used in tests
-func ResetForTesting() {
-	instance = nil
-	once = sync.Once{}
-}
-
-// Name returns the component name
-func (m *aferoManager) Name() string {
-	return "Afero Filesystem"
-}
-
-// GetStatus returns the current status
-func (m *aferoManager) GetStatus() map[string]interface{} {
-	if instance == nil {
-		return map[string]interface{}{"initialized": false}
+		return map[string]any{"initialized": false}
 	}
 	instance.mu.RLock()
 	defer instance.mu.RUnlock()
-	return map[string]interface{}{
+	return map[string]any{
 		"initialized": true,
+		"connected":   true,
 		"aliases":     len(instance.aliases),
 	}
 }
 
-// Close cleans up the filesystem manager
-func (m *aferoManager) Close() error {
-	return nil
-}
+func (m *aferoManager) Close() error { return nil }
 
 func init() {
 	// Register as infrastructure component — uses OS filesystem by default.
 	// Call Init() separately with an embed.FS to layer embed on top.
 	RegisterComponent("afero", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
-		once.Do(func() {
-			instance = &aferoManager{
-				fs:      afero.NewOsFs(),
-				aliases: make(map[string]string),
+		factoryOnce.Do(func() {
+			if instance == nil {
+				instance = &aferoManager{
+					fs:      afero.NewOsFs(),
+					aliases: make(map[string]string),
+				}
 			}
 		})
 		l.Info("Afero filesystem manager initialized (OS filesystem)")

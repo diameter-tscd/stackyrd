@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"math"
 	"strconv"
 
 	"stackyrd/config"
@@ -8,6 +9,7 @@ import (
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
+	"stackyrd/pkg/request"
 	"stackyrd/pkg/response"
 
 	"github.com/labstack/echo/v4"
@@ -30,7 +32,7 @@ func NewGrafanaService(grafanaManager *infrastructure.GrafanaManager, enabled bo
 func (s *GrafanaService) Name() string     { return "Grafana Service" }
 func (s *GrafanaService) WireName() string { return "grafana-service" }
 func (s *GrafanaService) Enabled() bool    { return s.enabled }
-func (s *GrafanaService) Get() interface{} { return s }
+func (s *GrafanaService) Get() any { return s }
 func (s *GrafanaService) Endpoints() []string {
 	return []string{"/grafana/dashboards", "/grafana/datasources", "/grafana/annotations", "/grafana/health"}
 }
@@ -56,7 +58,7 @@ func (s *GrafanaService) RegisterRoutes(g *echo.Group) {
 
 func (s *GrafanaService) createDashboard(c echo.Context) error {
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.Bind(&dashboard); err != nil {
+	if err := request.Bind(c, &dashboard); err != nil {
 		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
@@ -71,12 +73,12 @@ func (s *GrafanaService) createDashboard(c echo.Context) error {
 
 func (s *GrafanaService) updateDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	var dashboard infrastructure.GrafanaDashboard
-	if err := c.Bind(&dashboard); err != nil {
+	if err := request.Bind(c, &dashboard); err != nil {
 		return response.BadRequest(c, "Invalid dashboard data")
 	}
 
@@ -93,8 +95,8 @@ func (s *GrafanaService) updateDashboard(c echo.Context) error {
 
 func (s *GrafanaService) getDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	dashboard, err := s.grafanaManager.GetDashboard(c.Request().Context(), uid)
@@ -108,8 +110,8 @@ func (s *GrafanaService) getDashboard(c echo.Context) error {
 
 func (s *GrafanaService) deleteDashboard(c echo.Context) error {
 	uid := c.Param("uid")
-	if uid == "" {
-		return response.BadRequest(c, "Dashboard UID is required")
+	if !validUID(uid) {
+		return response.BadRequest(c, "Invalid dashboard UID")
 	}
 
 	err := s.grafanaManager.DeleteDashboard(c.Request().Context(), uid)
@@ -119,6 +121,17 @@ func (s *GrafanaService) deleteDashboard(c echo.Context) error {
 	}
 
 	return response.Success(c, nil, "Dashboard deleted successfully")
+}
+
+// validUID rejects anything that could alter the Grafana URL path. Grafana
+// dashboard UIDs are alphanumeric with hyphens/underscores.
+func validUID(uid string) bool {
+	for _, r := range uid {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return uid != ""
 }
 
 func (s *GrafanaService) listDashboards(c echo.Context) error {
@@ -143,24 +156,33 @@ func (s *GrafanaService) listDashboards(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to list dashboards")
 	}
 
+	total := len(dashboards)
+
+	// Clamp page so (page-1)*perPage can never overflow into a negative start.
+	if page > math.MaxInt/perPage {
+		page = math.MaxInt / perPage
+	}
 	start := (page - 1) * perPage
+	if start < 0 {
+		start = 0
+	}
 	end := start + perPage
 
-	if start >= len(dashboards) {
+	if start >= total {
 		dashboards = []infrastructure.GrafanaDashboard{}
-	} else if end > len(dashboards) {
+	} else if end > total {
 		dashboards = dashboards[start:]
 	} else {
 		dashboards = dashboards[start:end]
 	}
 
-	meta := response.CalculateMeta(page, perPage, int64(len(dashboards)))
+	meta := response.CalculateMeta(page, perPage, int64(total))
 	return response.SuccessWithMeta(c, dashboards, meta, "Dashboards retrieved successfully")
 }
 
 func (s *GrafanaService) createDataSource(c echo.Context) error {
 	var ds infrastructure.GrafanaDataSource
-	if err := c.Bind(&ds); err != nil {
+	if err := request.Bind(c, &ds); err != nil {
 		return response.BadRequest(c, "Invalid data source data")
 	}
 
@@ -175,7 +197,7 @@ func (s *GrafanaService) createDataSource(c echo.Context) error {
 
 func (s *GrafanaService) createAnnotation(c echo.Context) error {
 	var annotation infrastructure.GrafanaAnnotation
-	if err := c.Bind(&annotation); err != nil {
+	if err := request.Bind(c, &annotation); err != nil {
 		return response.BadRequest(c, "Invalid annotation data")
 	}
 
@@ -199,18 +221,18 @@ func (s *GrafanaService) getHealth(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterServiceWithDeps("grafana_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
 
 		if !helper.IsServiceEnabled("grafana_service") {
 			return nil
 		}
 
-		grafanaManager, ok := registry.GetTyped[infrastructure.GrafanaManager](deps, "grafana")
-		if !helper.RequireDependency("GrafanaManager", ok) {
+		grafanaManager := deps.Grafana()
+		if !helper.RequireDependency("GrafanaManager", grafanaManager != nil) {
 			return nil
 		}
 
-		return NewGrafanaService(&grafanaManager, true, logger)
+		return NewGrafanaService(grafanaManager, true, logger)
 	})
 }

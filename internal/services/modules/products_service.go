@@ -1,6 +1,8 @@
 package modules
 
 import (
+	"slices"
+
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
@@ -46,7 +48,7 @@ func (s *ProductsService) Endpoints() []string {
 	}
 }
 
-func (s *ProductsService) Get() interface{} {
+func (s *ProductsService) Get() any {
 	return s
 }
 
@@ -64,11 +66,11 @@ var products = []ProductItem{
 }
 
 func (s *ProductsService) getProducts(c echo.Context) error {
-	return response.Success(c, products, "Products retrieved successfully")
+	return response.Success(c, slices.Clone(products), "Products retrieved successfully")
 }
 
 func init() {
-	registry.RegisterService("products_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("products_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewProductsService(config.Services.IsEnabled("products_service"), logger)
 	})
 }

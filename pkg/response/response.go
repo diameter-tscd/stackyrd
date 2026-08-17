@@ -1,7 +1,9 @@
 package response
 
 import (
+	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -11,18 +13,18 @@ type Response struct {
 	Success       bool         `json:"success"`
 	Status        int          `json:"status"`
 	Message       string       `json:"message,omitempty"`
-	Data          interface{}  `json:"data,omitempty"`
+	Data          any  `json:"data,omitempty"`
 	Error         *ErrorDetail `json:"error,omitempty"`
 	Meta          *Meta        `json:"meta,omitempty"`
 	Timestamp     int64        `json:"timestamp"`
 	Datetime      string       `json:"datetime"`
-	CorrelationID string `json:"correlation_id,omitempty"`
+	CorrelationID string       `json:"correlation_id,omitempty"`
 }
 
 type ErrorDetail struct {
 	Code    string                 `json:"code"`
 	Message string                 `json:"message"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 type Meta struct {
@@ -30,7 +32,7 @@ type Meta struct {
 	PerPage    int                    `json:"per_page,omitempty"`
 	Total      int64                  `json:"total,omitempty"`
 	TotalPages int                    `json:"total_pages,omitempty"`
-	Extra      map[string]interface{} `json:"extra,omitempty"`
+	Extra      map[string]any `json:"extra,omitempty"`
 }
 
 type PaginationRequest struct {
@@ -58,7 +60,12 @@ func (p *PaginationRequest) GetPerPage() int {
 }
 
 func (p *PaginationRequest) GetOffset() int {
-	return (p.GetPage() - 1) * p.GetPerPage()
+	page := p.GetPage()
+	perPage := p.GetPerPage()
+	if page > math.MaxInt/perPage {
+		page = math.MaxInt / perPage
+	}
+	return (page - 1) * perPage
 }
 
 func (p *PaginationRequest) GetOrder() string {
@@ -68,66 +75,95 @@ func (p *PaginationRequest) GetOrder() string {
 	return p.Order
 }
 
-func Success(c echo.Context, data interface{}, message ...string) error {
+// sync.Pool for Response structs to reduce allocations
+var responsePool = sync.Pool{
+	New: func() any { return &Response{} },
+}
+
+func getPooledResponse() *Response {
+	resp, ok := responsePool.Get().(*Response)
+	if !ok || resp == nil {
+		return &Response{}
+	}
+	return resp
+}
+
+func Success(c echo.Context, data any, message ...string) error {
+	resp := getPooledResponse()
+	// Reset to zero values
+	*resp = Response{}
+
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	return c.JSON(http.StatusOK, Response{
-		Success:       true,
-		Status:        http.StatusOK,
-		Message:       msg,
-		Data:          data,
-		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
-		CorrelationID: getCorrelationID(c),
-	})
+	resp.Success = true
+	resp.Status = http.StatusOK
+	resp.Message = msg
+	resp.Data = data
+	resp.Timestamp = now.Unix()
+	resp.Datetime = now.Format(time.RFC3339)
+	resp.CorrelationID = getCorrelationID(c)
+
+	err := c.JSON(http.StatusOK, resp)
+	responsePool.Put(resp)
+	return err
 }
 
-func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...string) error {
+func SuccessWithMeta(c echo.Context, data any, meta *Meta, message ...string) error {
+	resp := getPooledResponse()
+	*resp = Response{}
+
 	msg := ""
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	return c.JSON(http.StatusOK, Response{
-		Success:       true,
-		Status:        http.StatusOK,
-		Message:       msg,
-		Data:          data,
-		Meta:          meta,
-		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
-		CorrelationID: getCorrelationID(c),
-	})
+	resp.Success = true
+	resp.Status = http.StatusOK
+	resp.Message = msg
+	resp.Data = data
+	resp.Meta = meta
+	resp.Timestamp = now.Unix()
+	resp.Datetime = now.Format(time.RFC3339)
+	resp.CorrelationID = getCorrelationID(c)
+
+	err := c.JSON(http.StatusOK, resp)
+	responsePool.Put(resp)
+	return err
 }
 
-func Created(c echo.Context, data interface{}, message ...string) error {
+func Created(c echo.Context, data any, message ...string) error {
+	resp := getPooledResponse()
+	*resp = Response{}
+
 	msg := "Resource created successfully"
 	if len(message) > 0 {
 		msg = message[0]
 	}
 
 	now := time.Now()
-	return c.JSON(http.StatusCreated, Response{
-		Success:       true,
-		Status:        http.StatusCreated,
-		Message:       msg,
-		Data:          data,
-		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
-		CorrelationID: getCorrelationID(c),
-	})
+	resp.Success = true
+	resp.Status = http.StatusCreated
+	resp.Message = msg
+	resp.Data = data
+	resp.Timestamp = now.Unix()
+	resp.Datetime = now.Format(time.RFC3339)
+	resp.CorrelationID = getCorrelationID(c)
+
+	err := c.JSON(http.StatusCreated, resp)
+	responsePool.Put(resp)
+	return err
 }
 
 func NoContent(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func BadRequest(c echo.Context, message string, details ...map[string]interface{}) error {
+func BadRequest(c echo.Context, message string, details ...map[string]any) error {
 	return Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
 }
 
@@ -155,12 +191,12 @@ func NotFound(c echo.Context, message ...string) error {
 	return Error(c, http.StatusNotFound, "NOT_FOUND", msg)
 }
 
-func Conflict(c echo.Context, message string, details ...map[string]interface{}) error {
+func Conflict(c echo.Context, message string, details ...map[string]any) error {
 	return Error(c, http.StatusConflict, "CONFLICT", message, details...)
 }
 
 func ValidationError(c echo.Context, message string, details map[string]string) error {
-	errorDetails := make(map[string]interface{})
+	errorDetails := make(map[string]any, len(details))
 	for k, v := range details {
 		errorDetails[k] = v
 	}
@@ -183,25 +219,35 @@ func ServiceUnavailable(c echo.Context, message ...string) error {
 	return Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
 }
 
-func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) error {
-	var errorDetails map[string]interface{}
+func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]any) error {
+	var errorDetails map[string]any
 	if len(details) > 0 {
 		errorDetails = details[0]
 	}
 
 	now := time.Now()
-	return c.JSON(statusCode, Response{
-		Success: false,
-		Status:  statusCode,
-		Error: &ErrorDetail{
-			Code:    errorCode,
-			Message: message,
-			Details: errorDetails,
-		},
-		Timestamp:     now.Unix(),
-		Datetime:      time.Unix(now.Unix(), 0).Format(time.RFC3339),
-		CorrelationID: getCorrelationID(c),
-	})
+	resp := getPooledResponse()
+	*resp = Response{}
+
+	errorDetailsCopy := make(map[string]any, len(errorDetails))
+	for k, v := range errorDetails {
+		errorDetailsCopy[k] = v
+	}
+
+	resp.Success = false
+	resp.Status = statusCode
+	resp.Error = &ErrorDetail{
+		Code:    errorCode,
+		Message: message,
+		Details: errorDetailsCopy,
+	}
+	resp.Timestamp = now.Unix()
+	resp.Datetime = now.Format(time.RFC3339)
+	resp.CorrelationID = getCorrelationID(c)
+
+	err := c.JSON(statusCode, resp)
+	responsePool.Put(resp)
+	return err
 }
 
 func getCorrelationID(c echo.Context) string {
@@ -211,14 +257,21 @@ func getCorrelationID(c echo.Context) string {
 	if id := c.Request().Header.Get("X-Correlation-ID"); id != "" {
 		return id
 	}
-	// No upstream ID: leave it empty and let the omitempty tag drop the field
-	// rather than paying 2 atomic adds + formatting for every response.
 	return ""
 }
 
-func CalculateMeta(page, perPage int, total int64, extra ...map[string]interface{}) *Meta {
+func CalculateMeta(page, perPage int, total int64, extra ...map[string]any) *Meta {
+	if perPage < 1 {
+		perPage = 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	if total > math.MaxInt {
+		total = math.MaxInt
+	}
 	totalPages := int(total) / perPage
-	if int(total)%perPage > 0 {
+	if total%int64(perPage) > 0 {
 		totalPages++
 	}
 

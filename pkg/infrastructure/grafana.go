@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +27,7 @@ type GrafanaManager struct {
 	logger   *logger.Logger
 
 	// statusCache avoids re-running an HTTP health-check on every /health poll.
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.Mutex
 }
@@ -37,19 +37,19 @@ type grafanaLoggerAdapter struct {
 	logger *logger.Logger
 }
 
-func (a *grafanaLoggerAdapter) Error(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Error(msg string, keysAndValues ...any) {
 	a.logger.Error(msg, nil, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Info(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Info(msg string, keysAndValues ...any) {
 	a.logger.Info(msg, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Debug(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Debug(msg string, keysAndValues ...any) {
 	a.logger.Debug(msg, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Warn(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Warn(msg string, keysAndValues ...any) {
 	a.logger.Warn(msg, keysAndValues...)
 }
 
@@ -68,7 +68,7 @@ type GrafanaDashboard struct {
 	Refresh       string             `json:"refresh,omitempty"`
 	SchemaVersion int                `json:"schemaVersion,omitempty"`
 	Version       int                `json:"version,omitempty"`
-	Links         []interface{}      `json:"links,omitempty"`
+	Links         []any      `json:"links,omitempty"`
 }
 
 // GrafanaPanel represents a dashboard panel
@@ -79,7 +79,7 @@ type GrafanaPanel struct {
 	GridPos       GrafanaGridPos         `json:"gridPos"`
 	Targets       []GrafanaTarget        `json:"targets,omitempty"`
 	FieldConfig   GrafanaFieldConfig     `json:"fieldConfig,omitempty"`
-	Options       map[string]interface{} `json:"options,omitempty"`
+	Options       map[string]any `json:"options,omitempty"`
 	PluginVersion string                 `json:"pluginVersion,omitempty"`
 }
 
@@ -125,27 +125,27 @@ type GrafanaTemplating struct {
 type GrafanaTemplateVar struct {
 	Name       string      `json:"name"`
 	Type       string      `json:"type"`
-	Datasource interface{} `json:"datasource,omitempty"`
+	Datasource any `json:"datasource,omitempty"`
 	Query      string      `json:"query,omitempty"`
 	Label      string      `json:"label,omitempty"`
 }
 
 // GrafanaAnnotations represents annotation settings
 type GrafanaAnnotations struct {
-	List []interface{} `json:"list,omitempty"`
+	List []any `json:"list,omitempty"`
 }
 
 // GrafanaFieldConfig represents field configuration
 type GrafanaFieldConfig struct {
 	Defaults  GrafanaFieldDefaults `json:"defaults,omitempty"`
-	Overrides []interface{}        `json:"overrides,omitempty"`
+	Overrides []any        `json:"overrides,omitempty"`
 }
 
 // GrafanaFieldDefaults represents default field settings
 type GrafanaFieldDefaults struct {
 	Unit     string                 `json:"unit,omitempty"`
 	Decimals *int                   `json:"decimals,omitempty"`
-	Custom   map[string]interface{} `json:"custom,omitempty"`
+	Custom   map[string]any `json:"custom,omitempty"`
 }
 
 // GrafanaDataSource represents a Grafana data source
@@ -162,8 +162,8 @@ type GrafanaDataSource struct {
 	BasicAuth         bool                   `json:"basicAuth,omitempty"`
 	BasicAuthUser     string                 `json:"basicAuthUser,omitempty"`
 	BasicAuthPassword string                 `json:"basicAuthPassword,omitempty"`
-	JSONData          map[string]interface{} `json:"jsonData,omitempty"`
-	SecureJSONData    map[string]interface{} `json:"secureJsonData,omitempty"`
+	JSONData          map[string]any `json:"jsonData,omitempty"`
+	SecureJSONData    map[string]any `json:"secureJsonData,omitempty"`
 	ReadOnly          bool                   `json:"readOnly,omitempty"`
 }
 
@@ -176,7 +176,7 @@ type GrafanaAnnotation struct {
 	TimeEnd     int64                  `json:"timeEnd,omitempty"`
 	Tags        []string               `json:"tags,omitempty"`
 	Text        string                 `json:"text"`
-	Data        map[string]interface{} `json:"data,omitempty"`
+	Data        map[string]any `json:"data,omitempty"`
 }
 
 // Name returns the display name of the component
@@ -209,6 +209,9 @@ func NewGrafanaManager(cfg config.GrafanaConfig, logger *logger.Logger) (*Grafan
 		}
 		logger.Debug("Using API key authentication")
 	} else if cfg.Username != "" {
+		client.RequestLogHook = func(logger retryablehttp.Logger, req *http.Request, retryNumber int) {
+			req.SetBasicAuth(cfg.Username, cfg.Password)
+		}
 		logger.Debug("Using basic authentication", "username", cfg.Username)
 	}
 
@@ -223,7 +226,8 @@ func NewGrafanaManager(cfg config.GrafanaConfig, logger *logger.Logger) (*Grafan
 
 	// Test connection
 	if err := manager.testConnection(); err != nil {
-		logger.Error("Grafana connection test failed", err)
+		// Release any background HTTP transports before discarding the client
+		manager.Client.HTTPClient.CloseIdleConnections()
 		return nil, fmt.Errorf("failed to connect to Grafana: %w", err)
 	}
 
@@ -253,7 +257,6 @@ func (gm *GrafanaManager) testConnection() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		gm.logger.Error("Grafana health check failed", nil, "status", resp.StatusCode)
 		return fmt.Errorf("grafana health check failed with status: %d", resp.StatusCode)
 	}
 
@@ -264,35 +267,30 @@ func (gm *GrafanaManager) testConnection() error {
 func (gm *GrafanaManager) CreateDashboard(ctx context.Context, dashboard GrafanaDashboard) (*GrafanaDashboard, error) {
 	gm.logger.Info("Creating Grafana dashboard", "title", dashboard.Title)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"dashboard": dashboard,
 		"overwrite": false,
 	}
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		gm.logger.Error("Failed to marshal dashboard", err, "title", dashboard.Title)
 		return nil, fmt.Errorf("failed to marshal dashboard: %w", err)
 	}
 
 	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", gm.BaseURL+"/api/dashboards/db", bytes.NewReader(jsonData))
 	if err != nil {
-		gm.logger.Error("Failed to create HTTP request", err)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := gm.Client.Do(req)
 	if err != nil {
-		gm.logger.Error("HTTP request failed", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		gm.logger.Error("Grafana API returned error", nil, "status", resp.StatusCode, "response", string(body))
-		return nil, fmt.Errorf("failed to create dashboard: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to create dashboard (status: %d)", resp.StatusCode)
 	}
 
 	var result struct {
@@ -304,7 +302,6 @@ func (gm *GrafanaManager) CreateDashboard(ctx context.Context, dashboard Grafana
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		gm.logger.Error("Failed to decode response", err)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -318,7 +315,7 @@ func (gm *GrafanaManager) CreateDashboard(ctx context.Context, dashboard Grafana
 
 // UpdateDashboard updates an existing dashboard
 func (gm *GrafanaManager) UpdateDashboard(ctx context.Context, dashboard GrafanaDashboard) (*GrafanaDashboard, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"dashboard": dashboard,
 		"overwrite": true,
 	}
@@ -341,8 +338,7 @@ func (gm *GrafanaManager) UpdateDashboard(ctx context.Context, dashboard Grafana
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to update dashboard: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to update dashboard (status: %d)", resp.StatusCode)
 	}
 
 	var result struct {
@@ -381,8 +377,7 @@ func (gm *GrafanaManager) GetDashboard(ctx context.Context, uid string) (*Grafan
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("dashboard not found: %s", uid)
 		}
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to get dashboard: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to get dashboard (status: %d)", resp.StatusCode)
 	}
 
 	var result struct {
@@ -430,8 +425,7 @@ func (gm *GrafanaManager) DeleteDashboard(ctx context.Context, uid string) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to delete dashboard: %s (status: %d)", string(body), resp.StatusCode)
+		return fmt.Errorf("failed to delete dashboard (status: %d)", resp.StatusCode)
 	}
 
 	return nil
@@ -451,10 +445,8 @@ func (gm *GrafanaManager) ListDashboards(ctx context.Context) ([]GrafanaDashboar
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to list dashboards: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to list dashboards (status: %d)", resp.StatusCode)
 	}
-
 	var dashboards []struct {
 		ID          int      `json:"id"`
 		UID         string   `json:"uid"`
@@ -507,8 +499,7 @@ func (gm *GrafanaManager) CreateDataSource(ctx context.Context, ds GrafanaDataSo
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to create data source: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to create data source (status: %d)", resp.StatusCode)
 	}
 
 	var result GrafanaDataSource
@@ -539,8 +530,7 @@ func (gm *GrafanaManager) CreateAnnotation(ctx context.Context, annotation Grafa
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to create annotation: %s (status: %d)", string(body), resp.StatusCode)
+		return nil, fmt.Errorf("failed to create annotation (status: %d)", resp.StatusCode)
 	}
 
 	var result GrafanaAnnotation
@@ -552,7 +542,7 @@ func (gm *GrafanaManager) CreateAnnotation(ctx context.Context, annotation Grafa
 }
 
 // GetHealth returns Grafana health status
-func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}, error) {
+func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]any, error) {
 	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", gm.BaseURL+"/api/health", nil)
 	if err != nil {
 		return nil, err
@@ -564,7 +554,7 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode health response: %w", err)
 	}
@@ -573,8 +563,8 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}
 }
 
 // GetStatus returns the current status of the Grafana manager
-func (gm *GrafanaManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (gm *GrafanaManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if gm == nil {
 		stats["connected"] = false
 		return stats
@@ -585,17 +575,22 @@ func (gm *GrafanaManager) GetStatus() map[string]interface{} {
 	pool := gm.Pool
 
 	// Fast path: return cached result when still within TTL.
+	// Copy before mutating so concurrent fast-path callers never race on the
+	// shared cached map (concurrent map writes would panic).
 	gm.statusMu.Lock()
 	if time.Now().Before(gm.statusExpiry) && gm.statusCache != nil {
-		cached := gm.statusCache
+		out := make(map[string]any, len(gm.statusCache)+2)
+		for k, v := range gm.statusCache {
+			out[k] = v
+		}
 		gm.statusMu.Unlock()
 		if baseURL != "" {
-			cached["url"] = baseURL
+			out["url"] = baseURL
 		}
 		if pool != nil {
-			cached["pool_active"] = true
+			out["pool_active"] = true
 		}
-		return cached
+		return out
 	}
 	gm.statusMu.Unlock()
 
@@ -687,8 +682,7 @@ func (gm *GrafanaManager) SubmitAsyncJob(job func()) {
 	if gm.Pool != nil {
 		gm.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(gm.logger, job)
 	}
 }
 
@@ -696,6 +690,9 @@ func (gm *GrafanaManager) SubmitAsyncJob(job func()) {
 func (gm *GrafanaManager) Close() error {
 	if gm.Pool != nil {
 		gm.Pool.Close()
+	}
+	if gm.Client != nil && gm.Client.HTTPClient != nil {
+		gm.Client.HTTPClient.CloseIdleConnections()
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"stackyrd/config"
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
 )
@@ -47,7 +48,7 @@ type WebhookEvent struct {
 	ID        string                 `json:"id"`
 	Type      string                 `json:"type"`
 	Timestamp time.Time              `json:"timestamp"`
-	Data      map[string]interface{} `json:"data"`
+	Data      map[string]any `json:"data"`
 	Signature string                 `json:"signature,omitempty"`
 }
 
@@ -95,11 +96,17 @@ func (wm *WebhookManager) Trigger(event WebhookEvent) {
 	wm.mu.RUnlock()
 
 	for _, handler := range handlers {
-		wm.semaphore <- struct{}{}
-		go func(fn func(WebhookEvent)) {
-			defer func() { <-wm.semaphore }()
-			fn(event)
-		}(handler)
+		select {
+		case wm.semaphore <- struct{}{}:
+			go func(fn func(WebhookEvent)) {
+				defer func() { <-wm.semaphore }()
+				utils.GoSafe(nil, func() { fn(event) })
+			}(handler)
+		default:
+			// Semaphore saturated: run inline so a recursive Trigger from a
+			// handler can never deadlock, and delivery is not silently lost.
+			utils.GoSafe(nil, func() { handler(event) })
+		}
 	}
 }
 
@@ -107,6 +114,10 @@ func (wm *WebhookManager) Trigger(event WebhookEvent) {
 func (wm *WebhookManager) Send(ctx context.Context, event WebhookEvent) (*WebhookResponse, error) {
 	if !wm.config.Enabled {
 		return nil, fmt.Errorf("webhook is disabled")
+	}
+
+	if wm.config.MaxRetries < 0 {
+		wm.config.MaxRetries = 0
 	}
 
 	payload, err := json.Marshal(event)
@@ -118,16 +129,22 @@ func (wm *WebhookManager) Send(ctx context.Context, event WebhookEvent) (*Webhoo
 	if wm.config.Secret != "" {
 		signature := wm.SignPayload(payload)
 		event.Signature = signature
-		payload, _ = json.Marshal(event)
+		if payload, err = json.Marshal(event); err != nil {
+			return nil, err
+		}
 	}
 
 	var lastErr error
 	for attempt := 0; attempt <= wm.config.MaxRetries; attempt++ {
 		if attempt > 0 {
+			timer := time.NewTimer(wm.config.RetryDelay)
 			select {
 			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
 				return nil, ctx.Err()
-			case <-time.After(wm.config.RetryDelay):
+			case <-timer.C:
 			}
 		}
 
@@ -170,7 +187,8 @@ func (wm *WebhookManager) doRequest(ctx context.Context, payload []byte) (*Webho
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	// Cap response body to bound memory usage from a hostile endpoint.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +242,8 @@ func (wh *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	// Cap request body to bound memory usage.
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
@@ -252,8 +271,8 @@ func (wh *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// GetStats returns webhook statistics
-func (wm *WebhookManager) GetStats() map[string]interface{} {
+// Stats returns webhook statistics
+func (wm *WebhookManager) Stats() map[string]any {
 	wm.mu.RLock()
 	defer wm.mu.RUnlock()
 
@@ -262,7 +281,7 @@ func (wm *WebhookManager) GetStats() map[string]interface{} {
 		eventTypes = append(eventTypes, eventType)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"enabled":     wm.config.Enabled,
 		"event_types": eventTypes,
 		"url":         wm.config.URL,
@@ -276,11 +295,14 @@ func (wm *WebhookManager) Name() string {
 }
 
 func (wm *WebhookManager) Close() error {
+	if wm.client != nil {
+		wm.client.CloseIdleConnections()
+	}
 	return nil
 }
 
-func (wm *WebhookManager) GetStatus() map[string]interface{} {
-	return wm.GetStats()
+func (wm *WebhookManager) GetStatus() map[string]any {
+	return wm.Stats()
 }
 
 // RouteHandlers returns HTTP routes for receiving webhooks

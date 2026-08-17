@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
@@ -15,9 +16,10 @@ type RedisManager struct {
 	Client *redis.Client
 	Pool   *WorkerPool // Async worker pool — lazily initialised on first async call
 	once   sync.Once
+	poolMu sync.Mutex
 
 	// statusCache avoids re-running Ping + PoolStats on every /health call.
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.RWMutex
 }
@@ -42,8 +44,12 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisManager, error) {
 	})
 
 	// Test connection
-	if err := client.Ping(context.Background()).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pingErr := client.Ping(pingCtx).Err()
+	pingCancel()
+	if pingErr != nil {
+		client.Close()
+		return nil, fmt.Errorf("failed to connect to redis: %w", pingErr)
 	}
 
 	return &RedisManager{
@@ -58,12 +64,14 @@ func (r *RedisManager) startPool() {
 	r.once.Do(func() {
 		pool := NewWorkerPool(10)
 		pool.Start()
+		r.poolMu.Lock()
 		r.Pool = pool
+		r.poolMu.Unlock()
 	})
 }
 
 // Set adds a key-value pair to Redis with a TTL.
-func (r *RedisManager) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (r *RedisManager) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	return r.Client.Set(ctx, key, value, ttl).Err()
 }
 
@@ -78,12 +86,12 @@ func (r *RedisManager) Delete(ctx context.Context, key string) error {
 }
 
 // Replace updates a key only if it exists (XX).
-func (r *RedisManager) Replace(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (r *RedisManager) Replace(ctx context.Context, key string, value any, ttl time.Duration) error {
 	return r.Client.SetXX(ctx, key, value, ttl).Err()
 }
 
-func (r *RedisManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (r *RedisManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if r == nil || r.Client == nil {
 		stats["connected"] = false
 		return stats
@@ -92,7 +100,10 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 	// Fast path: return cached result when still within TTL.
 	r.statusMu.RLock()
 	if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
-		cached := r.statusCache
+		cached := make(map[string]any, len(r.statusCache))
+		for k, v := range r.statusCache {
+			cached[k] = v
+		}
 		r.statusMu.RUnlock()
 		return cached
 	}
@@ -102,7 +113,9 @@ func (r *RedisManager) GetStatus() map[string]interface{} {
 	addr := r.Client.Options().Addr
 	db := r.Client.Options().DB
 
-	pong, err := r.Client.Ping(context.Background()).Result()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pong, err := r.Client.Ping(pingCtx).Result()
+	pingCancel()
 	stats["connected"] = err == nil
 	stats["ping"] = pong
 	stats["addr"] = addr
@@ -154,7 +167,7 @@ func (r *RedisManager) GetValue(ctx context.Context, key string) (string, error)
 // Async Redis Operations
 
 // SetAsync asynchronously sets a key-value pair to Redis with a TTL.
-func (r *RedisManager) SetAsync(ctx context.Context, key string, value interface{}, ttl time.Duration) *AsyncResult[struct{}] {
+func (r *RedisManager) SetAsync(ctx context.Context, key string, value any, ttl time.Duration) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := r.Set(ctx, key, value, ttl)
 		return struct{}{}, err
@@ -177,7 +190,7 @@ func (r *RedisManager) DeleteAsync(ctx context.Context, key string) *AsyncResult
 }
 
 // ReplaceAsync asynchronously updates a key only if it exists (XX).
-func (r *RedisManager) ReplaceAsync(ctx context.Context, key string, value interface{}, ttl time.Duration) *AsyncResult[struct{}] {
+func (r *RedisManager) ReplaceAsync(ctx context.Context, key string, value any, ttl time.Duration) *AsyncResult[struct{}] {
 	return ExecuteAsync(ctx, func(ctx context.Context) (struct{}, error) {
 		err := r.Replace(ctx, key, value, ttl)
 		return struct{}{}, err
@@ -208,7 +221,7 @@ func (r *RedisManager) GetValueAsync(ctx context.Context, key string) *AsyncResu
 // Batch Operations
 
 // SetBatchAsync asynchronously sets multiple key-value pairs.
-func (r *RedisManager) SetBatchAsync(ctx context.Context, kvPairs map[string]interface{}, ttl time.Duration) *BatchAsyncResult[struct{}] {
+func (r *RedisManager) SetBatchAsync(ctx context.Context, kvPairs map[string]any, ttl time.Duration) *BatchAsyncResult[struct{}] {
 	operations := make([]AsyncOperation[struct{}], 0, len(kvPairs))
 
 	for key, value := range kvPairs {
@@ -257,15 +270,17 @@ func (r *RedisManager) SubmitAsyncJob(job func()) {
 	if r.Pool != nil {
 		r.Pool.Submit(job)
 	} else {
-		// Fallback to direct execution if pool not available
-		go job()
+		go utils.GoSafe(nil, job)
 	}
 }
 
 // Close closes the Redis manager and its worker pool.
 func (r *RedisManager) Close() error {
-	if r.Pool != nil {
-		r.Pool.Close()
+	r.poolMu.Lock()
+	pool := r.Pool
+	r.poolMu.Unlock()
+	if pool != nil {
+		pool.Close()
 	}
 	if r.Client != nil {
 		return r.Client.Close()

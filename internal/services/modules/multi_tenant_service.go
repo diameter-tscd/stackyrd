@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -61,7 +62,7 @@ func (s *MultiTenantService) Enabled() bool    { return s.enabled }
 func (s *MultiTenantService) Endpoints() []string {
 	return []string{"/orders/{tenant}", "/orders/{tenant}/{id}"}
 }
-func (s *MultiTenantService) Get() interface{} { return s }
+func (s *MultiTenantService) Get() any { return s }
 
 func (s *MultiTenantService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/orders")
@@ -73,18 +74,31 @@ func (s *MultiTenantService) RegisterRoutes(g *echo.Group) {
 	sub.DELETE("/:tenant/:id", s.deleteOrder)
 }
 
+// tenantDB resolves a tenant connection, guarding against a nil/uninitialized ORM.
+func (s *MultiTenantService) tenantDB(c echo.Context, tenant string) (*infrastructure.PostgresManager, error) {
+	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
+	if !exists || dbConn == nil {
+		return nil, response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	}
+	if dbConn.ORM == nil {
+		return nil, response.ServiceUnavailable(c, "Tenant database is not initialized")
+	}
+	return dbConn, nil
+}
+
 func (s *MultiTenantService) listOrdersByTenant(c echo.Context) error {
 	tenant := c.Param("tenant")
 
-	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	dbConn, dbErr := s.tenantDB(c, tenant)
+	if dbErr != nil {
+		return dbErr
 	}
 
 	var orders []MultiTenantOrder
 	result := dbConn.ORM.Where("tenant_id = ?", tenant).Order("created_at DESC").Find(&orders)
 	if result.Error != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to list tenant orders", result.Error, "tenant", tenant)
+		return response.InternalServerError(c, "Failed to list orders")
 	}
 
 	return response.Success(c, orders, fmt.Sprintf("Orders retrieved from tenant '%s' database", tenant))
@@ -93,9 +107,9 @@ func (s *MultiTenantService) listOrdersByTenant(c echo.Context) error {
 func (s *MultiTenantService) createOrder(c echo.Context) error {
 	tenant := c.Param("tenant")
 
-	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	dbConn, dbErr := s.tenantDB(c, tenant)
+	if dbErr != nil {
+		return dbErr
 	}
 
 	var order MultiTenantOrder
@@ -103,12 +117,17 @@ func (s *MultiTenantService) createOrder(c echo.Context) error {
 		return response.BadRequest(c, "Invalid order data")
 	}
 
+	if order.Quantity < 0 || order.TotalPrice < 0 {
+		return response.BadRequest(c, "Quantity and total price must be non-negative")
+	}
+
 	order.TenantID = tenant
 	order.Status = "pending"
 
 	result := dbConn.ORM.Create(&order)
 	if result.Error != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to create order in tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to create tenant order", result.Error, "tenant", tenant)
+		return response.InternalServerError(c, "Failed to create order")
 	}
 
 	return response.Created(c, order, fmt.Sprintf("Order created in tenant '%s' database", tenant))
@@ -122,18 +141,19 @@ func (s *MultiTenantService) getOrderByTenant(c echo.Context) error {
 		return response.BadRequest(c, "Invalid order ID")
 	}
 
-	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	dbConn, dbErr := s.tenantDB(c, tenant)
+	if dbErr != nil {
+		return dbErr
 	}
 
 	var order MultiTenantOrder
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).First(&order)
 	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
 		}
-		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to fetch tenant order", result.Error, "tenant", tenant, "id", id)
+		return response.InternalServerError(c, "Failed to fetch order")
 	}
 
 	return response.Success(c, order, fmt.Sprintf("Order retrieved from tenant '%s' database", tenant))
@@ -147,9 +167,9 @@ func (s *MultiTenantService) updateOrder(c echo.Context) error {
 		return response.BadRequest(c, "Invalid order ID")
 	}
 
-	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	dbConn, dbErr := s.tenantDB(c, tenant)
+	if dbErr != nil {
+		return dbErr
 	}
 
 	var updateData MultiTenantOrder
@@ -157,16 +177,21 @@ func (s *MultiTenantService) updateOrder(c echo.Context) error {
 		return response.BadRequest(c, "Invalid update data")
 	}
 
+	if updateData.Quantity < 0 || updateData.TotalPrice < 0 {
+		return response.BadRequest(c, "Quantity and total price must be non-negative")
+	}
+
 	var order MultiTenantOrder
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).First(&order)
 	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return response.NotFound(c, fmt.Sprintf("Order not found in tenant '%s' database", tenant))
 		}
-		return response.InternalServerError(c, fmt.Sprintf("Failed to query tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to fetch tenant order", result.Error, "tenant", tenant, "id", id)
+		return response.InternalServerError(c, "Failed to fetch order")
 	}
 
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if updateData.CustomerID != 0 {
 		updates["customer_id"] = updateData.CustomerID
 	}
@@ -189,7 +214,8 @@ func (s *MultiTenantService) updateOrder(c echo.Context) error {
 
 	result = dbConn.ORM.Model(&order).Updates(updates)
 	if result.Error != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to update order in tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to update tenant order", result.Error, "tenant", tenant, "id", id)
+		return response.InternalServerError(c, "Failed to update order")
 	}
 
 	return response.Success(c, nil, fmt.Sprintf("Order updated in tenant '%s' database", tenant))
@@ -203,14 +229,15 @@ func (s *MultiTenantService) deleteOrder(c echo.Context) error {
 		return response.BadRequest(c, "Invalid order ID")
 	}
 
-	dbConn, exists := s.postgresConnectionManager.GetConnection(tenant)
-	if !exists {
-		return response.NotFound(c, fmt.Sprintf("Tenant database '%s' not found or not connected", tenant))
+	dbConn, dbErr := s.tenantDB(c, tenant)
+	if dbErr != nil {
+		return dbErr
 	}
 
 	result := dbConn.ORM.Where("id = ? AND tenant_id = ?", id, tenant).Delete(&MultiTenantOrder{})
 	if result.Error != nil {
-		return response.InternalServerError(c, fmt.Sprintf("Failed to delete order from tenant '%s' database: %v", tenant, result.Error))
+		s.logger.Error("Failed to delete tenant order", result.Error, "tenant", tenant, "id", id)
+		return response.InternalServerError(c, "Failed to delete order")
 	}
 
 	if result.RowsAffected == 0 {
@@ -221,18 +248,18 @@ func (s *MultiTenantService) deleteOrder(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("multi_tenant_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterServiceWithDeps("multi_tenant_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
 		helper := registry.NewServiceHelper(config, logger, deps)
 
 		if !helper.IsServiceEnabled("multi_tenant_service") {
 			return nil
 		}
 
-		postgresConnectionManager, ok := registry.GetTyped[infrastructure.PostgresConnectionManager](deps, "postgres")
-		if !helper.RequireDependency("PostgresConnectionManager", ok) {
+		postgresConnectionManager := deps.Postgres()
+		if !helper.RequireDependency("PostgresConnectionManager", postgresConnectionManager != nil) {
 			return nil
 		}
 
-		return NewMultiTenantService(&postgresConnectionManager, true, logger)
+		return NewMultiTenantService(postgresConnectionManager, true, logger)
 	})
 }

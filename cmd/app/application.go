@@ -31,6 +31,10 @@ func NewApplication(configManager *ConfigManager) *Application {
 
 // Run executes the application lifecycle
 func (app *Application) Run() error {
+	if app.configManager == nil {
+		return fmt.Errorf("application config manager is nil")
+	}
+
 	// Clear the terminal screen for a fresh start
 	utils.ClearScreen()
 
@@ -76,7 +80,7 @@ func executeSteps(ctx *AppContext, steps []AppStep) error {
 func (app *Application) loadConfigStep(ctx *AppContext) error {
 	cfg, err := app.configManager.LoadConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 	app.config = cfg
 	return nil
@@ -91,7 +95,7 @@ func (app *Application) validateConfigStep(ctx *AppContext) error {
 func (app *Application) loadBannerStep(ctx *AppContext) error {
 	bannerText, err := app.configManager.LoadBanner(app.config)
 	if err != nil {
-		return err
+		return fmt.Errorf("load banner: %w", err)
 	}
 	app.bannerText = bannerText
 	return nil
@@ -130,6 +134,8 @@ func (app *Application) startAppStep(ctx *AppContext) error {
 
 // runWithTUI runs the application with fancy TUI interface
 func (app *Application) runWithTUI() {
+	// Set TUI theme from config
+	tui.SetThemeName(app.config.App.Theme)
 
 	// Setup TUI configuration
 	tuiConfig := tui.StartupConfig{
@@ -207,11 +213,10 @@ func (app *Application) runWithConsole() {
 
 	// Start server
 	srv := server.New(app.config, app.logger)
+	srvErr := make(chan error, 1)
 	go func() {
 		app.logger.Info("HTTP server listening", "port", app.config.Server.Port)
-		if err := srv.Start(); err != nil {
-			app.logger.Fatal("Server error", err)
-		}
+		srvErr <- srv.Start()
 	}()
 
 	// Wait for server to start
@@ -219,7 +224,7 @@ func (app *Application) runWithConsole() {
 	app.logger.Info("Server ready", "url", "http://localhost:"+app.config.Server.Port)
 
 	// Handle shutdown
-	app.handleConsoleShutdown(srv)
+	app.handleConsoleShutdown(srv, srvErr)
 }
 
 // createLiveTUI creates and configures the runtime dashboard TUI
@@ -238,6 +243,7 @@ func (app *Application) createLiveTUI() *tui.TerminalTUI {
 func (app *Application) handleShutdown(liveTUI *tui.TerminalTUI, srv *server.Server) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
 
 	select {
 	case <-sigChan:
@@ -254,21 +260,29 @@ func (app *Application) handleShutdown(liveTUI *tui.TerminalTUI, srv *server.Ser
 
 	liveTUI.Stop()
 	time.Sleep(ShutdownDelay)
-	os.Exit(0)
 }
 
 // handleConsoleShutdown handles graceful shutdown for console mode
-func (app *Application) handleConsoleShutdown(srv *server.Server) {
+func (app *Application) handleConsoleShutdown(srv *server.Server, srvErr <-chan error) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	defer signal.Stop(sigChan)
+
+	select {
+	case err := <-srvErr:
+		// Server exited on its own (fatal listener error): report, don't call os.Exit.
+		if err != nil {
+			app.logger.Error("Server error", err)
+		}
+		return
+	case <-sigChan:
+	}
 
 	app.logger.Warn("Shutting down...")
 	if err := srv.Shutdown(context.Background(), app.logger); err != nil {
 		app.logger.Error("Server shutdown error", err)
 	}
 	time.Sleep(ShutdownDelay)
-	os.Exit(0)
 }
 
 // logAllServices logs the status of all services

@@ -2,12 +2,8 @@ package resilience
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
-)
-
-var (
-	ErrTimeout = errors.New("operation timed out")
 )
 
 // TimeoutConfig holds timeout configuration
@@ -35,16 +31,20 @@ func WithContext(ctx context.Context, fn func() error) error {
 	errChan := make(chan error, 1)
 
 	go func() {
-		errChan <- fn()
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in timed function: %v", r)
+			}
+			errChan <- err
+		}()
+		err = fn()
 	}()
 
 	select {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			return ErrTimeout
-		}
 		return ctx.Err()
 	}
 }
@@ -65,11 +65,18 @@ func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, err
 	}, 1)
 
 	go func() {
-		result, err := fn()
-		resultChan <- struct {
-			result T
-			err    error
-		}{result, err}
+		var result T
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in timed function: %v", r)
+			}
+			resultChan <- struct {
+				result T
+				err    error
+			}{result, err}
+		}()
+		result, err = fn()
 	}()
 
 	select {
@@ -77,9 +84,6 @@ func WithContextResult[T any](ctx context.Context, fn func() (T, error)) (T, err
 		return res.result, res.err
 	case <-ctx.Done():
 		var zero T
-		if ctx.Err() == context.DeadlineExceeded {
-			return zero, ErrTimeout
-		}
 		return zero, ctx.Err()
 	}
 }

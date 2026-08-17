@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,7 +44,7 @@ type DashboardModel struct {
 	filteredInfra []InfraStatus
 	filteredSvc   []ServiceStatus
 	filterText    string
-	showFilter    bool
+	showingFilter bool
 	cpuPercent    float64
 	memPercent    float64
 	memUsed       uint64
@@ -52,57 +54,57 @@ type DashboardModel struct {
 	width         int
 	height        int
 	frame         int // For animation frames
-	quitting      bool
+	isQuitting    bool
 }
 
 // Dashboard styles
 var (
 	dashTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8daea5")).
-			Background(lipgloss.Color("#282A36")).
+			Foreground(lipgloss.Color(TC("primary"))).
+			Background(lipgloss.Color(TC("dim"))).
 			Padding(0, 2)
 
 	dashBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#6272A4")).
-		Padding(0, 2)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(TC("dim"))).
+			Padding(0, 2)
 
 	dashHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#8BE9FD")).
+			Foreground(lipgloss.Color(TC("secondary"))).
 			MarginBottom(1)
 
 	dashLabelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	dashValueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2")).
+			Foreground(lipgloss.Color(TC("text"))).
 			Bold(true)
 
 	dashGoodStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#50FA7B"))
+			Foreground(lipgloss.Color(TC("success")))
 
 	dashWarnStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F1FA8C"))
+			Foreground(lipgloss.Color(TC("warning")))
 
 	dashBadStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF5555"))
+			Foreground(lipgloss.Color(TC("error")))
 
 	dashDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#44475A"))
+			Foreground(lipgloss.Color(TC("dim")))
 
 	dashAccentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#BD93F9"))
+			Foreground(lipgloss.Color(TC("secondary")))
 
 	dashPulseColors = []string{"#FF79C6", "#BD93F9", "#8BE9FD", "#50FA7B", "#F1FA8C", "#FFB86C", "#FF5555"}
 
-	dashBannerColor = "#8daea5"
+	dashBannerColor = TC("primary")
 
 	// Pastel progress-bar palette (matches boot.go pastel taste)
-	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0ffc4ff")) // pastel green
-	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffdab3ff")) // pastel peach
-	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaeaeff")) // pastel red
+	dashPastelGood = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("success"))) // pastel green
+	dashPastelWarn = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("warning"))) // pastel peach
+	dashPastelBad  = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("error")))   // pastel red
 )
 
 // Animation frames for the running indicator
@@ -127,7 +129,7 @@ var runningFrames = []string{
 func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []ServiceStatus) DashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Points
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF79C6"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("secondary")))
 
 	// Initialize viewport
 	vp := viewport.New(80, 20)
@@ -146,8 +148,8 @@ func NewDashboardModel(cfg DashboardConfig, infra []InfraStatus, services []Serv
 		config:        cfg,
 		allInfra:      infra,
 		allServices:   services,
-		filteredInfra: infra,
-		filteredSvc:   services,
+		filteredInfra: slices.Clone(infra),
+		filteredSvc:   slices.Clone(services),
 		lastUpdate:    time.Now(),
 		width:         80,
 		height:        24,
@@ -183,15 +185,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle text input when filter is active
-		if m.showFilter {
+		if m.showingFilter {
 			switch msg.String() {
 			case "enter":
-				m.showFilter = false
+				m.showingFilter = false
 				m.filterText = m.textinput.Value()
 				m.updateFilteredLists()
 				return m, nil
 			case "esc":
-				m.showFilter = false
+				m.showingFilter = false
 				m.textinput.SetValue("")
 				m.filterText = ""
 				m.updateFilteredLists()
@@ -206,11 +208,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle normal navigation
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
-			m.quitting = true
+			m.isQuitting = true
 			return m, tea.Quit
 		case "/":
 			// Enable filter mode
-			m.showFilter = true
+			m.showingFilter = true
 			m.textinput.Focus()
 			return m, nil
 		case "down", "j":
@@ -244,7 +246,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// Update viewport size (leave room for header and footer)
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 8
+		if h := msg.Height - 8; h > 0 {
+			m.viewport.Height = h
+		}
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -274,14 +278,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m DashboardModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 
 	var b strings.Builder
 
 	// Filter input at the top when active
-	if m.showFilter {
+	if m.showingFilter {
 		filterPrompt := dashAccentStyle.Render("Filter: ")
 		b.WriteString(filterPrompt)
 		b.WriteString(m.textinput.View())
@@ -351,7 +355,7 @@ func (m DashboardModel) View() string {
 
 	// Footer with controls
 	var footerText string
-	if m.showFilter {
+	if m.showingFilter {
 		footerText = dashDimStyle.Render("Enter: apply filter │ Esc: cancel")
 	} else {
 		filterInfo := ""
@@ -382,7 +386,7 @@ func (m DashboardModel) renderSystemBox() string {
 	lines = append(lines, fmt.Sprintf(" %s %s %s", dashLabelStyle.Render("RAM"), memBar, memPct))
 
 	// Separator
-	lines = append(lines, DividerLine.Render(strings.Repeat("─", 38)))
+	lines = append(lines, DividerLine().Render(strings.Repeat("─", 38)))
 
 	// Mem detail in GiB
 	memUsedGiB := fmt.Sprintf("%.1f", float64(m.memUsed)/1024)
@@ -494,7 +498,16 @@ func (m DashboardModel) renderServicesBox() string {
 }
 
 func (m DashboardModel) renderProgressBar(percent float64, width int) string {
+	if math.IsNaN(percent) || math.IsInf(percent, 0) {
+		percent = 0
+	}
+	if width < 0 {
+		width = 0
+	}
 	filled := int(percent / 100.0 * float64(width))
+	if filled < 0 {
+		filled = 0
+	}
 	if filled > width {
 		filled = width
 	}

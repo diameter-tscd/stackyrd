@@ -12,7 +12,7 @@
 </div>
 <br>
 
-**stackyrd** is an open-source, modular service framework for Go built on [Echo](https://github.com/labstack/echo). It provides a layered architecture with auto-discovered services, middleware, infrastructure components, and a multi-language plugin system - so you can focus on business logic while the framework handles wiring, observability, and lifecycle.
+**stackyrd** is an open-source, modular service framework for Go built on [Echo](https://github.com/labstack/echo). It provides a layered architecture with auto-discovered services, middleware, and infrastructure components - so you can focus on business logic while the framework handles wiring, observability, and lifecycle.
 
 ### Core Architecture
 
@@ -21,7 +21,6 @@
 | **Services** | Business logic modules auto-registered via `init()`, toggled via config |
 | **Middleware** | Pluggable HTTP middleware chain (JWT, CORS, rate-limit, audit, security headers) |
 | **Infrastructure** | Managed clients for Redis, PostgreSQL, Kafka, MongoDB, MinIO, Grafana - with async init and health checks |
-| **Plugins** | TypeScript (sandboxed goja), Lua (gopher-lua VM), Python (gRPC subprocess), or Go plugins callable from any service |
 | **TUI / Console** | Interactive bubbletea dashboard or console fallback |
 
 ### What you can build
@@ -29,7 +28,6 @@
 - **Microservices** with standardized routing, config, and observability out of the box
 - **Data pipelines** with Kafka, batch processing, and cron scheduling
 - **Multi-tenant APIs** with per-tenant Postgres/MongoDB connection management
-- **Extensible platforms** where users upload TypeScript/Python scripts that run safely in sandboxed runtimes
 
 ## Quick Start
 
@@ -46,11 +44,15 @@ go mod download
 # Run the application
 go run cmd/app/main.go
 
-# To build the application
-go run scripts/build/build.go
+# To run the CLI tools
+./scripts/yrd      # Linux/macOS - auto-selects dist binary
+.\scripts\yrd.cmd  # Windows
 
-# To download package
-go run scripts/pkg/pkg.go
+./scripts/yrd pkg        # package manager
+./scripts/yrd service    # service generator
+./scripts/yrd swagger    # swagger docs
+./scripts/yrd docker     # docker builder
+./scripts/yrd build      # compile app
 
 ```
 
@@ -61,7 +63,6 @@ go run scripts/pkg/pkg.go
 ## Documentation
 
 - **[Full Documentation](docs_wiki/)** - Comprehensive guides and references
-- **[Plugin System Guide](PLUGIN_GUIDE.md)** - Creating and managing TypeScript, Lua, Python, and Go plugins
 - **[Contributing Guide](CONTRIBUTING.md)** - Development workflow and guidelines
 
 ## License

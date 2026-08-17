@@ -29,7 +29,7 @@ func NewCacheService(enabled bool) *CacheService {
 func (s *CacheService) Name() string        { return "Cache Service" }
 func (s *CacheService) WireName() string    { return "cache-service" }
 func (s *CacheService) Enabled() bool       { return s.enabled }
-func (s *CacheService) Get() interface{}    { return s }
+func (s *CacheService) Get() any    { return s }
 func (s *CacheService) Endpoints() []string { return []string{"/cache"} }
 
 type CacheRequest struct {
@@ -60,6 +60,11 @@ func (s *CacheService) SetCachedValue(c echo.Context) error {
 		return response.BadRequest(c, "Invalid body")
 	}
 
+	const maxTTLSeconds = 30 * 24 * 3600
+	if req.TTL <= 0 || req.TTL > maxTTLSeconds {
+		return response.BadRequest(c, "ttl_seconds must be between 1 and 2592000")
+	}
+
 	ttl := time.Duration(req.TTL) * time.Second
 	s.store.Set(key, req.Value, ttl)
 
@@ -71,7 +76,7 @@ func (s *CacheService) SetCachedValue(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("cache_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("cache_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewCacheService(config.Services.IsEnabled("cache_service"))
 	})
 }

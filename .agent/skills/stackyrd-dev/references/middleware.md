@@ -64,11 +64,17 @@ func init() {
 | Middleware | Key Pattern |
 |------------|-------------|
 | `audit.go` | Skip path filtering, config struct with defaults, field extraction |
-| `cors.go` | Config-driven origins, preflight |
-| `jwt.go` | Header validation, token parse, context set |
-| `ratelimit.go` | Per-IP tracking, configurable limits |
+| `cors.go` | Config-driven origins, preflight — never combines `*` origin with credentials |
+| `jwt.go` | Header validation, token parse, context set — fails closed, HS256 pinned, iss/aud bound |
+| `ratelimit.go` | Per-IP tracking, configurable limits; fails open (logged) on Redis outage |
 | `security.go` | Response headers (HSTS, CSP) |
-| `encryption.go` | Payload encrypt/decrypt |
+
+Security notes:
+- **JWT** (`jwt.go`) refuses to start unless `auth.type == "jwt"` and `auth.secret` is non-empty — no hardcoded fallback. Tokens must carry `iss=stackyrd` and `aud=stackyrd-api`; issue with `middleware.GenerateToken(...)`.
+- **CORS** default allows all origins *without* credentials; credentialed requests require an explicit allow-listed origin.
+- The base64 `encryption` middleware was **removed** (it was not real encryption). Do not reintroduce payload "encryption" — use TLS.
+- Server-wide defaults in `internal/server/server.go`: `BodyLimit("2M")` + read/write/idle timeouts.
+- Never echo raw `err.Error()` to clients — log it and return a generic message.
 
 - **Order matters** — registry appends in registration order
 - `next(c)` passes control; returning an error from middleware short-circuits the chain

@@ -1,20 +1,10 @@
 # Development Guide
 
-Learn to add services, middleware, infrastructure components, and plugins to stackyrd.
+Add new components by creating files and registering via `init()`.
 
-## Adding a Service
+## Service
 
-### Via Code Generator (Recommended)
-
-```bash
-go run scripts/service/service.go
-```
-
-Interactive prompts guide you through: service name, wire name, pattern selection (6 patterns: Basic CRUD, Read-Only, Write-Only, Event-Driven, WebSocket, Batch Processing), custom routes, GORM model, and test generation.
-
-### Manually
-
-Create `internal/services/modules/your_service.go`:
+Create `internal/services/modules/my_service.go`:
 
 ```go
 package modules
@@ -24,65 +14,40 @@ import (
     "stackyrd/pkg/interfaces"
     "stackyrd/pkg/logger"
     "stackyrd/pkg/registry"
-    "stackyrd/pkg/response"
     "github.com/labstack/echo/v4"
 )
 
-type YourService struct {
-    enabled bool
-    logger  *logger.Logger
+type MyService struct{ enabled bool; log *logger.Logger }
+
+func NewMyService(e bool, l *logger.Logger) *MyService {
+    return &MyService{enabled: e, log: l}
 }
 
-func NewYourService(enabled bool, logger *logger.Logger) *YourService {
-    return &YourService{enabled: enabled, logger: logger}
+func (s *MyService) Name() string          { return "My Service" }
+func (s *MyService) Enabled() bool         { return s.enabled }
+func (s *MyService) RegisterRoutes(g *echo.Group) {
+    g.GET("/my", s.handle)
 }
-
-func (s *YourService) Name() string        { return "Your Service" }
-func (s *YourService) WireName() string    { return "your-service" }
-func (s *YourService) Enabled() bool       { return s.enabled }
-func (s *YourService) Endpoints() []string { return []string{"GET /your-api"} }
-func (s *YourService) Get() interface{}    { return s }
-
-func (s *YourService) RegisterRoutes(g *echo.Group) {
-    g.GET("/your-api", s.handleGet)
-}
-
-func (s *YourService) handleGet(c echo.Context) error {
-    return response.Success(c, map[string]string{"msg": "Hello"})
-}
+func (s *MyService) Get() any              { return s }
 
 func init() {
-    registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("your_service") {
-            return nil
-        }
-        return NewYourService(true, log)
+    registry.RegisterService("my_service", func(cfg *config.Config, l *logger.Logger) interfaces.Service {
+        if !cfg.Services.IsEnabled("my_service") { return nil }
+        return NewMyService(true, l)
     })
 }
 ```
 
 Enable in `config.yaml`:
+
 ```yaml
 services:
-  your_service: true
+  my_service: true
 ```
 
-### Service Interface
+## Middleware
 
-```go
-type Service interface {
-    Name() string                             // Human-readable name
-    WireName() string                         // DI wire name
-    Enabled() bool                            // Toggle
-    Endpoints() []string                      // Endpoint patterns
-    RegisterRoutes(g *echo.Group)             // Register routes
-    Get() interface{}                         // Return underlying instance
-}
-```
-
-## Adding Middleware
-
-Create `internal/middleware/your_middleware.go`:
+Create `internal/middleware/my_mw.go`:
 
 ```go
 package middleware
@@ -94,30 +59,19 @@ import (
 )
 
 func init() {
-    RegisterMiddleware("your_middleware", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+    RegisterMiddleware("my_mw", func(cfg *config.Config, log *logger.Logger) (echo.MiddlewareFunc, error) {
         return func(next echo.HandlerFunc) echo.HandlerFunc {
             return func(c echo.Context) error {
-                // before request
-                if err := next(c); err != nil {
-                    c.Error(err)
-                }
-                // after request
-                return nil
+                return next(c)
             }
         }, nil
     })
 }
 ```
 
-Enable/disable in `config.yaml`:
-```yaml
-middleware:
-  your_middleware: true
-```
+## Infrastructure Component
 
-## Adding Infrastructure Components
-
-Create `pkg/infrastructure/your_component.go`:
+Create `pkg/infrastructure/my_component.go`:
 
 ```go
 package infrastructure
@@ -127,198 +81,54 @@ import (
     "stackyrd/pkg/logger"
 )
 
-type YourComponent struct {
-    enabled bool
-    logger  *logger.Logger
-}
+type MyComponent struct{ enabled bool }
 
-func (c *YourComponent) Name() string                     { return "your_component" }
-func (c *YourComponent) Close() error                     { return nil }
-func (c *YourComponent) GetStatus() map[string]interface{} { return nil }
+func NewMyComponent(cfg *config.Config) *MyComponent { return &MyComponent{} }
 
-func init() {
-    RegisterComponent("your_component", func(cfg *config.Config, log *logger.Logger) (InfrastructureComponent, error) {
-        return &YourComponent{enabled: true, logger: log}, nil
-    })
-}
-```
-
-Components are auto-initialized asynchronously with health polling.
-
-## Request Validation
-
-```go
-type CreateUserRequest struct {
-    Username string `json:"username" validate:"required,min=3,max=20"`
-    Email    string `json:"email" validate:"required,email"`
-}
-
-func (s *YourService) create(c echo.Context) error {
-    var req CreateUserRequest
-    if err := request.Bind(c, &req); err != nil {
-        if validationErr, ok := err.(*request.ValidationError); ok {
-            return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-        }
-        return response.BadRequest(c, err.Error())
-    }
-    return response.Created(c, req)
-}
-```
-
-## Using Dependencies
-
-Services receive infrastructure components via the `Dependencies` container:
-
-```go
-type YourService struct {
-    enabled bool
-    db      *infrastructure.PostgresConnectionManager
-    cache   *infrastructure.RedisManager
-}
+func (c *MyComponent) Name() string            { return "my_component" }
+func (c *MyComponent) Close() error            { return nil }
+func (c *MyComponent) GetStatus() map[string]any { return nil }
 
 func init() {
-    registry.RegisterService("your_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("your_service") {
-            return nil
-        }
-        var db *infrastructure.PostgresConnectionManager
-        if d, ok := deps.Get("postgres"); ok {
-            db = d.(*infrastructure.PostgresConnectionManager)
-        }
-        var cache *infrastructure.RedisManager
-        if r, ok := deps.Get("redis"); ok {
-            cache = r.(*infrastructure.RedisManager)
-        }
-        return &YourService{enabled: true, db: db, cache: cache}
+    RegisterComponent("my_component", func(cfg *config.Config, l *logger.Logger) (InfrastructureComponent, error) {
+        return NewMyComponent(cfg), nil
     })
 }
 ```
 
-## Using Plugins from Services
-
-The `PluginBridge` is available in `deps["plugins"]`:
-
-```go
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        var bridge *plugin.PluginBridge
-        if b, ok := deps.Get("plugins"); ok {
-            bridge = b.(*plugin.PluginBridge)
-        }
-        return NewMyService(true, log, bridge)
-    })
-}
-
-// At runtime:
-if s.bridge != nil && s.bridge.HasPlugin("inspector") {
-    result, err := s.bridge.Execute("inspector", map[string]interface{}{
-        "mode": "ping",
-    })
-}
-```
-
-## Using the Cache
-
-The `pkg/cache/` package provides a `CachingManager` that wraps go-redis with a cache-aside pattern, TTL support, and batch invalidation. It is injected via Dependencies under the `"caching"` key.
+Enable in config:
 
 ```yaml
-services:
-  caching: true
+infrastructure:
+  my_component: true
 ```
+
+## DI with Dependencies
 
 ```go
-import "stackyrd/pkg/cache"
-
-func init() {
-    registry.RegisterService("my_service", func(cfg *config.Config, log *logger.Logger, deps *registry.Dependencies) interfaces.Service {
-        if !cfg.Services.IsEnabled("my_service") {
-            return nil
-        }
-        var cm *cache.CachingManager
-        if c, ok := deps.Get("caching"); ok {
-            cm = c.(*cache.CachingManager)
-        }
-        return NewMyService(true, log, cm)
-    })
-}
+registry.RegisterServiceWithDeps("my_service", func(cfg *config.Config, l *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+    return &MyService{enabled: true, db: deps.Postgres()}
+})
 ```
+
+Available getters: `Redis()`, `Postgres()`, `Mongo()`, `Kafka()`, `Grafana()`, `MinIO()`, `Cron()`.
 
 ## Response Helpers
 
 ```go
-response.Success(c, data)                          // 200
-response.Success(c, data, "message")               // 200 + message
-response.SuccessWithMeta(c, data, meta)            // 200 + pagination
-response.Created(c, data)                          // 201
-response.NoContent(c)                              // 204
-response.BadRequest(c, "msg")                      // 400
-response.Unauthorized(c)                           // 401
-response.Forbidden(c)                              // 403
-response.NotFound(c)                               // 404
-response.Conflict(c, "msg")                        // 409
-response.ValidationError(c, "msg", details)        // 422
-response.InternalServerError(c)                    // 500
-response.ServiceUnavailable(c)                     // 503
-response.Error(c, statusCode, errCode, msg)        // custom
+response.Success(c, data)
+response.Created(c, data)
+response.BadRequest(c, "msg")
+response.Error(c, 400, "VALIDATION_ERROR", "msg")
 ```
 
-## Pagination
-
-Cursor-based pagination via `pkg/pagination/`:
+## Testing Helpers
 
 ```go
-page := pagination.NewCursorPagination(db.Model(&User{}), 20)
-result, err := page.First(10)
-// result.Edges, result.PageInfo.HasNextPage, result.PageInfo.EndCursor
+c, rec := testing.NewTestContext("GET", "/api/v1/items", nil)
+handler(c)
+testing.AssertStatus(t, rec, 200)
+testing.AssertJSON(t, rec, map[string]any{"success": true})
 ```
 
-## Resilience Patterns
-
-```go
-import "stackyrd/pkg/resilience"
-
-// Circuit breaker
-cb := resilience.NewCircuitBreaker("my-service", 5, time.Minute)
-
-// Retry with backoff
-err := resilience.RetryWithBackoff(context.Background(), 3, time.Second, func() error {
-    return doSomething()
-})
-
-// Timeout
-ctx, cancel := resilience.WithTimeout(context.Background(), 5*time.Second)
-```
-
-## Testing
-
-```go
-import "stackyrd/pkg/testing"
-
-func TestHandler(t *testing.T) {
-    c, w := testing.NewTestContext("GET", "/api/v1/users", nil)
-    handler(c)
-    testing.AssertStatus(t, w, 200)
-    testing.AssertJSON(t, w, map[string]interface{}{"success": true})
-}
-```
-
-## Configuration Loading
-
-Config can be loaded from a local file or remote URL:
-
-```bash
-go run cmd/app/main.go -c https://config.example.com/config.yaml
-go run cmd/app/main.go -port 9090 -env production
-```
-
-FLags: `-c` (config URL), `-port`, `-verbose`, `-env`.
-
-## Scripts Reference
-
-| Script | Usage |
-|--------|-------|
-| Build | `go run scripts/build/build.go [-garble] [-upx]` |
-| Docker | `go run scripts/docker/docker_build.go` |
-| Service Gen | `go run scripts/service/service.go` |
-| Swagger Gen | `go run scripts/swagger/swagger.go [-dry-run]` |
-| Package Mgr | `go run scripts/pkg/pkg.go install\|list\|remove\|upgrade` |
+See `pkg/testing/helpers.go` for full list.

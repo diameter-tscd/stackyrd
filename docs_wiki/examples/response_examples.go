@@ -56,7 +56,7 @@ func exampleValidation(c echo.Context) error {
 	}
 
 	// Process valid request
-	item := map[string]interface{}{
+	item := map[string]any{
 		"id":          "123",
 		"name":        req.Name,
 		"description": req.Description,
@@ -110,7 +110,7 @@ func exampleSearch(c echo.Context) error {
 		{"id": "2", "title": "Result 2"},
 	}
 
-	meta := response.CalculateMeta(page, limit, 50, map[string]interface{}{
+	meta := response.CalculateMeta(page, limit, 50, map[string]any{
 		"query":        query,
 		"filter_count": len(search.Filter),
 	})
@@ -120,7 +120,7 @@ func exampleSearch(c echo.Context) error {
 
 // Example 6: Custom Error with Details
 func exampleCustomError(c echo.Context) error {
-	details := map[string]interface{}{
+	details := map[string]any{
 		"field":         "email",
 		"reason":        "already exists",
 		"suggested_fix": "Use a different email or login",

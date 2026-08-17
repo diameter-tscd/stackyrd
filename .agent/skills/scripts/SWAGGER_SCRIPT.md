@@ -1,10 +1,10 @@
-# SWAGGER_SCRIPT — Swagger Generator Script (`scripts/swagger/swagger.go`)
+# SWAGGER_SCRIPT — Swagger Generator (`stackyrd swagger`)
 
 ## Overview
 
-`scripts/swagger/swagger.go` is the **stackyrd Swagger documentation generator** — a standalone Go CLI tool for generating OpenAPI/Swagger documentation from service annotations.
+`stackyrd swagger` (implemented in `scripts/internal/swagger/swagger.go`) is the **stackyrd Swagger documentation generator** — part of the standalone `scripts/` CLI module. It generates OpenAPI/Swagger documentation from service annotations.
 
-The script scans all service files in `internal/services/modules/` for Swagger annotations, analyzes API endpoints and structs, generates `docs.go`, `swagger.json`, and `swagger.yaml` via the `swag` CLI, and verifies the output.
+The command scans all service files in `internal/services/modules/` for Swagger annotations, analyzes API endpoints and structs, generates `docs.go`, `swagger.json`, and `swagger.yaml` via the `swag` CLI, and verifies the output.
 
 ---
 
@@ -12,13 +12,13 @@ The script scans all service files in `internal/services/modules/` for Swagger a
 
 ```bash
 # Generate Swagger docs (interactive)
-go run scripts/swagger/swagger.go
+./scripts/yrd swagger
 
 # Dry-run (analyze only, no generation)
-go run scripts/swagger/swagger.go -dry-run
+./scripts/yrd swagger -dry-run
 
 # Verbose mode
-go run scripts/swagger/swagger.go -verbose
+./scripts/yrd swagger -verbose
 ```
 
 ---
@@ -211,12 +211,12 @@ type ServiceInfo struct {
 ## Build & Development
 
 ```bash
-# Build (compile check)
-go build -o /dev/null ./scripts/swagger/
+# Build the CLI once
+cd scripts && go build -o /dev/null .
 
 # Vet
-go vet ./scripts/swagger/
+go vet ./...
 
 # Run (from project root)
-go run scripts/swagger/swagger.go
+./scripts/yrd swagger
 ```

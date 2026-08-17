@@ -27,7 +27,7 @@ func BenchmarkRouter_ServeHTTP_Baseline(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -37,7 +37,7 @@ func BenchmarkRouter_ServeHTTP_SingleRoute(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/bench/item/:id/0", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -47,7 +47,7 @@ func BenchmarkRouter_ServeHTTP_FiftyRoutes(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/bench/item/:id/49", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		r.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -55,14 +55,14 @@ func BenchmarkRouter_ServeHTTP_FiftyRoutes(b *testing.B) {
 func BenchmarkHandler_JSON_Success(b *testing.B) {
 	e := echo.New()
 	e.GET("/json", func(c echo.Context) error {
-		data := map[string]interface{}{"id": 1, "name": "Alice", "email": "alice@example.com"}
+		data := map[string]any{"id": 1, "name": "Alice", "email": "alice@example.com"}
 		return response.Success(c, data, "ok")
 	})
 
 	req, _ := http.NewRequest("GET", "/json", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -77,7 +77,7 @@ func BenchmarkHandler_JSON_WithMetaPagination(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/paginated", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -107,7 +107,7 @@ func BenchmarkHandler_JSON_RequestBind(b *testing.B) {
 	req.Header.Set("Content-Type", "application/json")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -116,13 +116,13 @@ func BenchmarkHandler_PathParameter(b *testing.B) {
 	e := echo.New()
 	e.GET("/item/:id", func(c echo.Context) error {
 		id := c.Param("id")
-		return response.Success(c, map[string]interface{}{"id": id}, "ok")
+		return response.Success(c, map[string]any{"id": id}, "ok")
 	})
 
 	req, _ := http.NewRequest("GET", "/item/42", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -135,7 +135,7 @@ func BenchmarkMiddleware_RecoveryOverhead(b *testing.B) {
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(w, req)
 	}
 }
@@ -143,26 +143,33 @@ func BenchmarkMiddleware_RecoveryOverhead(b *testing.B) {
 func BenchmarkHandler_JSON_SmallPayload(b *testing.B) {
 	e := echo.New()
 	e.GET("/small", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{"x": 1}, "")
+		return response.Success(c, map[string]any{"x": 1}, "")
 	})
 	req, _ := http.NewRequest("GET", "/small", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
+}
+
+type LargeItem struct {
+	ID    int     `json:"id"`
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Value float64 `json:"value"`
 }
 
 func BenchmarkHandler_JSON_LargePayload(b *testing.B) {
 	e := echo.New()
 
-	items := make([]map[string]interface{}, 100)
+	items := make([]LargeItem, 100)
 	for i := range items {
-		items[i] = map[string]interface{}{
-			"id":    i,
-			"name":  "User Name Placeholder that has some length",
-			"email": "user@example.com",
-			"value": float64(i) * 1.23,
+		items[i] = LargeItem{
+			ID:    i,
+			Name:  "User Name Placeholder that has some length",
+			Email: "user@example.com",
+			Value: float64(i) * 1.23,
 		}
 	}
 
@@ -172,7 +179,7 @@ func BenchmarkHandler_JSON_LargePayload(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/large", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -185,7 +192,7 @@ func BenchmarkHandler_ErrorResponse(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/err", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
@@ -194,24 +201,24 @@ func BenchmarkService_Endpoint_Concurrent(b *testing.B) {
 	e := echo.New()
 
 	e.GET("/health", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{"status": "ok"}, "healthy")
+		return response.Success(c, map[string]any{"status": "ok"}, "healthy")
 	})
 	e.POST("/users", func(c echo.Context) error {
-		data := map[string]interface{}{"id": 1, "name": "Alice", "email": "alice@example.com"}
+		data := map[string]any{"id": 1, "name": "Alice", "email": "alice@example.com"}
 		return response.Created(c, data, "created")
 	})
 	e.GET("/users/:id", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{"id": c.Param("id")}, "found")
+		return response.Success(c, map[string]any{"id": c.Param("id")}, "found")
 	})
 
-	bodyJ, _ := json.Marshal(map[string]interface{}{"name": "Alice", "email": "alice@example.com"})
+	bodyJ, _ := json.Marshal(map[string]any{"name": "Alice", "email": "alice@example.com"})
 	postReq, _ := http.NewRequest("POST", "/users", bytes.NewBuffer(bodyJ))
 	postReq.Header.Set("Content-Type", "application/json")
 
 	getUserReq, _ := http.NewRequest("GET", "/users/1", nil)
 	healthReq, _ := http.NewRequest("GET", "/health", nil)
 
-	healthBodyBefore, _ := json.Marshal(map[string]interface{}{"status": "ok", "success": true})
+	healthBodyBefore, _ := json.Marshal(map[string]any{"status": "ok", "success": true})
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -243,7 +250,7 @@ func BenchmarkRouter_SubRoute_Depth(b *testing.B) {
 	req, _ := http.NewRequest("GET", "/api/v1/v1/items/1", nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		e.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }

@@ -1,14 +1,19 @@
 package infrastructure
 
 import (
+	"errors"
 	"fmt"
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+	"stackyrd/pkg/utils"
 	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
 )
+
+// ErrJobNotFound is returned when a job ID does not exist.
+var ErrJobNotFound = errors.New("job not found")
 
 type CronJob struct {
 	ID       int       `json:"id"`
@@ -21,12 +26,13 @@ type CronJob struct {
 }
 
 type CronManager struct {
-	cron    *cron.Cron
-	jobs    map[cron.EntryID]*CronJob
-	mu      sync.RWMutex
-	pool    *WorkerPool // Worker pool for async job execution
-	poolMu  sync.Mutex
-	poolSet bool
+	cron      *cron.Cron
+	jobs      map[cron.EntryID]*CronJob
+	mu        sync.RWMutex
+	pool      *WorkerPool // Worker pool for async job execution
+	poolMu    sync.Mutex
+	isPoolSet bool
+	isClosed  bool
 }
 
 // Name returns the display name of the component
@@ -41,14 +47,19 @@ func NewCronManager() *CronManager {
 	}
 }
 
-func (c *CronManager) ensurePool() {
+// getPool returns the worker pool, lazily creating it, or nil once closed.
+func (c *CronManager) getPool() *WorkerPool {
 	c.poolMu.Lock()
 	defer c.poolMu.Unlock()
-	if !c.poolSet {
+	if c.isClosed {
+		return nil
+	}
+	if !c.isPoolSet {
 		c.pool = NewWorkerPool(5)
 		c.pool.Start()
-		c.poolSet = true
+		c.isPoolSet = true
 	}
+	return c.pool
 }
 
 func (c *CronManager) Start() {
@@ -65,7 +76,7 @@ func (c *CronManager) AddJob(name, schedule string, cmd func()) (int, error) {
 
 	// Wrap cmd to update LastRun
 	wrappedCmd := func() {
-		cmd()
+		utils.GoSafe(nil, cmd)
 	}
 
 	id, err := c.cron.AddFunc(schedule, wrappedCmd)
@@ -101,13 +112,14 @@ func (c *CronManager) GetJobs() []CronJob {
 	}
 	return list
 }
-func (c *CronManager) GetStatus() map[string]interface{} {
+func (c *CronManager) GetStatus() map[string]any {
 	if c == nil {
-		return map[string]interface{}{"active": false, "jobs": []interface{}{}}
+		return map[string]any{"active": false, "jobs": []any{}}
 	}
-	return map[string]interface{}{
-		"active": true, // Always true if manager exists
-		"jobs":   c.GetJobs(),
+	return map[string]any{
+		"active":    true, // Always true if manager exists
+		"connected": true,
+		"jobs":      c.GetJobs(),
 	}
 }
 
@@ -145,7 +157,7 @@ func (c *CronManager) RunJobNow(jobID int) error {
 	job, ok := c.jobs[cron.EntryID(jobID)]
 	if !ok {
 		c.mu.Unlock()
-		return fmt.Errorf("job with ID %d not found", jobID)
+		return fmt.Errorf("job with ID %d: %w", jobID, ErrJobNotFound)
 	}
 	// Take a copy of the closure while we hold the lock
 	cmd := job.cmd
@@ -196,16 +208,17 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 
 	entryID := cron.EntryID(jobID)
 	if job, ok := c.jobs[entryID]; ok {
-		// Remove old job
-		c.cron.Remove(entryID)
-
-		// Re-add with the original stored callback
+		// Add the new entry first so a bad schedule never silently drops the job
 		newID, err := c.cron.AddFunc(newSchedule, job.cmd)
 		if err != nil {
 			return err
 		}
 
+		// Remove old job now that the replacement is in place
+		c.cron.Remove(entryID)
+
 		// Update job info
+		job.ID = int(newID)
 		job.Schedule = newSchedule
 		job.EntryID = newID
 		c.jobs[newID] = job
@@ -221,21 +234,28 @@ func (c *CronManager) UpdateJob(jobID int, newSchedule string) error {
 
 // SubmitAsyncJob submits a job to the worker pool for async execution
 func (c *CronManager) SubmitAsyncJob(job func()) {
-	c.ensurePool()
-	c.pool.Submit(job)
+	if pool := c.getPool(); pool != nil {
+		pool.Submit(job)
+	} else {
+		go utils.GoSafe(nil, job)
+	}
 }
 
 // GetPoolStatus returns the status of the worker pool
-func (c *CronManager) GetPoolStatus() map[string]interface{} {
-	if c.pool == nil {
-		return map[string]interface{}{
+func (c *CronManager) GetPoolStatus() map[string]any {
+	c.poolMu.Lock()
+	pool := c.pool
+	c.poolMu.Unlock()
+
+	if pool == nil {
+		return map[string]any{
 			"available": false,
 			"workers":   0,
 		}
 	}
 
 	// Note: WorkerPool doesn't expose internal stats, so we return basic info
-	return map[string]interface{}{
+	return map[string]any{
 		"available": true,
 		"workers":   5, // We know this from initialization
 	}
@@ -244,8 +264,12 @@ func (c *CronManager) GetPoolStatus() map[string]interface{} {
 // Close closes the cron manager and its worker pool
 func (c *CronManager) Close() error {
 	c.Stop()
-	if c.pool != nil {
-		c.pool.Close()
+	c.poolMu.Lock()
+	pool := c.pool
+	c.isClosed = true
+	c.poolMu.Unlock()
+	if pool != nil {
+		pool.Close()
 	}
 	return nil
 }

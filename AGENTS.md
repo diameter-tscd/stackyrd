@@ -10,7 +10,8 @@ go mod download         # Install deps
 go run cmd/app/main.go  # Run (needs config.yaml in CWD)
 go test ./...           # All tests
 docker compose up       # Full dev stack (Redis, PG, Kafka, Mongo, Grafana, MinIO)
-go run scripts/build/build.go  # Build (output: dist/)
+cd scripts && go build -o yrd . # Build CLI (output: scripts/yrd)
+./scripts/yrd build # Build server binary (output: dist/stackyrd)
 ```
 
 ## Patterns
@@ -40,7 +41,6 @@ internal/
 pkg/
   assets/          # Embedded assets (banner.txt)
   interfaces/      # Service interface
-  plugin/          # Plugin system (TS/Lua/Python/Go via goja/gRPC)
   registry/        # Service factory registry, DI container
   infrastructure/  # Redis, PG, Mongo, Kafka, MinIO, Grafana, Cron, etc.
   logger/          # Zerolog structured logging
@@ -56,7 +56,7 @@ pkg/
   utils/           # System, HTTP, IO, date, numeric, strings, image, broadcast
   webhook/         # Webhook handler
   websocket/       # WebSocket handler
-scripts/           # Build, docker, pkg, swagger, service generator
+scripts/           # Standalone CLI module (build/service/pkg/swagger/docker), independent go.mod
 tests/             # Integration tests (mirrors src layout)
 docs/              # Auto-generated Swagger
 docs_wiki/         # Hand-written docs (update README.md TOC when changed)
@@ -72,12 +72,8 @@ deployments/       # K8s manifests
 ## Boot Order
 
 ```
-Infra async init → Dependencies → Plugin init → Middleware → AutoDiscoverServices
+Infra async init → Dependencies → Middleware → AutoDiscoverServices
 ```
-
-## Plugin System
-
-See `pkg/plugin/` source for full API. Plugins execute in sandboxed VMs (goja, gopher-lua) or via gRPC subprocesses. `PluginBridge` is an `InfrastructureComponent` (name: `"plugins"`) available in `Dependencies` bag.
 
 ## Never Commit
 

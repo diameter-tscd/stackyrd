@@ -3,6 +3,7 @@ package request
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -25,7 +26,7 @@ func init() {
 }
 
 // Bind binds and validates request data
-func Bind(c echo.Context, req interface{}) error {
+func Bind(c echo.Context, req any) error {
 	if err := c.Bind(req); err != nil {
 		return fmt.Errorf("invalid request format: %w", err)
 	}
@@ -38,7 +39,7 @@ func Bind(c echo.Context, req interface{}) error {
 }
 
 // Validate validates a struct using validator tags
-func Validate(req interface{}) error {
+func Validate(req any) error {
 	if err := validate.Struct(req); err != nil {
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
 			return &ValidationError{
@@ -108,12 +109,18 @@ func FormatValidationErrors(errs validator.ValidationErrors) map[string]string {
 
 // validatePhone validates phone number format
 func validatePhone(fl validator.FieldLevel) bool {
+	if fl.Field().Kind() != reflect.String {
+		return false
+	}
 	phone := fl.Field().String()
 	return phoneRegex.MatchString(phone)
 }
 
 // validateUsername validates username format (alphanumeric, 3-20 chars)
 func validateUsername(fl validator.FieldLevel) bool {
+	if fl.Field().Kind() != reflect.String {
+		return false
+	}
 	username := fl.Field().String()
 	return userRegex.MatchString(username)
 }

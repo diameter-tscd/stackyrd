@@ -1,10 +1,10 @@
-# SERVICE_SCRIPT — Service Generator Script (`scripts/service/service.go`)
+# SERVICE_SCRIPT — Service Generator (`stackyrd service`)
 
 ## Overview
 
-`scripts/service/service.go` is the **stackyrd service code generator** — a standalone Go CLI tool for scaffolding new service modules with auto-registration, Swagger annotations, GORM models, and test files.
+`stackyrd service` (implemented in `scripts/internal/service/service.go`) is the **stackyrd service code generator** — part of the standalone `scripts/` CLI module. It scaffolds new service modules with auto-registration, Swagger annotations, GORM models, and test files.
 
-The script uses embedded Go templates (`//go:embed templates/*.tmpl`) and provides an interactive prompt-driven workflow with 6 service patterns, custom route support, method duplication detection, and configurable test/model generation.
+The command uses embedded Go templates (`//go:embed templates/*.tmpl`) and provides an interactive prompt-driven workflow with 6 service patterns, custom route support, method duplication detection, and configurable test/model generation.
 
 ---
 
@@ -12,13 +12,13 @@ The script uses embedded Go templates (`//go:embed templates/*.tmpl`) and provid
 
 ```bash
 # Interactive service generation
-go run scripts/service/service.go
+./scripts/yrd service
 
 # Dry-run (analyze only, no file generation)
-go run scripts/service/service.go -dry-run
+./scripts/yrd service -dry-run
 
 # Verbose mode
-go run scripts/service/service.go -verbose
+./scripts/yrd service -verbose
 ```
 
 ---
@@ -216,7 +216,7 @@ Pattern-specific annotations:
      orders_service: true
 
 2. Implement business logic in handler methods
-3. Regenerate Swagger docs: go run scripts/swagger/swagger.go
+3. Regenerate Swagger docs: ./scripts/yrd swagger
 4. Test the service endpoints
 ```
 
@@ -290,11 +290,11 @@ scripts/service/templates/*.tmpl              # Embedded templates
 
 ```bash
 # Build (compile check)
-go build -o /dev/null ./scripts/service/
+cd scripts && go build -o /dev/null .
 
 # Vet
-go vet ./scripts/service/
+go vet ./...
 
 # Run (from project root)
-go run scripts/service/service.go
+./scripts/yrd service
 ```

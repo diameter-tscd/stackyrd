@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"strconv"
 	"sync"
 
@@ -55,7 +56,7 @@ func (s *UsersService) Endpoints() []string {
 	}
 }
 
-func (s *UsersService) Get() interface{} {
+func (s *UsersService) Get() any {
 	return s
 }
 
@@ -75,9 +76,13 @@ var (
 		{ID: 1, Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Username: "alice123", Age: 30},
 		{ID: 2, Name: "Bob", Email: "bob@example.com", Phone: "+0987654321", Username: "bob456", Age: 25},
 	}
-	usersIdx = map[int]*User{
-		1: &usersList[0],
-		2: &usersList[1],
+	// usersIdx maps ID -> index in usersList. Indices are stable because
+	// records are only appended, never reordered or removed; computing the
+	// *User from the current slice avoids the stale-pointer trap of pointing
+	// into a reallocated backing array.
+	usersIdx = map[int]int{
+		1: 0,
+		2: 1,
 	}
 )
 
@@ -105,38 +110,43 @@ func (s *UsersService) listUsers(c echo.Context) error {
 		perPage = 10
 	}
 
-	totalUsers := func() int {
-		usersMu.RLock()
-		defer usersMu.RUnlock()
-		return len(usersList)
-	}()
-	if page > totalUsers {
+	usersMu.RLock()
+	total := len(usersList)
+	if page > total {
+		usersMu.RUnlock()
 		return response.BadRequest(c, "Invalid pagination parameters")
 	}
 
-	usersMu.RLock()
 	start := (page - 1) * perPage
+	if start > total {
+		start = total
+	}
 	end := start + perPage
-	if end > len(usersList) {
-		end = len(usersList)
+	if end > total {
+		end = total
 	}
 	usersPage := make([]User, end-start)
 	copy(usersPage, usersList[start:end])
 	usersMu.RUnlock()
 
-	meta := response.CalculateMeta(page, perPage, int64(len(usersList)))
+	meta := response.CalculateMeta(page, perPage, int64(total))
 	return response.SuccessWithMeta(c, usersPage, meta, "Users retrieved successfully")
 }
 
 func (s *UsersService) getUser(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid user ID")
+	}
 
 	usersMu.RLock()
-	u, ok := usersIdx[id]
-	usersMu.RUnlock()
+	idx, ok := usersIdx[id]
 	if ok {
-		return response.Success(c, *u, "User retrieved successfully")
+		user := usersList[idx] // copy under the lock, then release
+		usersMu.RUnlock()
+		return response.Success(c, user, "User retrieved successfully")
 	}
+	usersMu.RUnlock()
 
 	return response.NotFound(c, "User not found")
 }
@@ -144,11 +154,12 @@ func (s *UsersService) getUser(c echo.Context) error {
 func (s *UsersService) createUser(c echo.Context) error {
 	var user User
 	if err := request.Bind(c, &user); err != nil {
-		if validationErr, ok := err.(*request.ValidationError); ok {
+		var validationErr *request.ValidationError
+		if errors.As(err, &validationErr) {
 			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-		} else {
-			return response.BadRequest(c, err.Error())
 		}
+		s.logger.Warn("Invalid user payload", "error", err.Error())
+		return response.BadRequest(c, "Invalid request data")
 	}
 
 	usersMu.Lock()
@@ -158,7 +169,7 @@ func (s *UsersService) createUser(c echo.Context) error {
 	}
 	user.ID = len(usersList) + 1
 	usersList = append(usersList, user)
-	usersIdx[user.ID] = &usersList[len(usersList)-1]
+	usersIdx[user.ID] = len(usersList) - 1
 	usersMu.Unlock()
 
 	return response.Created(c, user, "User created successfully")
@@ -167,23 +178,27 @@ func (s *UsersService) createUser(c echo.Context) error {
 const maxUsers = 10000
 
 func (s *UsersService) updateUser(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return response.BadRequest(c, "Invalid user ID")
+	}
 
 	var user User
 	if err := request.Bind(c, &user); err != nil {
-		if validationErr, ok := err.(*request.ValidationError); ok {
+		var validationErr *request.ValidationError
+		if errors.As(err, &validationErr) {
 			return response.ValidationError(c, "Validation failed", validationErr.GetFieldErrors())
-		} else {
-			return response.BadRequest(c, err.Error())
 		}
+		s.logger.Warn("Invalid user payload", "error", err.Error())
+		return response.BadRequest(c, "Invalid request data")
 	}
 
 	usersMu.Lock()
 	defer usersMu.Unlock()
-	u, ok := usersIdx[id]
+	idx, ok := usersIdx[id]
 	if ok {
 		user.ID = id
-		*u = user
+		usersList[idx] = user
 		return response.Success(c, user, "User updated successfully")
 	}
 
@@ -191,7 +206,7 @@ func (s *UsersService) updateUser(c echo.Context) error {
 }
 
 func init() {
-	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger, deps *registry.Dependencies) interfaces.Service {
+	registry.RegisterService("users_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
 		return NewUsersService(config.Services.IsEnabled("users_service"), logger)
 	})
 }

@@ -2,6 +2,7 @@ package resilience
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -156,6 +157,15 @@ func (hc *HealthChecker) CheckSingle(ctx context.Context, name string) *HealthRe
 func (hc *HealthChecker) runCheck(ctx context.Context, check *HealthCheck) *HealthResult {
 	start := time.Now()
 
+	if check == nil || check.Check == nil {
+		return &HealthResult{
+			Name:      "unknown",
+			Status:    HealthStatusUnhealthy,
+			Error:     "health check is nil",
+			Timestamp: time.Now(),
+		}
+	}
+
 	checkCtx, cancel := context.WithTimeout(ctx, check.Timeout)
 	defer cancel()
 
@@ -167,7 +177,14 @@ func (hc *HealthChecker) runCheck(ctx context.Context, check *HealthCheck) *Heal
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- check.Check(checkCtx)
+		var checkErr error
+		defer func() {
+			if r := recover(); r != nil {
+				checkErr = fmt.Errorf("health check panicked: %v", r)
+			}
+			errChan <- checkErr
+		}()
+		checkErr = check.Check(checkCtx)
 	}()
 
 	select {

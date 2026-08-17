@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"maps"
 	"net/http"
-	"slices"
+	"sync"
 	"time"
 
 	_ "stackyrd/internal/services/modules"
@@ -15,10 +15,8 @@ import (
 	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/metrics"
-	"stackyrd/pkg/plugin"
 	"stackyrd/pkg/registry"
 	"stackyrd/pkg/response"
-	"stackyrd/pkg/utils"
 
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
@@ -38,10 +36,16 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 	e.HidePort = true
 
 	e.Use(echomiddleware.Recover())
+	// Cap request bodies (memory DoS) and slowloris-style idle connections.
+	e.Use(echomiddleware.BodyLimit("2M"))
+	e.Server.ReadHeaderTimeout = 5 * time.Second
+	e.Server.ReadTimeout = 15 * time.Second
+	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.IdleTimeout = 60 * time.Second
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
 		l.Warn("Endpoint not found", "path", c.Request().URL.Path, "method", c.Request().Method)
-		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]interface{}{
+		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]any{
 			"path":   c.Request().URL.Path,
 			"method": c.Request().Method,
 		})
@@ -63,6 +67,7 @@ func (s *Server) Start() error {
 	s.infraInitManager = infrastructure.NewInfraInitManager(s.logger)
 	s.logger.Info("Starting async infrastructure initialization...")
 	componentRegistry := s.infraInitManager.StartAsyncInitialization(s.config, s.logger)
+	infrastructure.SetInitManager(s.infraInitManager)
 
 	s.dependencies = registry.NewDependencies()
 
@@ -71,17 +76,8 @@ func (s *Server) Start() error {
 		s.logger.Info("Registered infrastructure component", "name", name, "type", fmt.Sprintf("%T", component))
 	}
 
-	s.setConnectionDefaults()
-
-	s.logger.Info("Initializing Plugin system...")
-	pluginGroup := s.e.Group("/api/v1")
-	if err := plugin.Init(s.config, s.logger, pluginGroup); err != nil {
-		s.logger.Error("Failed to initialize plugin system", err)
-	}
-	if bridge := plugin.GetGlobalPluginBridge(); bridge != nil {
-		s.dependencies.Set("plugins", bridge)
-		s.logger.Info("PluginBridge registered in service dependencies as 'plugins'")
-	}
+	s.dependencies.Seal()
+	s.logger.Info("Dependencies sealed — no further infrastructure registration allowed")
 
 	s.logger.Info("Initializing Middleware...")
 
@@ -122,6 +118,17 @@ func (s *Server) Start() error {
 		s.logger.Warn("No services registered!")
 	}
 
+	svcs := make([]infrastructure.ServiceMeta, 0, len(services))
+	for _, svc := range services {
+		meta := infrastructure.ServiceMeta{Name: svc.Name(), State: registry.GetServiceState(svc.Name())}
+		if wne, ok := svc.Get().(interface{ WireName() string; Endpoints() []string }); ok {
+			meta.WireName = wne.WireName()
+			meta.Endpoints = wne.Endpoints()
+		}
+		svcs = append(svcs, meta)
+	}
+	infrastructure.SetServices(svcs)
+
 	serviceRegistry.Boot(s.e)
 
 	s.logger.Info("All services boot successfully")
@@ -135,9 +142,9 @@ func (s *Server) Start() error {
 		s.logger.Info("Registering Swagger UI documentation...")
 		middleware.RegisterSwaggerRoutes(s.e, middleware.SwaggerConfig{
 			Enabled:  s.config.Swagger.Enabled,
-			BasePath: "/swagger",
+			BasePath: s.config.Swagger.BasePath,
 		})
-		s.logger.Info("Swagger UI available at /swagger/index.html")
+		s.logger.Info("Swagger UI available at " + s.config.Swagger.BasePath + "/index.html")
 	}
 
 	port := s.config.Server.Port
@@ -147,28 +154,6 @@ func (s *Server) Start() error {
 	return s.e.Start(":" + port)
 }
 
-func (s *Server) setConnectionDefaults() {
-	if pg, ok := s.dependencies.Get("postgres"); ok {
-		switch mgr := pg.(type) {
-		case *infrastructure.PostgresConnectionManager:
-			if defaultConn, exists := mgr.GetDefaultConnection(); exists {
-				s.dependencies.Set("postgres.default", defaultConn)
-				s.logger.Info("PostgreSQL single connection manager detected")
-			}
-		}
-	}
-
-	if mg, ok := s.dependencies.Get("mongo"); ok {
-		switch mgr := mg.(type) {
-		case *infrastructure.MongoConnectionManager:
-			if defaultConn, exists := mgr.GetDefaultConnection(); exists {
-				s.dependencies.Set("mongo.default", defaultConn)
-				s.logger.Info("MongoDB single connection manager detected")
-			}
-		}
-	}
-}
-
 func (s *Server) registerHealthEndpoints() {
 	s.e.GET("/health", func(c echo.Context) error {
 		ready := s.infraInitManager.IsReady()
@@ -176,7 +161,7 @@ func (s *Server) registerHealthEndpoints() {
 		if !ready {
 			status = "initializing"
 		}
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"status":                  status,
 			"server_ready":            ready,
 			"infrastructure":          s.infraInitManager.GetStatus(),
@@ -184,76 +169,74 @@ func (s *Server) registerHealthEndpoints() {
 		})
 	})
 
-	s.e.GET("/health/infrastructure", func(c echo.Context) error {
-		return response.Success(c, s.infraInitManager.GetStatus())
-	})
-
 	s.e.GET("/health/dependencies", func(c echo.Context) error {
 		allComponents := s.dependencies.GetAll()
 		allFactories := registry.GetServiceFactories()
-		return response.Success(c, map[string]interface{}{
+		infraKeys := make([]string, 0, len(allComponents))
+		for k := range allComponents {
+			infraKeys = append(infraKeys, k)
+		}
+		svcKeys := make([]string, 0, len(allFactories))
+		for k := range allFactories {
+			svcKeys = append(svcKeys, k)
+		}
+		return response.Success(c, map[string]any{
 			"total_infrastructure": len(allComponents),
-			"list_infrastructure":  slices.Collect(maps.Keys(allComponents)),
+			"list_infrastructure":  infraKeys,
 			"total_service":        len(allFactories),
-			"list_service":         slices.Collect(maps.Keys(allFactories)),
-		})
-	})
-
-	s.e.GET("/health/resources", func(c echo.Context) error {
-		return response.Success(c, map[string]interface{}{
-			"memory_usage":    utils.GetMemSelf(),
-			"routine_running": utils.GetRoutine(),
+			"list_service":         svcKeys,
 		})
 	})
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {
-	utils.ClearScreen()
+	if s.dependencies == nil {
+		return nil
+	}
 	logger.Info("Starting graceful shutdown of infrastructure...")
 
-	if s.infraInitManager != nil {
-		logger.Info("Stopping async infrastructure initialization manager...")
-	}
-
+	var mu sync.Mutex
 	var shutdownErrors []error
-
-	shutdownComponent := func(name string, closer interface{}) {
-		if closer == nil {
-			return
-		}
-
-		logger.Info("Shutting down " + name + "...")
-		if c, ok := closer.(interface{ Close() error }); ok {
-			done := make(chan struct{}, 1)
-			go func() {
-				err := c.Close()
-				if err != nil {
-					shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
-					logger.Error("Error shutting down "+name, err)
-				} else {
-					logger.Info(name + " shut down successfully")
-				}
-				done <- struct{}{}
-			}()
-			select {
-			case <-done:
-			case <-time.After(10 * time.Second):
-				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s: forced shutdown (timeout)", name))
-				logger.Warn(name + " shutdown timed out after 10s, continuing")
-			}
-		}
-	}
+	var wg sync.WaitGroup
 
 	for name, component := range s.dependencies.GetAll() {
-		shutdownComponent(name, component)
+		if component == nil {
+			continue
+		}
+		c, ok := component.(interface{ Close() error })
+		if !ok {
+			continue
+		}
+		logger.Info("Shutting down component", "component", name)
+		wg.Add(1)
+		go func(name string, closeFn func() error) {
+			defer wg.Done()
+			if err := closeFn(); err != nil {
+				mu.Lock()
+				shutdownErrors = append(shutdownErrors, fmt.Errorf("%s shutdown error: %w", name, err))
+				mu.Unlock()
+			} else {
+				logger.Info("Component shut down", "component", name)
+			}
+		}(name, c.Close)
 	}
 
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		logger.Warn("Shutdown deadline exceeded; some components may not have closed")
+	case <-time.After(30 * time.Second):
+		logger.Warn("Shutdown timed out after 30s; some components may not have closed")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
 	if len(shutdownErrors) > 0 {
 		logger.Warn("Graceful shutdown completed with errors", "error_count", len(shutdownErrors))
-		for _, err := range shutdownErrors {
-			logger.Error("Shutdown error", err)
-		}
-		return fmt.Errorf("shutdown completed with %d errors", len(shutdownErrors))
+		return errors.Join(shutdownErrors...)
 	}
 
 	logger.Info("Graceful shutdown completed successfully")

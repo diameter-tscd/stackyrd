@@ -1,10 +1,10 @@
-# PKG_SCRIPT — Package Manager Script (`scripts/pkg/pkg.go`)
+# PKG_SCRIPT — Package Manager (`stackyrd pkg`)
 
 ## Overview
 
-`scripts/pkg/pkg.go` is the **stackyrd package manager** — a standalone Go CLI tool for installing, tracking, and managing infrastructure packages from the [stackyrd-pkg](https://github.com/diameter-tscd/stackyrd-pkg) repository.
+`stackyrd pkg` (implemented in `scripts/internal/pkg/pkg.go`) is the **stackyrd package manager** — part of the standalone `scripts/` CLI module for installing, tracking, and managing infrastructure packages from the [stackyrd-pkg](https://github.com/diameter-tscd/stackyrd-pkg) repository.
 
-Packages are Go/yrd source files installed into `pkg/infrastructure/`. The script handles downloading, converting (`.yrd` → `.go`), and metadata tracking via a YAML manifest.
+Packages are Go/yrd source files installed into `pkg/infrastructure/`. The command handles downloading, converting (`.yrd` → `.go`), and metadata tracking via a YAML manifest.
 
 ---
 
@@ -12,32 +12,32 @@ Packages are Go/yrd source files installed into `pkg/infrastructure/`. The scrip
 
 ```bash
 # Interactive install (search packages by name)
-go run scripts/pkg/pkg.go
+./scripts/yrd pkg
 
 # Direct install by name@version
-go run scripts/pkg/pkg.go install -pkg cloud/aws/ec2@1.0.0
+./scripts/yrd pkg install -pkg cloud/aws/ec2@1.0.0
 
 # Reinstall an existing package (fuzzy name or -pkg flag)
-go run scripts/pkg/pkg.go reinstall ec2
-go run scripts/pkg/pkg.go reinstall -pkg cloud/aws/ec2@1.0.0
+./scripts/yrd pkg reinstall ec2
+./scripts/yrd pkg reinstall -pkg cloud/aws/ec2@1.0.0
 
 # Manual install by full repo path
-go run scripts/pkg/pkg.go install -path /pkg/infrastructure/cloud/aws/ec2/1.0.0/ec2.go
+./scripts/yrd pkg install -path /pkg/infrastructure/cloud/aws/ec2/1.0.0/ec2.go
 
 # List installed packages
-go run scripts/pkg/pkg.go list
+./scripts/yrd pkg list
 
 # Show package details
-go run scripts/pkg/pkg.go info cloud/aws/ec2
+./scripts/yrd pkg info cloud/aws/ec2
 
 # Remove a package
-go run scripts/pkg/pkg.go remove cloud/aws/ec2
+./scripts/yrd pkg remove cloud/aws/ec2
 
 # Upgrade all packages to latest
-go run scripts/pkg/pkg.go upgrade
+./scripts/yrd pkg upgrade
 
 # Refresh local index cache
-go run scripts/pkg/pkg.go update
+./scripts/yrd pkg update
 ```
 
 ---
@@ -61,13 +61,13 @@ Installs a package from the index or via a manual path.
 
 ```bash
 # Interactive mode — prompts for package name search and version selection
-go run scripts/pkg/pkg.go install
+./scripts/yrd pkg install
 
 # Non-interactive with explicit package
-go run scripts/pkg/pkg.go install -pkg cloud/aws/ec2@1.0.0
+./scripts/yrd pkg install -pkg cloud/aws/ec2@1.0.0
 
 # Manual path install — auto-detects .go vs .yrd via HEAD request
-go run scripts/pkg/pkg.go install -path /pkg/infrastructure/cloud/aws/ec2/1.0.0/ec2.go
+./scripts/yrd pkg install -path /pkg/infrastructure/cloud/aws/ec2/1.0.0/ec2.go
 ```
 
 When `-path` is provided, the script:
@@ -101,10 +101,10 @@ Re-downloads and re-installs an existing package, overwriting files and refreshi
 2. **Explicit `-pkg`** — `reinstall -pkg cloud/aws/ec2@1.0.0` forces reinstall of a specific package+version regardless of manifest state (useful for orphaned files without a manifest entry).
 
 ```bash
-go run scripts/pkg/pkg.go reinstall ec2                        # fuzzy match, same version
-go run scripts/pkg/pkg.go reinstall -pkg cloud/aws/ec2@1.0.0   # explicit package+version
-go run scripts/pkg/pkg.go reinstall -yes cloud/aws/ec2          # skip confirmation
-go run scripts/pkg/pkg.go reinstall -dry-run ec2                # preview only
+./scripts/yrd pkg reinstall ec2                        # fuzzy match, same version
+./scripts/yrd pkg reinstall -pkg cloud/aws/ec2@1.0.0   # explicit package+version
+./scripts/yrd pkg reinstall -yes cloud/aws/ec2          # skip confirmation
+./scripts/yrd pkg reinstall -dry-run ec2                # preview only
 ```
 
 ---
@@ -124,7 +124,7 @@ Output columns:
 - **Status** — "up to date", "X.Y.Z available" (if newer exists), or "not in index"
 
 ```bash
-go run scripts/pkg/pkg.go list
+./scripts/yrd pkg list
 ```
 
 ---
@@ -138,7 +138,7 @@ Shows detailed information for a single installed package.
 | `<name>` | Package name (required) |
 
 ```bash
-go run scripts/pkg/pkg.go info cloud/aws/ec2
+./scripts/yrd pkg info cloud/aws/ec2
 ```
 
 Output includes: name, version, source (index/manual), manual path (if manual), files, install date, update date, status.
@@ -165,10 +165,10 @@ Removes an installed package, deleting its files and updating the manifest.
 4. If multiple packages share the same short name (e.g. `pkg/infrastructure/auth/oauth` and `pkg/infrastructure/other/oauth`), an interactive prompt lets you choose which to remove
 
 ```bash
-go run scripts/pkg/pkg.go remove cloud/aws/ec2             # full path
-go run scripts/pkg/pkg.go remove ec2                       # short last-segment name
-go run scripts/pkg/pkg.go remove -yes ec2                  # skip confirmation
-go run scripts/pkg/pkg.go remove -dry-run ec2              # preview only
+./scripts/yrd pkg remove cloud/aws/ec2             # full path
+./scripts/yrd pkg remove ec2                       # short last-segment name
+./scripts/yrd pkg remove -yes ec2                  # skip confirmation
+./scripts/yrd pkg remove -dry-run ec2              # preview only
 ```
 
 Safety: the script verifies that files are inside `pkg/infrastructure/` before deleting (path traversal protection). Errors are reported accurately — "File already removed" if the file is missing, "Failed to remove" with the specific error for other failures. The project root is resolved via `findProjectRoot` (go.mod walk) so remove works correctly from any subdirectory.
@@ -186,17 +186,17 @@ Upgrades installed packages to their latest available versions.
 
 Upgrade a single package by name:
 ```bash
-go run scripts/pkg/pkg.go upgrade cloud/aws/ec2
+./scripts/yrd pkg upgrade cloud/aws/ec2
 ```
 
 Upgrade all installed packages (interactive per-package):
 ```bash
-go run scripts/pkg/pkg.go upgrade
+./scripts/yrd pkg upgrade
 ```
 
 Upgrade all without confirmation:
 ```bash
-go run scripts/pkg/pkg.go upgrade -yes
+./scripts/yrd pkg upgrade -yes
 ```
 
 **Backup and rollback:** Before downloading new files, existing files are renamed with a `.bak.{timestamp}` suffix. If download or conversion fails, the backup is restored. Successful upgrades clean up backup files.
@@ -213,7 +213,7 @@ go run scripts/pkg/pkg.go upgrade -yes
 Refreshes the local package index cache and checks for available updates.
 
 ```bash
-go run scripts/pkg/pkg.go update
+./scripts/yrd pkg update
 ```
 
 What it does:
@@ -229,9 +229,9 @@ What it does:
 When invoked without a subcommand, the script falls back to the original install-only mode:
 
 ```bash
-go run scripts/pkg/pkg.go                          # interactive install
-go run scripts/pkg/pkg.go -pkg cloud/aws/ec2@1.0.0 # direct install
-go run scripts/pkg/pkg.go -verbose                 # with debug output
+./scripts/yrd pkg                          # interactive install
+./scripts/yrd pkg -pkg cloud/aws/ec2@1.0.0 # direct install
+./scripts/yrd pkg -verbose                 # with debug output
 ```
 
 | Flag | Default | Description |
@@ -245,10 +245,10 @@ go run scripts/pkg/pkg.go -verbose                 # with debug output
 ## Help
 
 ```
-go run scripts/pkg/pkg.go -h          # show global help
-go run scripts/pkg/pkg.go --help      # show global help  
-go run scripts/pkg/pkg.go help        # show global help
-go run scripts/pkg/pkg.go install -h  # show install subcommand help (via flag.ExitOnError)
+./scripts/yrd pkg -h          # show global help
+./scripts/yrd pkg --help      # show global help  
+./scripts/yrd pkg help        # show global help
+./scripts/yrd pkg install -h  # show install subcommand help (via flag.ExitOnError)
 ```
 
 ---
@@ -299,7 +299,7 @@ The index downloaded from the remote repository is cached locally to speed up `l
 
 - **Path:** `store/pkg-index.cache`
 - **Staleness warning:** Displays a warning if cache is older than 1 hour
-- **Refresh:** Run `go run scripts/pkg/pkg.go update` to refresh
+- **Refresh:** Run `./scripts/yrd pkg update` to refresh
 
 ---
 
@@ -308,9 +308,9 @@ The index downloaded from the remote repository is cached locally to speed up `l
 All subcommands and legacy mode support `-verbose` (or a global `-V` / `--verbose` in any position):
 
 ```bash
-go run scripts/pkg/pkg.go -V
-go run scripts/pkg/pkg.go install -verbose
-go run scripts/pkg/pkg.go upgrade --verbose
+./scripts/yrd pkg -V
+./scripts/yrd pkg install -verbose
+./scripts/yrd pkg upgrade --verbose
 ```
 
 ---
@@ -380,12 +380,12 @@ Only files matching `\.yrd$` or `\.go$` are downloaded or tracked. Non-whitelist
 ## Build & Development
 
 ```bash
-# Build
-go build -o /dev/null ./scripts/pkg/
+# Build the CLI once
+cd scripts && go build -o /dev/null .
 
 # Vet
-go vet ./scripts/pkg/
+go vet ./...
 
 # Run (from project root)
-go run scripts/pkg/pkg.go
+./scripts/yrd pkg
 ```

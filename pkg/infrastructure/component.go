@@ -14,7 +14,7 @@ type InfrastructureComponent interface {
 	Close() error
 
 	// GetStatus returns the current status of the component
-	GetStatus() map[string]interface{}
+	GetStatus() map[string]any
 }
 
 // ComponentFactory is a function that creates an infrastructure component

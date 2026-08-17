@@ -48,7 +48,7 @@ type LiveModel struct {
 	startTime       time.Time
 	width           int
 	height          int
-	quitting        bool
+	isQuitting      bool
 	maxLogs         int
 	program         atomic.Pointer[tea.Program]
 
@@ -146,7 +146,7 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result := m.exitDialog.GetResult(); result != nil {
 				if result.Confirmed {
 					// Confirm exit
-					m.quitting = true
+					m.isQuitting = true
 					// Call the shutdown callback if provided
 					if m.config.OnShutdown != nil {
 						m.config.OnShutdown()
@@ -273,7 +273,7 @@ func (m *LiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *LiveModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 

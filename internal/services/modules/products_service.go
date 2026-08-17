@@ -48,7 +48,7 @@ func (s *ProductsService) Endpoints() []string {
 	}
 }
 
-func (s *ProductsService) Get() interface{} {
+func (s *ProductsService) Get() any {
 	return s
 }
 

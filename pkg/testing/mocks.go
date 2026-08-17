@@ -27,9 +27,9 @@ func (m *MockService) Name() string        { return m.name }
 func (m *MockService) WireName() string    { return "mock-" + m.name }
 func (m *MockService) Enabled() bool       { return m.enabled }
 func (m *MockService) Endpoints() []string { return m.endpoints }
-func (m *MockService) Get() interface{}    { return m }
+func (m *MockService) Get() any    { return m }
 
-func (m *MockService) RegisterRoutes(g interface{}) {
+func (m *MockService) RegisterRoutes(g any) {
 	// Mock implementation - does nothing
 }
 
@@ -43,7 +43,7 @@ type MockLogger struct {
 type LogEntry struct {
 	Level   string
 	Message string
-	Args    []interface{}
+	Args    []any
 }
 
 // NewMockLogger creates a new mock logger
@@ -53,31 +53,31 @@ func NewMockLogger() *MockLogger {
 	}
 }
 
-func (m *MockLogger) Debug(msg string, args ...interface{}) {
+func (m *MockLogger) Debug(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logs = append(m.logs, LogEntry{Level: "DEBUG", Message: msg, Args: args})
 }
 
-func (m *MockLogger) Info(msg string, args ...interface{}) {
+func (m *MockLogger) Info(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logs = append(m.logs, LogEntry{Level: "INFO", Message: msg, Args: args})
 }
 
-func (m *MockLogger) Warn(msg string, args ...interface{}) {
+func (m *MockLogger) Warn(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logs = append(m.logs, LogEntry{Level: "WARN", Message: msg, Args: args})
 }
 
-func (m *MockLogger) Error(msg string, args ...interface{}) {
+func (m *MockLogger) Error(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logs = append(m.logs, LogEntry{Level: "ERROR", Message: msg, Args: args})
 }
 
-func (m *MockLogger) Fatal(msg string, args ...interface{}) {
+func (m *MockLogger) Fatal(msg string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logs = append(m.logs, LogEntry{Level: "FATAL", Message: msg, Args: args})
@@ -100,17 +100,17 @@ func (m *MockLogger) Clear() {
 // MockRedisManager implements a mock Redis manager for testing
 type MockRedisManager struct {
 	mu      sync.RWMutex
-	storage map[string]interface{}
+	storage map[string]any
 }
 
 // NewMockRedisManager creates a new mock Redis manager
 func NewMockRedisManager() *MockRedisManager {
 	return &MockRedisManager{
-		storage: make(map[string]interface{}),
+		storage: make(map[string]any),
 	}
 }
 
-func (m *MockRedisManager) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (m *MockRedisManager) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.storage[key] = value
@@ -141,13 +141,13 @@ func (m *MockRedisManager) Close() error {
 
 // MockPostgresManager implements a mock PostgreSQL manager for testing
 type MockPostgresManager struct {
-	storage map[string]interface{}
+	storage map[string]any
 }
 
 // NewMockPostgresManager creates a new mock PostgreSQL manager
 func NewMockPostgresManager() *MockPostgresManager {
 	return &MockPostgresManager{
-		storage: make(map[string]interface{}),
+		storage: make(map[string]any),
 	}
 }
 
@@ -157,13 +157,13 @@ func (m *MockPostgresManager) Close() error {
 
 // MockMongoManager implements a mock MongoDB manager for testing
 type MockMongoManager struct {
-	storage map[string]interface{}
+	storage map[string]any
 }
 
 // NewMockMongoManager creates a new mock MongoDB manager
 func NewMockMongoManager() *MockMongoManager {
 	return &MockMongoManager{
-		storage: make(map[string]interface{}),
+		storage: make(map[string]any),
 	}
 }
 

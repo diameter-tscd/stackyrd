@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"stackyrd/pkg/response"
 
 	"github.com/labstack/echo/v4"
+	"github.com/samber/oops"
 )
 
 type EncryptionService struct {
@@ -32,7 +32,7 @@ type EncryptionService struct {
 	logger        *logger.Logger
 }
 
-func NewEncryptionService(enabled bool, cfg map[string]interface{}, log ...*logger.Logger) *EncryptionService {
+func NewEncryptionService(enabled bool, cfg map[string]any, log ...*logger.Logger) *EncryptionService {
 	algorithm := "aes-256-gcm"
 	key := ""
 
@@ -79,7 +79,7 @@ func NewEncryptionService(enabled bool, cfg map[string]interface{}, log ...*logg
 func (s *EncryptionService) Name() string     { return "Encryption Service" }
 func (s *EncryptionService) WireName() string { return "encryption-service" }
 func (s *EncryptionService) Enabled() bool    { return s.enabled }
-func (s *EncryptionService) Get() interface{} { return s }
+func (s *EncryptionService) Get() any { return s }
 func (s *EncryptionService) Endpoints() []string {
 	return []string{"/encryption/encrypt", "/encryption/decrypt", "/encryption/status", "/encryption/key-rotate"}
 }
@@ -134,17 +134,17 @@ func (s *EncryptionService) encrypt(data []byte) (string, error) {
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
+		return "", oops.In("encryption-service").Tags("aes", "cipher").Wrapf(err, "failed to create cipher")
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
+		return "", oops.In("encryption-service").Tags("aes", "gcm").Wrapf(err, "failed to create gcm")
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %w", err)
+		return "", oops.In("encryption-service").Tags("aes", "nonce").Wrapf(err, "failed to generate nonce")
 	}
 
 	encrypted := gcm.Seal(nonce, nonce, data, nil)
@@ -154,7 +154,7 @@ func (s *EncryptionService) encrypt(data []byte) (string, error) {
 func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(encryptedData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64: %w", err)
+		return nil, oops.In("encryption-service").Tags("decode").Wrapf(err, "failed to decode base64")
 	}
 
 	s.keyMu.RLock()
@@ -163,23 +163,23 @@ func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+		return nil, oops.In("encryption-service").Tags("aes", "cipher").Wrapf(err, "failed to create cipher")
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
+		return nil, oops.In("encryption-service").Tags("aes", "gcm").Wrapf(err, "failed to create gcm")
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {
-		return nil, errors.New("encrypted data too short")
+		return nil, oops.In("encryption-service").Tags("data", "decryption").Code("encrypted_data_too_short").Public("Encrypted data too short").Errorf("encrypted data too short")
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	decrypted, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, oops.In("encryption-service").Tags("aes", "gcm").Wrapf(err, "failed to decrypt")
 	}
 
 	return decrypted, nil
@@ -280,25 +280,25 @@ func (s *EncryptionService) RotateKey(c echo.Context) error {
 	}, "Key rotation successful")
 }
 
-func (s *EncryptionService) EncryptJSON(data interface{}) (string, error) {
+func (s *EncryptionService) EncryptJSON(data any) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+		return "", oops.In("encryption-service").Tags("json").Wrapf(err, "failed to marshal JSON")
 	}
 	return s.encrypt(jsonData)
 }
 
-func (s *EncryptionService) DecryptJSON(encryptedData string, target interface{}) error {
+func (s *EncryptionService) DecryptJSON(encryptedData string, target any) error {
 	decrypted, err := s.decrypt(encryptedData)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt: %w", err)
+		return oops.In("encryption-service").Tags("json").Wrapf(err, "failed to decrypt")
 	}
 	return json.Unmarshal(decrypted, target)
 }
 
 func init() {
 	registry.RegisterService("encryption_service", func(config *config.Config, logger *logger.Logger) interfaces.Service {
-		encryptionConfig := map[string]interface{}{
+		encryptionConfig := map[string]any{
 			"algorithm": config.Encryption.Algorithm,
 			"key":       config.Encryption.Key,
 		}

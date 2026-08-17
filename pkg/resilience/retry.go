@@ -3,14 +3,8 @@ package resilience
 import (
 	"context"
 	"math"
-	"math/rand"
-	"sync"
+	"math/rand/v2"
 	"time"
-)
-
-var (
-	jitterMu   sync.Mutex
-	jitterRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 // RetryConfig holds retry configuration
@@ -132,9 +126,7 @@ func calculateDelay(attempt int, config RetryConfig) time.Duration {
 
 	// Jitter first, then cap, so MaxDelay is a true ceiling.
 	if config.Jitter {
-		jitterMu.Lock()
-		jitter := jitterRand.Float64() * 0.5
-		jitterMu.Unlock()
+		jitter := rand.Float64() * 0.5
 		delay = delay * (1 + jitter)
 	}
 

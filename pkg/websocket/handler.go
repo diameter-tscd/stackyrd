@@ -56,7 +56,7 @@ type Hub struct {
 // Message represents a WebSocket message
 type Message struct {
 	Type    string      `json:"type"`
-	Payload interface{} `json:"payload"`
+	Payload any `json:"payload"`
 	Room    string      `json:"room,omitempty"`
 }
 
@@ -147,8 +147,8 @@ func (h *Hub) SendToClient(clientID string, message []byte) {
 	}
 }
 
-// GetConnectedClients returns the number of connected clients
-func (h *Hub) GetConnectedClients() int {
+// ConnectedClients returns the number of connected clients
+func (h *Hub) ConnectedClients() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
@@ -268,7 +268,7 @@ func (c *Client) handleMessage(msg Message) {
 }
 
 // BroadcastMessage broadcasts a message to all connected clients
-func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
+func BroadcastMessage(hub *Hub, messageType string, payload any) {
 	msg := Message{
 		Type:    messageType,
 		Payload: payload,
@@ -281,9 +281,9 @@ func BroadcastMessage(hub *Hub, messageType string, payload interface{}) {
 	hub.Broadcast(data)
 }
 
-// GetHubStats returns hub statistics
-func GetHubStats(hub *Hub) map[string]interface{} {
-	return map[string]interface{}{
-		"connected_clients": hub.GetConnectedClients(),
+// Stats returns hub statistics
+func (h *Hub) Stats() map[string]any {
+	return map[string]any{
+		"connected_clients": h.ConnectedClients(),
 	}
 }

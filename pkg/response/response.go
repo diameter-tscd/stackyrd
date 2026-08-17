@@ -13,7 +13,7 @@ type Response struct {
 	Success       bool         `json:"success"`
 	Status        int          `json:"status"`
 	Message       string       `json:"message,omitempty"`
-	Data          interface{}  `json:"data,omitempty"`
+	Data          any  `json:"data,omitempty"`
 	Error         *ErrorDetail `json:"error,omitempty"`
 	Meta          *Meta        `json:"meta,omitempty"`
 	Timestamp     int64        `json:"timestamp"`
@@ -24,7 +24,7 @@ type Response struct {
 type ErrorDetail struct {
 	Code    string                 `json:"code"`
 	Message string                 `json:"message"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 type Meta struct {
@@ -32,7 +32,7 @@ type Meta struct {
 	PerPage    int                    `json:"per_page,omitempty"`
 	Total      int64                  `json:"total,omitempty"`
 	TotalPages int                    `json:"total_pages,omitempty"`
-	Extra      map[string]interface{} `json:"extra,omitempty"`
+	Extra      map[string]any `json:"extra,omitempty"`
 }
 
 type PaginationRequest struct {
@@ -88,7 +88,7 @@ func getPooledResponse() *Response {
 	return resp
 }
 
-func Success(c echo.Context, data interface{}, message ...string) error {
+func Success(c echo.Context, data any, message ...string) error {
 	resp := getPooledResponse()
 	// Reset to zero values
 	*resp = Response{}
@@ -112,7 +112,7 @@ func Success(c echo.Context, data interface{}, message ...string) error {
 	return err
 }
 
-func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...string) error {
+func SuccessWithMeta(c echo.Context, data any, meta *Meta, message ...string) error {
 	resp := getPooledResponse()
 	*resp = Response{}
 
@@ -136,7 +136,7 @@ func SuccessWithMeta(c echo.Context, data interface{}, meta *Meta, message ...st
 	return err
 }
 
-func Created(c echo.Context, data interface{}, message ...string) error {
+func Created(c echo.Context, data any, message ...string) error {
 	resp := getPooledResponse()
 	*resp = Response{}
 
@@ -163,7 +163,7 @@ func NoContent(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func BadRequest(c echo.Context, message string, details ...map[string]interface{}) error {
+func BadRequest(c echo.Context, message string, details ...map[string]any) error {
 	return Error(c, http.StatusBadRequest, "BAD_REQUEST", message, details...)
 }
 
@@ -191,12 +191,12 @@ func NotFound(c echo.Context, message ...string) error {
 	return Error(c, http.StatusNotFound, "NOT_FOUND", msg)
 }
 
-func Conflict(c echo.Context, message string, details ...map[string]interface{}) error {
+func Conflict(c echo.Context, message string, details ...map[string]any) error {
 	return Error(c, http.StatusConflict, "CONFLICT", message, details...)
 }
 
 func ValidationError(c echo.Context, message string, details map[string]string) error {
-	errorDetails := make(map[string]interface{}, len(details))
+	errorDetails := make(map[string]any, len(details))
 	for k, v := range details {
 		errorDetails[k] = v
 	}
@@ -219,8 +219,8 @@ func ServiceUnavailable(c echo.Context, message ...string) error {
 	return Error(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", msg)
 }
 
-func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]interface{}) error {
-	var errorDetails map[string]interface{}
+func Error(c echo.Context, statusCode int, errorCode string, message string, details ...map[string]any) error {
+	var errorDetails map[string]any
 	if len(details) > 0 {
 		errorDetails = details[0]
 	}
@@ -229,7 +229,7 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 	resp := getPooledResponse()
 	*resp = Response{}
 
-	errorDetailsCopy := make(map[string]interface{}, len(errorDetails))
+	errorDetailsCopy := make(map[string]any, len(errorDetails))
 	for k, v := range errorDetails {
 		errorDetailsCopy[k] = v
 	}
@@ -260,15 +260,18 @@ func getCorrelationID(c echo.Context) string {
 	return ""
 }
 
-func CalculateMeta(page, perPage int, total int64, extra ...map[string]interface{}) *Meta {
+func CalculateMeta(page, perPage int, total int64, extra ...map[string]any) *Meta {
 	if perPage < 1 {
 		perPage = 1
 	}
 	if page < 1 {
 		page = 1
 	}
+	if total > math.MaxInt {
+		total = math.MaxInt
+	}
 	totalPages := int(total) / perPage
-	if int(total)%perPage > 0 {
+	if total%int64(perPage) > 0 {
 		totalPages++
 	}
 

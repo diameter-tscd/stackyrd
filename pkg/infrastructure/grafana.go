@@ -27,7 +27,7 @@ type GrafanaManager struct {
 	logger   *logger.Logger
 
 	// statusCache avoids re-running an HTTP health-check on every /health poll.
-	statusCache  map[string]interface{}
+	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.Mutex
 }
@@ -37,19 +37,19 @@ type grafanaLoggerAdapter struct {
 	logger *logger.Logger
 }
 
-func (a *grafanaLoggerAdapter) Error(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Error(msg string, keysAndValues ...any) {
 	a.logger.Error(msg, nil, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Info(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Info(msg string, keysAndValues ...any) {
 	a.logger.Info(msg, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Debug(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Debug(msg string, keysAndValues ...any) {
 	a.logger.Debug(msg, keysAndValues...)
 }
 
-func (a *grafanaLoggerAdapter) Warn(msg string, keysAndValues ...interface{}) {
+func (a *grafanaLoggerAdapter) Warn(msg string, keysAndValues ...any) {
 	a.logger.Warn(msg, keysAndValues...)
 }
 
@@ -68,7 +68,7 @@ type GrafanaDashboard struct {
 	Refresh       string             `json:"refresh,omitempty"`
 	SchemaVersion int                `json:"schemaVersion,omitempty"`
 	Version       int                `json:"version,omitempty"`
-	Links         []interface{}      `json:"links,omitempty"`
+	Links         []any      `json:"links,omitempty"`
 }
 
 // GrafanaPanel represents a dashboard panel
@@ -79,7 +79,7 @@ type GrafanaPanel struct {
 	GridPos       GrafanaGridPos         `json:"gridPos"`
 	Targets       []GrafanaTarget        `json:"targets,omitempty"`
 	FieldConfig   GrafanaFieldConfig     `json:"fieldConfig,omitempty"`
-	Options       map[string]interface{} `json:"options,omitempty"`
+	Options       map[string]any `json:"options,omitempty"`
 	PluginVersion string                 `json:"pluginVersion,omitempty"`
 }
 
@@ -125,27 +125,27 @@ type GrafanaTemplating struct {
 type GrafanaTemplateVar struct {
 	Name       string      `json:"name"`
 	Type       string      `json:"type"`
-	Datasource interface{} `json:"datasource,omitempty"`
+	Datasource any `json:"datasource,omitempty"`
 	Query      string      `json:"query,omitempty"`
 	Label      string      `json:"label,omitempty"`
 }
 
 // GrafanaAnnotations represents annotation settings
 type GrafanaAnnotations struct {
-	List []interface{} `json:"list,omitempty"`
+	List []any `json:"list,omitempty"`
 }
 
 // GrafanaFieldConfig represents field configuration
 type GrafanaFieldConfig struct {
 	Defaults  GrafanaFieldDefaults `json:"defaults,omitempty"`
-	Overrides []interface{}        `json:"overrides,omitempty"`
+	Overrides []any        `json:"overrides,omitempty"`
 }
 
 // GrafanaFieldDefaults represents default field settings
 type GrafanaFieldDefaults struct {
 	Unit     string                 `json:"unit,omitempty"`
 	Decimals *int                   `json:"decimals,omitempty"`
-	Custom   map[string]interface{} `json:"custom,omitempty"`
+	Custom   map[string]any `json:"custom,omitempty"`
 }
 
 // GrafanaDataSource represents a Grafana data source
@@ -162,8 +162,8 @@ type GrafanaDataSource struct {
 	BasicAuth         bool                   `json:"basicAuth,omitempty"`
 	BasicAuthUser     string                 `json:"basicAuthUser,omitempty"`
 	BasicAuthPassword string                 `json:"basicAuthPassword,omitempty"`
-	JSONData          map[string]interface{} `json:"jsonData,omitempty"`
-	SecureJSONData    map[string]interface{} `json:"secureJsonData,omitempty"`
+	JSONData          map[string]any `json:"jsonData,omitempty"`
+	SecureJSONData    map[string]any `json:"secureJsonData,omitempty"`
 	ReadOnly          bool                   `json:"readOnly,omitempty"`
 }
 
@@ -176,7 +176,7 @@ type GrafanaAnnotation struct {
 	TimeEnd     int64                  `json:"timeEnd,omitempty"`
 	Tags        []string               `json:"tags,omitempty"`
 	Text        string                 `json:"text"`
-	Data        map[string]interface{} `json:"data,omitempty"`
+	Data        map[string]any `json:"data,omitempty"`
 }
 
 // Name returns the display name of the component
@@ -267,7 +267,7 @@ func (gm *GrafanaManager) testConnection() error {
 func (gm *GrafanaManager) CreateDashboard(ctx context.Context, dashboard GrafanaDashboard) (*GrafanaDashboard, error) {
 	gm.logger.Info("Creating Grafana dashboard", "title", dashboard.Title)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"dashboard": dashboard,
 		"overwrite": false,
 	}
@@ -315,7 +315,7 @@ func (gm *GrafanaManager) CreateDashboard(ctx context.Context, dashboard Grafana
 
 // UpdateDashboard updates an existing dashboard
 func (gm *GrafanaManager) UpdateDashboard(ctx context.Context, dashboard GrafanaDashboard) (*GrafanaDashboard, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"dashboard": dashboard,
 		"overwrite": true,
 	}
@@ -542,7 +542,7 @@ func (gm *GrafanaManager) CreateAnnotation(ctx context.Context, annotation Grafa
 }
 
 // GetHealth returns Grafana health status
-func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}, error) {
+func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]any, error) {
 	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", gm.BaseURL+"/api/health", nil)
 	if err != nil {
 		return nil, err
@@ -554,7 +554,7 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode health response: %w", err)
 	}
@@ -563,8 +563,8 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]interface{}
 }
 
 // GetStatus returns the current status of the Grafana manager
-func (gm *GrafanaManager) GetStatus() map[string]interface{} {
-	stats := make(map[string]interface{})
+func (gm *GrafanaManager) GetStatus() map[string]any {
+	stats := make(map[string]any)
 	if gm == nil {
 		stats["connected"] = false
 		return stats
@@ -579,7 +579,7 @@ func (gm *GrafanaManager) GetStatus() map[string]interface{} {
 	// shared cached map (concurrent map writes would panic).
 	gm.statusMu.Lock()
 	if time.Now().Before(gm.statusExpiry) && gm.statusCache != nil {
-		out := make(map[string]interface{}, len(gm.statusCache)+2)
+		out := make(map[string]any, len(gm.statusCache)+2)
 		for k, v := range gm.statusCache {
 			out[k] = v
 		}

@@ -65,6 +65,9 @@ postgres:
       password: "Mypostgres01"
       dbname: "postgres"
       sslmode: "disable"
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: "5m"
 
     - name: "secondary"
       enabled: true
@@ -74,6 +77,9 @@ postgres:
       password: "Mypostgres01"
       dbname: "postgres"
       sslmode: "disable"
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: "5m"
 
 mongo:
   enabled: true
@@ -115,4 +121,9 @@ encryption:
   key: ""
   rotate_keys: false
   key_rotation_interval: "24h"
+
+mcp:
+  enabled: false
+  endpoint: "/mcp"
+  token: ""  # Bearer token for MCP endpoint authentication; leave empty to disable
 

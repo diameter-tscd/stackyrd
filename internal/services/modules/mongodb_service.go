@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Product struct {
@@ -54,7 +55,7 @@ func (s *MongoDBService) Enabled() bool    { return s.enabled }
 func (s *MongoDBService) Endpoints() []string {
 	return []string{"/products/{tenant}", "/products/{tenant}/{id}"}
 }
-func (s *MongoDBService) Get() interface{} { return s }
+func (s *MongoDBService) Get() any { return s }
 
 func (s *MongoDBService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/products")
@@ -80,7 +81,22 @@ func (s *MongoDBService) listProductsByTenant(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	cursor, err := conn.Find(ctx, "products", bson.M{})
+
+	var req response.PaginationRequest
+	if err := request.Bind(c, &req); err != nil {
+		return response.BadRequest(c, "Invalid pagination parameters")
+	}
+	perPage := req.GetPerPage()
+	offset := req.GetOffset()
+
+	total, err := conn.CountDocuments(ctx, "products", bson.M{})
+	if err != nil {
+		s.logger.Error("Failed to count products", err, "tenant", tenant)
+		return response.InternalServerError(c, "Failed to query tenant database")
+	}
+
+	opts := options.Find().SetLimit(int64(perPage)).SetSkip(int64(offset)).SetSort(bson.D{{Key: "_id", Value: -1}})
+	cursor, err := conn.Find(ctx, "products", bson.M{}, opts)
 	if err != nil {
 		s.logger.Error("Failed to query products", err, "tenant", tenant)
 		return response.InternalServerError(c, "Failed to query tenant database")
@@ -97,7 +113,14 @@ func (s *MongoDBService) listProductsByTenant(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to decode products")
 	}
 
-	return response.Success(c, products, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
+	meta := &response.Meta{
+		Page:       req.GetPage(),
+		PerPage:    perPage,
+		Total:      total,
+		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
+	}
+
+	return response.SuccessWithMeta(c, products, meta, fmt.Sprintf("Products retrieved from tenant '%s'", tenant))
 }
 
 // validProduct rejects client-supplied products that would corrupt catalog data.
@@ -133,7 +156,7 @@ func (s *MongoDBService) createProduct(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to create product")
 	}
 
-	return response.Created(c, map[string]interface{}{
+	return response.Created(c, map[string]any{
 		"id":      result.InsertedID,
 		"tenant":  tenant,
 		"product": product,
@@ -327,7 +350,7 @@ func (s *MongoDBService) getProductAnalytics(c echo.Context) error {
 				"_id":        "$category",
 				"count":      bson.M{"$sum": 1},
 				"avgPrice":   bson.M{"$avg": "$price"},
-				"totalValue": bson.M{"$sum": bson.M{"$multiply": []interface{}{"$price", "$quantity"}}},
+				"totalValue": bson.M{"$sum": bson.M{"$multiply": []any{"$price", "$quantity"}}},
 			},
 		},
 	}

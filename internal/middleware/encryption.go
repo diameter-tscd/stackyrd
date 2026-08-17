@@ -24,7 +24,7 @@ func init() {
 
 func GzipMiddleware() echo.MiddlewareFunc {
 	var gzPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return gzip.NewWriter(io.Discard)
 		},
 	}

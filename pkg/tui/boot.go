@@ -28,7 +28,7 @@ type BootModel struct {
 	initQueue     []ServiceInit
 	results       []ServiceStatus
 	current       int
-	done          bool
+	isDone        bool
 	config        StartupConfig
 	startTime     time.Time
 	width         int
@@ -195,7 +195,7 @@ func (m BootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if m.current >= len(m.initQueue) {
 				m.phase = "complete"
-				m.done = true
+				m.isDone = true
 				// Start countdown if configured
 				if m.config.IdleSeconds > 0 {
 					m.countdown = m.config.IdleSeconds
@@ -331,7 +331,7 @@ func (m BootModel) View() string {
 	b.WriteString("\n")
 
 	// Final message
-	if m.done {
+	if m.isDone {
 		elapsed := time.Since(m.startTime).Round(time.Millisecond)
 
 		switch m.phase {

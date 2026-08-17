@@ -12,8 +12,10 @@ import (
 
 func TestWebSocket_NewHub(t *testing.T) {
 	hub := websocket.NewHub()
+	go hub.Run()
+
 	assert.NotNil(t, hub)
-	assert.Equal(t, 0, hub.GetConnectedClients())
+	assert.Equal(t, 0, hub.ConnectedClients())
 }
 
 func TestWebSocket_Broadcast(t *testing.T) {
@@ -45,11 +47,11 @@ func TestWebSocket_BroadcastMessage(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 }
 
-func TestWebSocket_GetHubStats(t *testing.T) {
+func TestWebSocket_HubStats(t *testing.T) {
 	hub := websocket.NewHub()
 	go hub.Run()
 
-	stats := websocket.GetHubStats(hub)
+	stats := hub.Stats()
 	assert.NotNil(t, stats)
 	assert.Equal(t, 0, stats["connected_clients"])
 }

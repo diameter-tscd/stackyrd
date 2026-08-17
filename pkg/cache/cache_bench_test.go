@@ -12,7 +12,7 @@ func BenchmarkCacheGet(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for j := 0; j < 1000; j++ {
 			_, _ = c.Get(string(rune(j)))
 		}

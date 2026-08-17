@@ -62,7 +62,7 @@ func (s *MultiTenantService) Enabled() bool    { return s.enabled }
 func (s *MultiTenantService) Endpoints() []string {
 	return []string{"/orders/{tenant}", "/orders/{tenant}/{id}"}
 }
-func (s *MultiTenantService) Get() interface{} { return s }
+func (s *MultiTenantService) Get() any { return s }
 
 func (s *MultiTenantService) RegisterRoutes(g *echo.Group) {
 	sub := g.Group("/orders")
@@ -191,7 +191,7 @@ func (s *MultiTenantService) updateOrder(c echo.Context) error {
 		return response.InternalServerError(c, "Failed to fetch order")
 	}
 
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if updateData.CustomerID != 0 {
 		updates["customer_id"] = updateData.CustomerID
 	}

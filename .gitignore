@@ -1,6 +1,6 @@
 # Binaries for programs and plugins
-*.exe
-*.exe~
+# *.exe
+# *.exe~
 *.dll
 *.so
 *.dylib
@@ -64,6 +64,7 @@ Thumbs.db
 # Workspace
 .workspace/
 .kilo
+opencode.json
 
 # Python artifacts
 *.pyc
@@ -84,3 +85,4 @@ scripts/internal
 scripts/go.mod
 scripts/go.sum
 scripts/main.go
+scripts/build-all.sh

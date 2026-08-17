@@ -9,5 +9,5 @@ type Service interface {
 	Name() string
 	Enabled() bool
 	RegisterRoutes(g *echo.Group)
-	Get() interface{}
+	Get() any
 }

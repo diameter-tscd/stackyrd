@@ -255,7 +255,7 @@ func TestMiddleware_GenerateToken(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	parsed, err := jwt.ParseWithClaims(token, &middleware.JWTClaims{}, func(t *jwt.Token) (interface{}, error) {
+	parsed, err := jwt.ParseWithClaims(token, &middleware.JWTClaims{}, func(t *jwt.Token) (any, error) {
 		return []byte(secret), nil
 	})
 	assert.NoError(t, err)

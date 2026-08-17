@@ -48,7 +48,7 @@ type WebhookEvent struct {
 	ID        string                 `json:"id"`
 	Type      string                 `json:"type"`
 	Timestamp time.Time              `json:"timestamp"`
-	Data      map[string]interface{} `json:"data"`
+	Data      map[string]any `json:"data"`
 	Signature string                 `json:"signature,omitempty"`
 }
 
@@ -271,8 +271,8 @@ func (wh *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// GetStats returns webhook statistics
-func (wm *WebhookManager) GetStats() map[string]interface{} {
+// Stats returns webhook statistics
+func (wm *WebhookManager) Stats() map[string]any {
 	wm.mu.RLock()
 	defer wm.mu.RUnlock()
 
@@ -281,7 +281,7 @@ func (wm *WebhookManager) GetStats() map[string]interface{} {
 		eventTypes = append(eventTypes, eventType)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"enabled":     wm.config.Enabled,
 		"event_types": eventTypes,
 		"url":         wm.config.URL,
@@ -301,8 +301,8 @@ func (wm *WebhookManager) Close() error {
 	return nil
 }
 
-func (wm *WebhookManager) GetStatus() map[string]interface{} {
-	return wm.GetStats()
+func (wm *WebhookManager) GetStatus() map[string]any {
+	return wm.Stats()
 }
 
 // RouteHandlers returns HTTP routes for receiving webhooks

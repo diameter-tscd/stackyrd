@@ -108,7 +108,7 @@ func TestUsersService_CreateUser(t *testing.T) {
 	service := modules.NewUsersService(true, l)
 	router := setupTestRouter(service)
 
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Test User",
 		"email":    "test@example.com",
 		"phone":    "+1234567890",
@@ -136,7 +136,7 @@ func TestUsersService_CreateUserValidation(t *testing.T) {
 	router := setupTestRouter(service)
 
 	// Missing required fields
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name": "Test User",
 	}
 	body, _ := json.Marshal(user)
@@ -154,7 +154,7 @@ func TestUsersService_UpdateUser(t *testing.T) {
 	service := modules.NewUsersService(true, l)
 	router := setupTestRouter(service)
 
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Updated User",
 		"email":    "updated@example.com",
 		"phone":    "+0987654321",
@@ -177,7 +177,7 @@ func TestUsersService_UpdateUserNotFound(t *testing.T) {
 	router := setupTestRouter(service)
 
 	// Send complete valid data but with non-existent user ID
-	user := map[string]interface{}{
+	user := map[string]any{
 		"name":     "Updated User",
 		"email":    "updated@example.com",
 		"phone":    "+1234567890",

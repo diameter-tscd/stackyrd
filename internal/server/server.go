@@ -45,7 +45,7 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
 		l.Warn("Endpoint not found", "path", c.Request().URL.Path, "method", c.Request().Method)
-		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]interface{}{
+		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]any{
 			"path":   c.Request().URL.Path,
 			"method": c.Request().Method,
 		})
@@ -67,6 +67,7 @@ func (s *Server) Start() error {
 	s.infraInitManager = infrastructure.NewInfraInitManager(s.logger)
 	s.logger.Info("Starting async infrastructure initialization...")
 	componentRegistry := s.infraInitManager.StartAsyncInitialization(s.config, s.logger)
+	infrastructure.SetInitManager(s.infraInitManager)
 
 	s.dependencies = registry.NewDependencies()
 
@@ -117,6 +118,17 @@ func (s *Server) Start() error {
 		s.logger.Warn("No services registered!")
 	}
 
+	svcs := make([]infrastructure.ServiceMeta, 0, len(services))
+	for _, svc := range services {
+		meta := infrastructure.ServiceMeta{Name: svc.Name(), State: registry.GetServiceState(svc.Name())}
+		if wne, ok := svc.Get().(interface{ WireName() string; Endpoints() []string }); ok {
+			meta.WireName = wne.WireName()
+			meta.Endpoints = wne.Endpoints()
+		}
+		svcs = append(svcs, meta)
+	}
+	infrastructure.SetServices(svcs)
+
 	serviceRegistry.Boot(s.e)
 
 	s.logger.Info("All services boot successfully")
@@ -149,7 +161,7 @@ func (s *Server) registerHealthEndpoints() {
 		if !ready {
 			status = "initializing"
 		}
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"status":                  status,
 			"server_ready":            ready,
 			"infrastructure":          s.infraInitManager.GetStatus(),
@@ -168,7 +180,7 @@ func (s *Server) registerHealthEndpoints() {
 		for k := range allFactories {
 			svcKeys = append(svcKeys, k)
 		}
-		return response.Success(c, map[string]interface{}{
+		return response.Success(c, map[string]any{
 			"total_infrastructure": len(allComponents),
 			"list_infrastructure":  infraKeys,
 			"total_service":        len(allFactories),

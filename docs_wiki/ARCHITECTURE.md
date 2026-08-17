@@ -1,155 +1,23 @@
-# Architecture Overview
+# Architecture
 
-**stackyrd** is an enterprise-grade modular Go framework built on **Echo v4** with auto-discovery patterns, async infrastructure initialization, TUI dashboard, and Prometheus metrics.
+The framework is built around three core concepts:
 
-## Key Concepts
+1. **Services** – business logic, registered via `registry.RegisterService` or `RegisterServiceWithDeps`.
+2. **Infrastructure** – db, redis, kafka, etc., installed in `pkg/infrastructure`.
+3. **Middleware** – request/response interceptors registered in `internal/middleware`.
 
-### Auto-Discovery Pattern
-Components register themselves via `init()` functions at import time:
+All components are auto‑discovered at boot and wired by the `registry` package.
 
-- **Services**: Business logic in `internal/services/modules/`
-- **Middleware**: HTTP middleware in `internal/middleware/`
-- **Infrastructure**: Database/clients in `pkg/infrastructure/`
+## Boot Order
 
-
-### Boot Sequence
-
-```mermaid
-flowchart TD
-    A[parseFlags] --> B[ConfigManager]
-    B --> C[Application.Run]
-    C --> D[loadConfig<br/>Viper YAML + env vars]
-    C --> E[validateConfig]
-    C --> F[loadBanner]
-    C --> G[checkPort]
-    C --> H[initLogger<br/>zerolog]
-    C --> I{startApp}
-    I -->|TUI mode| J[RunBootSequence]
-    J --> K[LiveTUI]
-    I -->|Console mode| L[direct logs]
-    L --> M[server.New]
-    M --> N[async infra init<br/>all components in parallel]
-    M --> O[middleware auto-discovery]
-    M --> P[service auto-discovery]
-    M --> Q[route registration<br/>/api/v1]
-    M --> R[Swagger UI<br/>if enabled]
+```
+parseFlags → loadConfig → initInfra → registerMiddlewares → registerServices → startServer
 ```
 
-### Request Flow
+## Request Flow
 
-```mermaid
-flowchart LR
-    A[Client] --> B[Middleware Chain]
-    B --> C[Service Handler]
-    C --> D[Response]
-    C --> F[Infrastructure<br/>DB, Cache, Kafka, MinIO]
+```
+Client → Middleware Chain → Service Handler → Response
 ```
 
-### TUI vs Console Mode
-- Set `app.enable_tui: true` in config.yaml for bubbletea TUI (boot animation, live dashboard, log viewer, charts)
-- Default (`false`) uses traditional console logging with banner
-
-## Project Structure
-
-```mermaid
-flowchart TD
-    A[stackyrd/]
-    A --> B[cmd/app/<br/>Entry point, CLI, bootstrap]
-    A --> C[config/<br/>Viper YAML config loading]
-    A --> D[config.yaml]
-    A --> E[internal/]
-    E --> F[middleware/<br/>Auto-registered HTTP middleware]
-    E --> G[server/<br/>Echo setup, health endpoints]
-    A --> H[internal/services/modules/<br/>Auto-discovered business services]
-    A --> I[pkg/]
-    I --> J[assets/<br/>Embedded application assets (banner.txt)]
-    I --> K[interfaces/<br/>Service interface]
-    I --> P[registry/<br/>Service registry + DI]
-    I --> Q[infrastructure/<br/>DB/clients async-managed]
-    I --> R[response/<br/>API response helpers]
-    I --> S[request/<br/>Binding + validation]
-    I --> T[logger/<br/>Zerolog structured logger]
-    I --> U[tui/<br/>Bubbletea terminal UI]
-    I --> V[metrics/<br/>Prometheus metrics]
-    I --> W[pagination/<br/>Cursor-based pagination]
-    I --> X[batch/<br/>Batch processing]
-    I --> Y[resilience/<br/>Circuit breaker, health, retry]
-    I --> Z[webhook/<br/>Webhook handler]
-    I --> AA[websocket/<br/>WebSocket handler]
-    I --> AB[logging/<br/>Log rotation, sampling]
-    I --> AC[testing/<br/>Test helpers + mocks]
-    I --> AD[utils/<br/>General utilities]
-    A --> AE[scripts/<br/>CLI tools]
-    A --> AF[tests/<br/>Integration tests]
-    A --> AG[docs/<br/>Auto-generated Swagger docs]
-    A --> AH[docs_wiki/<br/>Hand-written documentation]
-    A --> AI[deployments/kubernetes/<br/>K8s manifests]
-    A --> AJ[.github/workflows/<br/>CI]
-    A --> AK[docker-compose.yaml]
-```
-
-## Service Pattern
-```go
-type Service interface {
-    Name() string
-    WireName() string
-    Enabled() bool
-    Endpoints() []string
-    RegisterRoutes(*echo.Group)
-    Get() interface{}
-}
-
-// Auto-registration with dependency injection
-func init() {
-    registry.RegisterService("service_name", func(cfg *config.Config, log *logger.Logger) interfaces.Service {
-        if !cfg.Services.IsEnabled("service_name") {
-            return nil
-        }
-        return NewService(true, log)
-    })
-}
-```
-
-Services that need infrastructure use `RegisterServiceWithDeps` and read typed getters (`deps.Postgres()`, `deps.Redis()`, ...) instead of raw map access.
-
-## Infrastructure Component Pattern
-```go
-type InfrastructureComponent interface {
-    Name() string
-    Close() error
-    GetStatus() map[string]interface{}
-}
-
-type ComponentFactory func(cfg *config.Config, logger *logger.Logger) (InfrastructureComponent, error)
-
-// Auto-registration
-func init() {
-    infrastructure.RegisterComponent("redis", func(cfg *config.Config, log *logger.Logger) (infrastructure.InfrastructureComponent, error) {
-        return NewRedisManager(cfg)
-    })
-}
-```
-
-Components are initialized **asynchronously** by `InfraInitManager` with per-component health polling.
-
-## Middleware Pattern
-```go
-type MiddlewareFactory func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error)
-
-func init() {
-    middleware.RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-        return corsMiddleware, nil
-    })
-}
-```
-
-## Key Features
-- **Dependency Injection**: Two factory types — plain `RegisterService(cfg, logger)` and `RegisterServiceWithDeps(cfg, logger, deps)`; sealed `Dependencies` bag with typed getters (`Redis()`, `Postgres()`, ...) and TTL-cached GetAll()
-- **Async Initialization**: All infrastructure components init in parallel
-- **Multi-connection DB**: Postgres + MongoDB with named connection managers
-
-- **TUI Dashboard**: Bubbletea boot sequence + live monitoring dashboard
-- **Prometheus Metrics**: HTTP, DB, cache, circuit breaker, webhook, batch, WebSocket
-- **Resilience**: Circuit breaker, retry with backoff, health checks, timeouts
-- **Pagination**: Cursor-based with base64-encoded cursors
-- **Scripts**: Build, Docker, code generation, Swagger, package management tools
+Core APIs are kept minimal; consult the individual package docs for details.

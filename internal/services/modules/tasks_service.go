@@ -49,7 +49,7 @@ func (s *TasksService) Enabled() bool {
 	return s.enabled && s.db != nil && s.db.ORM != nil
 }
 
-func (s *TasksService) Get() interface{} { return s }
+func (s *TasksService) Get() any { return s }
 
 func (s *TasksService) Endpoints() []string { return []string{"/tasks"} }
 
@@ -62,15 +62,39 @@ func (s *TasksService) RegisterRoutes(g *echo.Group) {
 }
 
 func (s *TasksService) listTasks(c echo.Context) error {
-	var tasks []Task
+	var req response.PaginationRequest
+	if err := request.Bind(c, &req); err != nil {
+		return response.BadRequest(c, "Invalid pagination parameters")
+	}
 
-	result := s.db.ORM.WithContext(c.Request().Context()).Find(&tasks)
+	ctx := c.Request().Context()
+
+	var total int64
+	if err := s.db.ORM.WithContext(ctx).Model(&Task{}).Count(&total).Error; err != nil {
+		s.logger.Error("Failed to count tasks", err)
+		return response.InternalServerError(c, "Failed to list tasks")
+	}
+
+	var tasks []Task
+	result := s.db.ORM.WithContext(ctx).
+		Order("id desc").
+		Limit(req.GetPerPage()).
+		Offset(req.GetOffset()).
+		Find(&tasks)
 	if result.Error != nil {
 		s.logger.Error("Failed to list tasks", result.Error)
 		return response.InternalServerError(c, "Failed to list tasks")
 	}
 
-	return response.Success(c, tasks)
+	perPage := req.GetPerPage()
+	meta := &response.Meta{
+		Page:       req.GetPage(),
+		PerPage:    perPage,
+		Total:      total,
+		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
+	}
+
+	return response.SuccessWithMeta(c, tasks, meta)
 }
 
 func (s *TasksService) createTask(c echo.Context) error {
@@ -113,7 +137,7 @@ func (s *TasksService) updateTask(c echo.Context) error {
 
 	// Map-based update so zero values (e.g. Completed=false) are applied
 	// instead of being skipped by Updates(struct).
-	result = s.db.ORM.WithContext(c.Request().Context()).Model(&task).Updates(map[string]interface{}{
+	result = s.db.ORM.WithContext(c.Request().Context()).Model(&task).Updates(map[string]any{
 		"title":       payload.Title,
 		"description": payload.Description,
 		"completed":   payload.Completed,

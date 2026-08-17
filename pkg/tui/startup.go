@@ -35,7 +35,7 @@ type StartupModel struct {
 	progress  progress.Model
 	services  []ServiceStatus
 	current   int
-	done      bool
+	isDone    bool
 	config    StartupConfig
 	startTime time.Time
 	width     int
@@ -186,8 +186,8 @@ func (m StartupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.current++
 			}
 			return m, tea.Batch(m.spinner.Tick, tickCmd())
-		} else if !m.done {
-			m.done = true
+		} else if !m.isDone {
+			m.isDone = true
 			// Brief delay before exiting
 			return m, tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
 				return doneMsg{}
@@ -244,7 +244,7 @@ func (m StartupModel) View() string {
 	b.WriteString("\n")
 
 	// Server info when done
-	if m.done {
+	if m.isDone {
 		elapsed := time.Since(m.startTime).Round(time.Millisecond)
 		serverInfo := fmt.Sprintf("\n%s Server running at %s:%s\n",
 			iconServer,

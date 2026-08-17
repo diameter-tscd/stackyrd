@@ -20,7 +20,7 @@ type AsyncResult[T any] struct {
 
 // panicError converts a panic value into an error, preserving the error chain
 // when the panic value is itself an error so errors.Is/As still work.
-func panicError(prefix string, r interface{}) error {
+func panicError(prefix string, r any) error {
 	if err, ok := r.(error); ok {
 		return fmt.Errorf("%s: %w", prefix, err)
 	}

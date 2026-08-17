@@ -26,13 +26,13 @@ type CronJob struct {
 }
 
 type CronManager struct {
-	cron    *cron.Cron
-	jobs    map[cron.EntryID]*CronJob
-	mu      sync.RWMutex
-	pool    *WorkerPool // Worker pool for async job execution
-	poolMu  sync.Mutex
-	poolSet bool
-	closed  bool
+	cron      *cron.Cron
+	jobs      map[cron.EntryID]*CronJob
+	mu        sync.RWMutex
+	pool      *WorkerPool // Worker pool for async job execution
+	poolMu    sync.Mutex
+	isPoolSet bool
+	isClosed  bool
 }
 
 // Name returns the display name of the component
@@ -51,13 +51,13 @@ func NewCronManager() *CronManager {
 func (c *CronManager) getPool() *WorkerPool {
 	c.poolMu.Lock()
 	defer c.poolMu.Unlock()
-	if c.closed {
+	if c.isClosed {
 		return nil
 	}
-	if !c.poolSet {
+	if !c.isPoolSet {
 		c.pool = NewWorkerPool(5)
 		c.pool.Start()
-		c.poolSet = true
+		c.isPoolSet = true
 	}
 	return c.pool
 }
@@ -112,13 +112,14 @@ func (c *CronManager) GetJobs() []CronJob {
 	}
 	return list
 }
-func (c *CronManager) GetStatus() map[string]interface{} {
+func (c *CronManager) GetStatus() map[string]any {
 	if c == nil {
-		return map[string]interface{}{"active": false, "jobs": []interface{}{}}
+		return map[string]any{"active": false, "jobs": []any{}}
 	}
-	return map[string]interface{}{
-		"active": true, // Always true if manager exists
-		"jobs":   c.GetJobs(),
+	return map[string]any{
+		"active":    true, // Always true if manager exists
+		"connected": true,
+		"jobs":      c.GetJobs(),
 	}
 }
 
@@ -241,20 +242,20 @@ func (c *CronManager) SubmitAsyncJob(job func()) {
 }
 
 // GetPoolStatus returns the status of the worker pool
-func (c *CronManager) GetPoolStatus() map[string]interface{} {
+func (c *CronManager) GetPoolStatus() map[string]any {
 	c.poolMu.Lock()
 	pool := c.pool
 	c.poolMu.Unlock()
 
 	if pool == nil {
-		return map[string]interface{}{
+		return map[string]any{
 			"available": false,
 			"workers":   0,
 		}
 	}
 
 	// Note: WorkerPool doesn't expose internal stats, so we return basic info
-	return map[string]interface{}{
+	return map[string]any{
 		"available": true,
 		"workers":   5, // We know this from initialization
 	}
@@ -265,7 +266,7 @@ func (c *CronManager) Close() error {
 	c.Stop()
 	c.poolMu.Lock()
 	pool := c.pool
-	c.closed = true
+	c.isClosed = true
 	c.poolMu.Unlock()
 	if pool != nil {
 		pool.Close()

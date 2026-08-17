@@ -6,18 +6,18 @@ import (
 )
 
 type Dependencies struct {
-	components map[string]interface{}
+	components map[string]any
 	mu         sync.RWMutex
 	sealed     bool
 }
 
 func NewDependencies() *Dependencies {
 	return &Dependencies{
-		components: make(map[string]interface{}),
+		components: make(map[string]any),
 	}
 }
 
-func (d *Dependencies) Set(name string, component interface{}) {
+func (d *Dependencies) Set(name string, component any) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.sealed {
@@ -38,7 +38,7 @@ func (d *Dependencies) IsSealed() bool {
 	return d.sealed
 }
 
-func (d *Dependencies) Get(name string) (interface{}, bool) {
+func (d *Dependencies) Get(name string) (any, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	comp, ok := d.components[name]
@@ -85,10 +85,10 @@ func (d *Dependencies) Cron() *infrastructure.CronManager {
 	return typed[infrastructure.CronManager](d, "cron")
 }
 
-func (d *Dependencies) GetAll() map[string]interface{} {
+func (d *Dependencies) GetAll() map[string]any {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	result := make(map[string]interface{}, len(d.components))
+	result := make(map[string]any, len(d.components))
 	for k, v := range d.components {
 		result[k] = v
 	}

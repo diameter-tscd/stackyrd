@@ -1,11 +1,12 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/infrastructure"
@@ -79,7 +80,7 @@ type TerminalModel struct {
 	startTime       time.Time
 	width           int
 	height          int
-	quitting        bool
+	isQuitting      bool
 	maxLogs         int
 	program         atomic.Pointer[tea.Program]
 
@@ -104,7 +105,9 @@ type TerminalModel struct {
 	sidebarContentWidth int
 	mainWidth           int
 	logWidth            int
-	sidebarHidden       bool
+	isSidebarHidden     bool
+	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
+	sidebarForced       *bool // nil = auto-hide logic applies; non-nil = forced show/hide
 }
 
 type terminalTickMsg time.Time
@@ -197,7 +200,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dialogCmd := m.exitDialog.Update(msg)
 			if result := m.exitDialog.GetResult(); result != nil {
 				if result.Confirmed {
-					m.quitting = true
+					m.isQuitting = true
 					if m.config.OnShutdown != nil {
 						m.config.OnShutdown()
 					}
@@ -362,7 +365,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the full TUI composed of three components:
 // Sidebar (left) | LogView + CommandBar (right, stacked vertically)
 func (m *TerminalModel) View() string {
-	if m.quitting {
+	if m.isQuitting {
 		return ""
 	}
 	if m.exitDialog.IsActive() {
@@ -378,7 +381,7 @@ func (m *TerminalModel) View() string {
 
 	rightBlock := lipgloss.JoinVertical(lipgloss.Top, logBlock, cmdBlock)
 
-	if m.sidebarHidden {
+	if m.isSidebarHidden {
 		return rightBlock
 	}
 
@@ -953,7 +956,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name> (colon optional)")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -997,6 +1000,25 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		return m.listEndpoints()
 	case "list", "ls":
 		return m.listAll()
+	case "sidebar":
+		hidden := !m.isSidebarHidden
+		m.sidebarManualHidden = &hidden
+		m.sidebarForced = nil
+		m.calculateWidths()
+		if hidden {
+			return m.logCmd("info", "Sidebar hidden (manual override)")
+		}
+		return m.logCmd("info", "Sidebar shown (manual override)")
+	case "sidebar force-show":
+		forcedVisible := true
+		m.sidebarForced = &forcedVisible
+		m.calculateWidths()
+		return m.logCmd("info", "Sidebar force-shown (overrides auto-hide)")
+	case "sidebar force-hide":
+		forcedVisible := false
+		m.sidebarForced = &forcedVisible
+		m.calculateWidths()
+		return m.logCmd("info", "Sidebar force-hidden (overrides auto-hide)")
 	case "themes":
 		return m.listThemes()
 	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
@@ -1016,7 +1038,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 func (m *TerminalModel) listMiddleware() tea.Cmd {
 	reg := middleware.GetGlobalMiddlewareRegistry()
 	names := reg.GetNames()
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Middleware (%d):", len(names)))
@@ -1069,7 +1091,7 @@ func (m *TerminalModel) listEndpoints() tea.Cmd {
 	for name := range factories {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	var sb strings.Builder
 	sb.WriteString("Endpoints:")
@@ -1109,7 +1131,7 @@ func (m *TerminalModel) infraStatus(name string) tea.Cmd {
 // listThemes prints available themes as plain log text.
 func (m *TerminalModel) listThemes() tea.Cmd {
 	available := AvailableThemeNames()
-	sort.Strings(available)
+	slices.Sort(available)
 	current := GetThemeName()
 
 	var sb strings.Builder
@@ -1167,7 +1189,7 @@ func (m *TerminalModel) listAll() tea.Cmd {
 	for name := range factories {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	any := false
 	for _, name := range names {
 		svc, ok := registry.GetService(name).(endpointProvider)
@@ -1381,24 +1403,50 @@ func (m *TerminalModel) clearLogs() {
 	m.filterText = ""
 }
 
-func (m *TerminalModel) calculateWidths() {
-	// Auto-hide sidebar unless terminal is at least 135x42 for a comfortable side-by-side layout
-	m.sidebarHidden = m.width < 135 || m.height < 42
+// Terminal layout thresholds — tune these to change how the sidebar and log
+// panel respond to terminal size.
+const (
+	// Below these dimensions the sidebar auto-hides (unless forced) and logs
+	// take the full terminal width.
+	sidebarHideMinWidth  = 135
+	sidebarHideMinHeight = 42
 
-	if m.sidebarHidden {
+	// Sidebar share of terminal width while visible, in percent.
+	sidebarWidthPercent = 30
+	// Sidebar is clamped to a hard minimum width and a maximum share of the
+	// terminal width, in percent.
+	sidebarMinWidth = 34
+	sidebarMaxPct   = 50
+
+	// Minimum widths the main/log panel is allowed to shrink to.
+	mainMinWidth = 40
+)
+
+func (m *TerminalModel) calculateWidths() {
+	tooSmall := m.width < sidebarHideMinWidth || m.height < sidebarHideMinHeight
+	if m.sidebarForced != nil {
+		m.isSidebarHidden = !*m.sidebarForced
+	} else if m.sidebarManualHidden != nil {
+		m.isSidebarHidden = tooSmall || *m.sidebarManualHidden
+	} else {
+		// Auto-hide sidebar unless terminal is at least sidebarHideMinWidth x sidebarHideMinHeight
+		m.isSidebarHidden = tooSmall
+	}
+
+	if m.isSidebarHidden {
 		m.sidebarWidth = 0
 		m.sidebarContentWidth = 0
 		m.mainWidth = m.width
-		if m.mainWidth < 40 {
-			m.mainWidth = 40
+		if m.mainWidth < mainMinWidth {
+			m.mainWidth = mainMinWidth
 		}
 	} else {
-		sidebarWidth := m.width * 30 / 100
-		if sidebarWidth < 34 {
-			sidebarWidth = 34
+		sidebarWidth := m.width * sidebarWidthPercent / 100
+		if sidebarWidth < sidebarMinWidth {
+			sidebarWidth = sidebarMinWidth
 		}
-		if sidebarWidth > m.width/2 {
-			sidebarWidth = m.width / 2
+		if sidebarWidth > m.width*sidebarMaxPct/100 {
+			sidebarWidth = m.width * sidebarMaxPct / 100
 		}
 		m.sidebarWidth = sidebarWidth
 		m.sidebarContentWidth = sidebarWidth
@@ -1407,13 +1455,13 @@ func (m *TerminalModel) calculateWidths() {
 		}
 		// -1 reserves the thin "│" separator column between sidebar and main panel
 		m.mainWidth = m.width - m.sidebarWidth - 1
-		if m.mainWidth < 40 {
-			m.mainWidth = 40
+		if m.mainWidth < mainMinWidth {
+			m.mainWidth = mainMinWidth
 		}
 	}
 	m.logWidth = m.mainWidth - 4
-	if m.logWidth < 40 {
-		m.logWidth = 40
+	if m.logWidth < mainMinWidth {
+		m.logWidth = mainMinWidth
 	}
 }
 
@@ -1461,8 +1509,7 @@ func (m *TerminalModel) refreshStats() {
 	}
 	// Sort: connected first, then enabled-but-disconnected, then disabled,
 	// each group alphabetically.
-	sort.Slice(infraEntries, func(i, j int) bool {
-		a, b := infraEntries[i], infraEntries[j]
+slices.SortFunc(infraEntries, func(a, b InfraEntry) int {
 		rankA := 0
 		if a.Connected {
 			rankA = 2
@@ -1476,14 +1523,14 @@ func (m *TerminalModel) refreshStats() {
 			rankB = 1
 		}
 		if rankA != rankB {
-			return rankA > rankB
+			return rankA - rankB
 		}
-		return a.Name < b.Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	m.infraEntries = infraEntries
 
 	mwNames := middleware.GetGlobalMiddlewareRegistry().GetNames()
-	sort.Strings(mwNames)
+	slices.Sort(mwNames)
 	mwEntries := make([]MiddlewareEntry, 0, len(mwNames))
 	for _, name := range mwNames {
 		mwEntries = append(mwEntries, MiddlewareEntry{
@@ -1498,7 +1545,7 @@ func (m *TerminalModel) refreshStats() {
 	for name := range factories {
 		svcNames = append(svcNames, name)
 	}
-	sort.Strings(svcNames)
+	slices.Sort(svcNames)
 	serviceEntries := make([]ServiceEntry, 0, len(svcNames))
 	for _, name := range svcNames {
 		switch registry.GetServiceState(name) {
@@ -1513,12 +1560,14 @@ func (m *TerminalModel) refreshStats() {
 		}
 	}
 	// Sort: running services first, then stopped, each group alphabetically.
-	sort.Slice(serviceEntries, func(i, j int) bool {
-		a, b := serviceEntries[i], serviceEntries[j]
+	slices.SortFunc(serviceEntries, func(a, b ServiceEntry) int {
 		if a.Running != b.Running {
-			return a.Running
+			if a.Running {
+				return -1
+			}
+			return 1
 		}
-		return a.Name < b.Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 	m.serviceEntries = serviceEntries
 }
@@ -1549,7 +1598,6 @@ func (m *TerminalModel) termProgressBar(percent float64, width int) string {
 	return bar
 }
 
-// ponytail: pastel progress stops at 3 thresholds — add more if smoother gradient needed
 func (m *TerminalModel) percentStyle(percent float64) lipgloss.Style {
 	switch {
 	case percent < 50:

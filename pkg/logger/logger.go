@@ -136,9 +136,9 @@ func NewWithConfig(cfg LoggerConfig) *Logger {
 }
 
 // getLevelFormatter returns the appropriate level formatter based on output configuration
-func getLevelFormatter(output OutputConfig) func(interface{}) string {
+func getLevelFormatter(output OutputConfig) func(any) string {
 	if !output.Colors || output.NoColor {
-		return func(i interface{}) string {
+		return func(i any) string {
 			if ll, ok := i.(string); ok {
 				return strings.ToUpper(ll)
 			}
@@ -147,7 +147,7 @@ func getLevelFormatter(output OutputConfig) func(interface{}) string {
 	}
 
 	// TUI‑matching color formatter
-	return func(i interface{}) string {
+	return func(i any) string {
 		var l string
 		if ll, ok := i.(string); ok {
 			switch ll {
@@ -178,14 +178,14 @@ func getLevelFormatter(output OutputConfig) func(interface{}) string {
 }
 
 // getMessageFormatter returns the appropriate message formatter based on output configuration
-func getMessageFormatter(output OutputConfig) func(interface{}) string {
+func getMessageFormatter(output OutputConfig) func(any) string {
 	if !output.Colors || output.NoColor {
-		return func(i interface{}) string {
+		return func(i any) string {
 			return fmt.Sprintf("%s", i)
 		}
 	}
 
-	return func(i interface{}) string {
+	return func(i any) string {
 		return fmt.Sprintf("\x1b[1m%s\x1b[0m", i)
 	}
 }
@@ -213,8 +213,8 @@ func (l *Logger) WithQuiet(quiet bool) *Logger {
 	return NewWithConfig(cfg)
 }
 
-// GetConfig returns the current logger configuration
-func (l *Logger) GetConfig() LoggerConfig {
+// Config returns the current logger configuration
+func (l *Logger) Config() LoggerConfig {
 	return l.config
 }
 
@@ -224,12 +224,12 @@ func (l *Logger) IsQuiet() bool {
 }
 
 // Info logs an info message
-func (l *Logger) Info(msg string, keyvals ...interface{}) {
+func (l *Logger) Info(msg string, keyvals ...any) {
 	l.log(l.z.Info(), msg, keyvals...)
 }
 
 // Error logs an error message
-func (l *Logger) Error(msg string, err error, keyvals ...interface{}) {
+func (l *Logger) Error(msg string, err error, keyvals ...any) {
 	if err != nil {
 		l.log(l.z.Error().Err(err), msg, keyvals...)
 	} else {
@@ -238,12 +238,12 @@ func (l *Logger) Error(msg string, err error, keyvals ...interface{}) {
 }
 
 // Debug logs a debug message
-func (l *Logger) Debug(msg string, keyvals ...interface{}) {
+func (l *Logger) Debug(msg string, keyvals ...any) {
 	l.log(l.z.Debug(), msg, keyvals...)
 }
 
 // Warn logs a warning message
-func (l *Logger) Warn(msg string, keyvals ...interface{}) {
+func (l *Logger) Warn(msg string, keyvals ...any) {
 	l.log(l.z.Warn(), msg, keyvals...)
 }
 
@@ -256,7 +256,7 @@ func (l *Logger) Fatal(msg string, err error) {
 	}
 }
 
-func (l *Logger) log(e *zerolog.Event, msg string, keyvals ...interface{}) {
+func (l *Logger) log(e *zerolog.Event, msg string, keyvals ...any) {
 	if len(keyvals)%2 != 0 {
 		e.Msg(msg + " (odd number of keyvals caused metadata drop)")
 		return

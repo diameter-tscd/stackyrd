@@ -14,6 +14,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
+	"github.com/samber/oops"
 )
 
 func init() {
@@ -29,7 +30,7 @@ func init() {
 			pingErr := client.Ping(pingCtx).Err()
 			pingCancel()
 			if pingErr != nil {
-				return nil, fmt.Errorf("redis rate limiter: failed to connect: %w", pingErr)
+				return nil, oops.In("ratelimit-middleware").Tags("redis", "middleware-init").With("addr", cfg.Redis.Address).Wrapf(pingErr, "redis rate limiter: failed to connect")
 			}
 			return RedisRateLimitWithConfig(logger, client, 60, time.Minute), nil
 		}
@@ -139,7 +140,7 @@ func RateLimitWithConfig(rate int, window time.Duration) echo.MiddlewareFunc {
 			ip := c.RealIP()
 
 			if !limiter.isAllowed(ip) {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}
@@ -160,7 +161,7 @@ func RateLimitPerUser(rate int, window time.Duration) echo.MiddlewareFunc {
 			}
 
 			if !limiter.isAllowed(userID) {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}
@@ -202,12 +203,12 @@ func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, er
 
 	cmders, err := pipe.Exec(ctx)
 	if err != nil {
-		return false, fmt.Errorf("redis rate limiter: %w", err)
+		return false, oops.In("ratelimit-middleware").Tags("redis").With("key", key).Wrapf(err, "redis rate limiter: pipeline exec failed")
 	}
 
 	countCmd, ok := cmders[2].(*redis.IntCmd)
 	if !ok {
-		return false, fmt.Errorf("redis rate limiter: unexpected pipeline result type")
+		return false, oops.In("ratelimit-middleware").Tags("redis").With("key", key).Errorf("redis rate limiter: unexpected pipeline result type")
 	}
 	return countCmd.Val() <= int64(rl.rate), nil
 }
@@ -225,7 +226,7 @@ func RedisRateLimitWithConfig(log *logger.Logger, client *redis.Client, rate int
 				return next(c)
 			}
 			if !allowed {
-				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]interface{}{
+				return response.Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded. Please try again later.", map[string]any{
 					"retry_after": time.Now().Add(window).Unix(),
 				})
 			}

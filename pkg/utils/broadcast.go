@@ -12,7 +12,7 @@ type EventData struct {
 	ID        string                 `json:"id"`
 	Type      string                 `json:"type"`
 	Message   string                 `json:"message"`
-	Data      map[string]interface{} `json:"data,omitempty"`
+	Data      map[string]any `json:"data,omitempty"`
 	Timestamp int64                  `json:"timestamp"`
 	StreamID  string                 `json:"stream_id,omitempty"`
 }
@@ -151,11 +151,11 @@ func (eb *EventBroadcaster) Unsubscribe(clientID string) {
 
 // copyData shallow-copies a caller-supplied map so a mutation by the producer
 // can never race a consumer encoding the queued event.
-func copyData(data map[string]interface{}) map[string]interface{} {
+func copyData(data map[string]any) map[string]any {
 	if data == nil {
 		return nil
 	}
-	copied := make(map[string]interface{}, len(data))
+	copied := make(map[string]any, len(data))
 	for k, v := range data {
 		copied[k] = v
 	}
@@ -163,7 +163,7 @@ func copyData(data map[string]interface{}) map[string]interface{} {
 }
 
 // Broadcast sends an event to all clients subscribed to a stream
-func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]interface{}) {
+func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]any) {
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,
@@ -205,7 +205,7 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 }
 
 // BroadcastToAll sends an event to all clients across all streams
-func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]interface{}) {
+func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]any) {
 	event := EventData{
 		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
 		Type:      eventType,

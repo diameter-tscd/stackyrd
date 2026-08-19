@@ -73,6 +73,16 @@ type Config struct {
 	Cron       CronConfig       `mapstructure:"cron"`
 	MinIO      MinIOConfig      `mapstructure:"minio"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
+	Log        LogConfig        `mapstructure:"log"`
+}
+
+type LogConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	Path        string `mapstructure:"path"`
+	Filename    string `mapstructure:"filename"`
+	MaxFiles    int    `mapstructure:"max_files"`
+	Compress    bool   `mapstructure:"compress"`
+	CompressAfter int  `mapstructure:"compress_after"`
 }
 
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.

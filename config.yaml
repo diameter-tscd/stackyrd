@@ -127,3 +127,10 @@ mcp:
   endpoint: "/mcp"
   token: ""  # Bearer token for MCP endpoint authentication; leave empty to disable
 
+log:
+  enabled: true
+  path: "logs"
+  filename: "stackyrd.log"
+  max_files: 7
+  compress: true
+

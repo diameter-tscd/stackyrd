@@ -107,7 +107,7 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 		if infrastructure.Exists("banner") {
 			data, err := infrastructure.Read("banner")
 			if err == nil {
-				return string(data), nil
+				return strings.ReplaceAll(string(data), "\r\n", "\n"), nil
 			}
 		}
 	}
@@ -129,7 +129,7 @@ func (cm *ConfigManager) LoadBanner(cfg *config.Config) (string, error) {
 		return "", nil
 	}
 
-	return string(banner), nil
+	return strings.ReplaceAll(string(banner), "\r\n", "\n"), nil
 }
 
 // GetServiceConfigs returns a unified list of all service configurations

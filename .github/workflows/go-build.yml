@@ -86,7 +86,8 @@ jobs:
     - name: Build
       if: hashFiles('go.mod') != ''
       run: |
-        ARGS="--no-tui --verbose --timeout ${{ inputs.timeout || 1 }}"
+        cd scripts
+        ARGS="build --dev --no-tui"
         if [ "${{ inputs.garble }}" = "true" ]; then
           ARGS="$ARGS --garble"
         fi
@@ -96,7 +97,7 @@ jobs:
         if [ -n "${{ inputs.archive_format }}" ] && [ "${{ inputs.archive_format }}" != "tar" ]; then
           ARGS="$ARGS --archive-format ${{ inputs.archive_format }}"
         fi
-        go run scripts/build/build.go $ARGS
+        ./scripts/yrd $ARGS
 
     - name: Test
       if: hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_tests == 'true')

@@ -97,7 +97,7 @@ jobs:
         if [ -n "${{ inputs.archive_format }}" ] && [ "${{ inputs.archive_format }}" != "tar" ]; then
           ARGS="$ARGS --archive-format ${{ inputs.archive_format }}"
         fi
-        ./scripts/yrd $ARGS
+        ./yrd $ARGS
 
     - name: Test
       if: hashFiles('go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.run_tests == 'true')

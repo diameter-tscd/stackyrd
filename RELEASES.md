@@ -1,0 +1,1 @@
+Release placeholder for Clover 1.0.5

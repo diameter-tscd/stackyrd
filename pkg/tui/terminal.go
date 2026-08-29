@@ -959,7 +959,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mcp, mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -1024,6 +1024,8 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		return m.logCmd("info", "Sidebar force-hidden (overrides auto-hide)")
 	case "themes":
 		return m.listThemes()
+	case "mcp":
+		return m.mcpDetails()
 	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
 		return m.infraStatus(cmd)
 	default:
@@ -1032,6 +1034,9 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		}
 		if name, ok := strings.CutPrefix(cmd, "infra"); ok && strings.TrimSpace(name) != "" {
 			return m.infraStatus(strings.TrimSpace(name))
+		}
+		if strings.HasPrefix(cmd, "mcp") {
+			return m.mcpDetails()
 		}
 		return m.logCmd("warn", "Unknown command: "+cmd+" (try help)")
 	}
@@ -1127,6 +1132,28 @@ func (m *TerminalModel) infraStatus(name string) tea.Cmd {
 	sb.WriteString("Component: " + name)
 	for k, v := range status {
 		sb.WriteString(fmt.Sprintf("\n  %s=%v", k, v))
+	}
+	return m.logCmd("info", sb.String())
+}
+
+func (m *TerminalModel) mcpDetails() tea.Cmd {
+	comp, ok := infrastructure.GetGlobalRegistry().Get("mcp")
+	if !ok {
+		return m.logCmd("warn", "MCP disabled (mcp.enabled=false) — no component registered (try infra)")
+	}
+	status := comp.GetStatus()
+	keys := make([]string, 0, len(status))
+	for k := range status {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var sb strings.Builder
+	sb.WriteString("MCP Server:")
+	for _, k := range keys {
+		sb.WriteString(fmt.Sprintf("\n  %s=%v", k, status[k]))
+	}
+	if ep, ok := status["endpoint"].(string); ok && ep != "" {
+		sb.WriteString(fmt.Sprintf("\n  url=http://localhost:%s%s", m.config.Port, ep))
 	}
 	return m.logCmd("info", sb.String())
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,11 @@ import (
 
 func init() {
 	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+		mcpEndpoint := cfg.MCP.Endpoint
+		if mcpEndpoint == "" {
+			mcpEndpoint = "/mcp"
+		}
+		var base echo.MiddlewareFunc
 		if cfg.Redis.Enabled {
 			logger.Info("Rate limit using Redis backend")
 			client := redis.NewClient(&redis.Options{
@@ -32,10 +38,20 @@ func init() {
 			if pingErr != nil {
 				return nil, oops.In("ratelimit-middleware").Tags("redis", "middleware-init").With("addr", cfg.Redis.Address).Wrapf(pingErr, "redis rate limiter: failed to connect")
 			}
-			return RedisRateLimitWithConfig(logger, client, 60, time.Minute), nil
+			base = RedisRateLimitWithConfig(logger, client, 60, time.Minute)
+		} else {
+			logger.Info("Rate limit using in-memory backend")
+			base = RateLimit()
 		}
-		logger.Info("Rate limit using in-memory backend")
-		return RateLimit(), nil
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			rlHandler := base(next)
+			return func(c echo.Context) error {
+				if strings.HasPrefix(c.Request().URL.Path, mcpEndpoint) {
+					return next(c)
+				}
+				return rlHandler(c)
+			}
+		}, nil
 	})
 }
 

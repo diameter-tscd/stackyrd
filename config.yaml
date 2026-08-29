@@ -31,7 +31,7 @@ middleware:
   permission_check: true
   cors: true
   jwt: false          # Set to true if using JWT authentication
-  ratelimit: true
+  ratelimit: false
   security: true
   audit: true
   gzip: true
@@ -127,6 +127,13 @@ mcp:
   endpoint: "/mcp"
   token: "f76fda0080884d4ab36b93abf6421d49"  # Bearer token for MCP endpoint authentication; leave empty to auto-generate temp token
   allowed_origins: []  # [] = allow all; e.g. ["https://app.example.com","https://*.example.org"] to restrict
+  rate_limit_enabled: false
+  rate_limit_ip: 1000
+  rate_limit_time: 36000
+  rate_limit_cooldowntime: 3200
+  rate_limit_excludeip: ["127.0.0.1", "localhost"]
+  # identity env (K8s Downward API): POD_NAME/POD_IP/POD_NAMESPACE/NODE_NAME/INSTANCE_ID
+  # local dev auto-generates instance_id as <hex>-<hostname>-<pid>
 
 log:
   enabled: true

@@ -58,6 +58,11 @@ func setupViperDefaults() {
 	viper.SetDefault("mcp.endpoint", "/mcp")
 	viper.SetDefault("mcp.token", "")
 	viper.SetDefault("mcp.allowed_origins", []string{})
+	viper.SetDefault("mcp.rate_limit_enabled", false)
+	viper.SetDefault("mcp.rate_limit_ip", 100)
+	viper.SetDefault("mcp.rate_limit_time", 60)
+	viper.SetDefault("mcp.rate_limit_cooldowntime", 300)
+	viper.SetDefault("mcp.rate_limit_excludeip", []string{"127.0.0.1", "::1", "localhost"})
 	viper.SetDefault("audit.skip_paths", []string{"/health", "/health/dependencies"})
 }
 
@@ -120,10 +125,15 @@ type WebhookConfig struct {
 }
 
 type MCPConfig struct {
-	Enabled        bool     `mapstructure:"enabled"`
-	Endpoint       string   `mapstructure:"endpoint"`
-	Token          string   `mapstructure:"token"`
-	AllowedOrigins []string `mapstructure:"allowed_origins"`
+	Enabled               bool     `mapstructure:"enabled"`
+	Endpoint              string   `mapstructure:"endpoint"`
+	Token                 string   `mapstructure:"token"`
+	AllowedOrigins        []string `mapstructure:"allowed_origins"`
+	RateLimitEnabled      bool     `mapstructure:"rate_limit_enabled"`
+	RateLimitIP           int      `mapstructure:"rate_limit_ip"`
+	RateLimitTime         int      `mapstructure:"rate_limit_time"`
+	RateLimitCooldownTime int      `mapstructure:"rate_limit_cooldowntime"`
+	RateLimitExcludeIP    []string `mapstructure:"rate_limit_excludeip"`
 }
 
 type MinIOConfig struct {

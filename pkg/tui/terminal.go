@@ -1426,13 +1426,12 @@ const (
 )
 
 func (m *TerminalModel) calculateWidths() {
-	tooSmall := m.width < sidebarHideMinWidth || m.height < sidebarHideMinHeight
+	tooSmall := m.width < m.config.TUI.SidebarMinWidth || m.height < m.config.TUI.SidebarMinHeight
 	if m.sidebarForced != nil {
 		m.isSidebarHidden = !*m.sidebarForced
 	} else if m.sidebarManualHidden != nil {
 		m.isSidebarHidden = tooSmall || *m.sidebarManualHidden
 	} else {
-		// Auto-hide sidebar unless terminal is at least sidebarHideMinWidth x sidebarHideMinHeight
 		m.isSidebarHidden = tooSmall
 	}
 

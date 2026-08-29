@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"stackyrd/config"
 	"stackyrd/pkg/tui/template"
 	"stackyrd/pkg/utils"
 	"strings"
@@ -24,6 +25,7 @@ type LiveConfig struct {
 	Port       string
 	Env        string
 	OnShutdown func() // Callback function to trigger shutdown
+	TUI        config.TUIConfig
 }
 
 // LogEntry represents a log entry

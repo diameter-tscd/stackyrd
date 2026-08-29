@@ -93,7 +93,7 @@ never write. `registry.GetService(name)` returns the running service instance.
 
 ## Testing
 
-Write tests in `tests/services/{name}_service_test.go`. Use `echo.New()` and `httptest` to build a router. See `tests/services/users_service_test.go` for the canonical pattern.
+Write tests in `tests/services/{name}_service_test.go`. Use `echo.New()` and `httptest` to build a router. See `tests/services/users_service_test.go` for the canonical pattern. Every `tests/**` package has a `goleak_testmain.go` (`goleak.VerifyTestMain`) — keep tests goroutine-clean and route async work through `utils.GoSafe` or `WorkerPool`. `pkg/testing.MockService` is guarded by `var _ interfaces.Service = (*MockService)(nil)` with `RegisterRoutes(*echo.Group)` — update the mock if the guard fails, do not widen to `any`.
 
 ## Patterns
 

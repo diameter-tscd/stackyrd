@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"stackyrd/config"
 	"stackyrd/pkg/interfaces"
@@ -28,6 +29,7 @@ func RegisterService(name string, factory ServiceFactory) {
 		return
 	}
 	if _, loaded := serviceFactories.LoadOrStore(name, factory); loaded {
+		fmt.Fprintf(os.Stderr, "[registry] duplicate service registration ignored: %s\n", name)
 		return
 	}
 }
@@ -37,6 +39,7 @@ func RegisterServiceWithDeps(name string, factory ServiceFactoryWithDeps) {
 		return
 	}
 	if _, loaded := serviceFactoriesWithDeps.LoadOrStore(name, factory); loaded {
+		fmt.Fprintf(os.Stderr, "[registry] duplicate service registration ignored: %s\n", name)
 		return
 	}
 }

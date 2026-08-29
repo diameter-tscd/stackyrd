@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"stackyrd/config"
@@ -109,12 +110,10 @@ func (app *Application) checkPortStep(ctx *AppContext) error {
 // initLoggerStep initializes the logger
 func (app *Application) initLoggerStep(ctx *AppContext) error {
 	if app.config.App.EnableTUI {
-		// For TUI mode, logger will be initialized later when we have the broadcaster
 		return nil
 	}
 
-	// For console mode, create a regular logger
-	app.logger = logger.New(app.config.App.Debug, nil)
+	app.logger = logger.New(app.config.App.Debug, utils.DashboardWriter)
 	app.logger.Info("Starting Application", "name", app.config.App.Name, "env", app.config.App.Env)
 	app.logger.Info("TUI mode disabled, using traditional console logging")
 	app.logger.Info("Initializing services...")
@@ -167,8 +166,8 @@ func (app *Application) runWithTUI() {
 	liveTUI := app.createLiveTUI()
 	liveTUI.Start()
 
-	// Initialize logger with TUI output
-	app.logger = logger.NewQuiet(app.config.App.Debug, liveTUI)
+	broadcaster := io.MultiWriter(liveTUI, utils.DashboardWriter)
+	app.logger = logger.NewQuiet(app.config.App.Debug, broadcaster)
 
 	// Add initial logs
 	liveTUI.AddLog(LogLevelInfo, "Server starting on port "+app.config.Server.Port)
@@ -193,15 +192,13 @@ func (app *Application) runWithTUI() {
 
 // runWithConsole runs the application with traditional console logging
 func (app *Application) runWithConsole() {
-	// Print banner to console
 	if app.bannerText != "" {
 		_, _ = fmt.Print(ColorPrimary)
 		_, _ = fmt.Println(app.bannerText)
 		_, _ = fmt.Print(ColorReset)
 	}
 
-	// Initialize logger
-	app.logger = logger.New(app.config.App.Debug, nil)
+	app.logger = logger.New(app.config.App.Debug, utils.DashboardWriter)
 
 	// Log startup information
 	app.logger.Info("Starting Application", "name", app.config.App.Name, "env", app.config.App.Env)
@@ -236,6 +233,7 @@ func (app *Application) createLiveTUI() *tui.TerminalTUI {
 		Port:       app.config.Server.Port,
 		Env:        app.config.App.Env,
 		OnShutdown: utils.TriggerShutdown,
+		TUI:        app.config.App.TUI,
 	})
 }
 

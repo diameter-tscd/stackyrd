@@ -15,7 +15,7 @@ server:
 
 services:
   users_service: true
-  broadcast_service: false
+  broadcast_service: true
   cache_service: true
   encryption_service: false
   grafana_service: false
@@ -123,9 +123,10 @@ encryption:
   key_rotation_interval: "24h"
 
 mcp:
-  enabled: false
+  enabled: true
   endpoint: "/mcp"
-  token: ""  # Bearer token for MCP endpoint authentication; leave empty to disable
+  token: "f76fda0080884d4ab36b93abf6421d49"  # Bearer token for MCP endpoint authentication; leave empty to auto-generate temp token
+  allowed_origins: []  # [] = allow all; e.g. ["https://app.example.com","https://*.example.org"] to restrict
 
 log:
   enabled: true
@@ -133,4 +134,7 @@ log:
   filename: "stackyrd.log"
   max_files: 7
   compress: true
+
+audit:
+  skip_paths: ["/health", "/health/dependencies"]
 

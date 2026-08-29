@@ -63,8 +63,8 @@ func TestMCPHandler_ToolsList(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected tools array, got: %+v", got.Result)
 	}
-	if len(tools) != 5 {
-		t.Fatalf("expected 5 tools, got %d", len(tools))
+	if len(tools) != 12 {
+		t.Fatalf("expected 12 tools, got %d", len(tools))
 	}
 }
 

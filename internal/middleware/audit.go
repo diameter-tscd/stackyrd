@@ -12,7 +12,12 @@ import (
 
 func init() {
 	RegisterMiddleware("audit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		return AuditWithConfig(logger), nil
+		ac := defaultAuditConfig
+		ac.Logger = logger
+		if len(cfg.Audit.SkipPaths) > 0 {
+			ac.SkipPaths = cfg.Audit.SkipPaths
+		}
+		return Audit(ac, logger), nil
 	})
 }
 

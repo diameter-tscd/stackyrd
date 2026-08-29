@@ -187,6 +187,19 @@ func (s *Server) registerHealthEndpoints() {
 			"list_service":         svcKeys,
 		})
 	})
+
+	s.e.GET("/api/v1/config", func(c echo.Context) error {
+		return response.Success(c, map[string]any{
+			"app":        s.config.App,
+			"server":     s.config.Server,
+			"services":   s.config.Services,
+			"middleware": s.config.Middleware,
+			"mcp":        s.config.MCP,
+			"metrics":    s.config.Metrics,
+			"log":        s.config.Log,
+			"audit":      s.config.Audit,
+		})
+	})
 }
 
 func (s *Server) Shutdown(ctx context.Context, logger *logger.Logger) error {

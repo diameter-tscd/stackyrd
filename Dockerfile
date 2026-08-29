@@ -1,159 +1,71 @@
-# Multi-stage Dockerfile for development, testing, and production
+# syntax=docker/dockerfile:1.7
+# $ docker build --target prod-distroless --no-cache -t diameter-tscd/stackyrd:1.0.4-clover-prd .
 
-# Build stage - optimized for smaller size
-FROM golang:1.25.5-alpine3.23 AS builder
+ARG GO_VERSION=1.25
+ARG ALPINE_VERSION=3.21
 
+FROM golang:${GO_VERSION}-alpine AS builder
 WORKDIR /app
-
-# Install build dependencies if needed
-# RUN apk add --no-cache git
-
-# Copy go mod files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
-
-# Copy source code
 COPY . .
+RUN apk add --no-cache bash && chmod +x ./scripts/yrd && chmod +x ./scripts/dist/* 2>/dev/null || true && \
+    CGO_ENABLED=0 ./scripts/yrd build --dev --no-tui
+RUN ls -lh dist/stackyrd && test -x dist/stackyrd
 
-# Build the binary with optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build \
-    -ldflags="-s -w -buildid=" \
-    -trimpath \
-    -o stackyrd ./cmd/app
-
-# Test stage
 FROM builder AS test
-
-# Run tests
 RUN go test ./...
 
-# Production stage (Alpine - ~50MB, Python plugin support)
-FROM alpine:3.23 AS prod
-
-# Install ca-certificates for HTTPS and Python 3 for external (Python) plugins
-RUN apk --no-cache add ca-certificates python3 py3-pip && \
-    pip3 install --no-cache-dir grpcio protobuf
-
-WORKDIR /root/
-
-# Copy the binary from builder stage
-COPY --from=builder /app/stackyrd .
-
-# Copy config
-COPY --from=builder /app/config.yaml .
-
-# Copy Python plugin host scripts (for external/ext: plugins)
-COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
-
-# Create plugin store directory for writable overlay (uploaded scripts, etc.)
-RUN mkdir -p store/plugins
-
-# Configure for Docker environment
-ENV APP_QUIET_STARTUP=false
-ENV APP_ENABLE_TUI=false
-
-# Expose ports for main API server
-EXPOSE 8080
-
-# Run the application
-CMD ["./stackyrd", "-env", "production"]
-
-# Slim production stage (Ubuntu minimal - ~40MB, Python plugin support)
-FROM ubuntu:24.04 AS prod-slim
-
-WORKDIR /root/
-
-# Install minimal runtime dependencies and Python 3 for external plugins
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && pip3 install --no-cache-dir grpcio protobuf \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy the binary from builder stage
-COPY --from=builder /app/stackyrd .
-
-# Copy config
-COPY --from=builder /app/config.yaml .
-
-# Copy Python plugin host scripts (for external/ext: plugins)
-COPY --from=builder /app/pkg/plugin/python ./pkg/plugin/python/
-
-# Create plugin store directory for writable overlay
-RUN mkdir -p store/plugins
-
-# Configure for Docker environment
-ENV APP_QUIET_STARTUP=false
-ENV APP_ENABLE_TUI=false
-
-# Expose ports for main API server
-EXPOSE 8080
-
-# Run the application
-CMD ["./stackyrd", "-env", "production"]
-
-# Minimal production stage (Distroless - ultra-minimal, TS/Go plugins only)
-# NOTE: Python/external (ext:) plugins are not supported in this stage
-# because distroless/static does not include a Python runtime.
-# TypeScript (ts:) and Go (go:) plugins work fine (compiled into binary).
-FROM gcr.io/distroless/static:nonroot AS prod-distroless
-
-WORKDIR /
-
-# Copy the binary from builder stage
-COPY --from=builder /app/stackyrd /stackyrd
-
-# Copy config
-COPY --from=builder /app/config.yaml .
-
-# Copy Python host scripts (in case Python is layered on top)
-COPY --from=builder /app/pkg/plugin/python /pkg/plugin/python/
-
-# Configure for Docker environment
-ENV APP_QUIET_STARTUP=false
-ENV APP_ENABLE_TUI=false
-
-# Expose ports for main API server
-EXPOSE 8080
-
-# Run the application
-CMD ["/stackyrd", "-env", "production"]
-
-# Development stage (full toolchain + Python plugin support)
-FROM golang:1.25.5-alpine3.23 AS dev
-
+FROM alpine:${ALPINE_VERSION} AS prod
+RUN apk --no-cache add ca-certificates wget
 WORKDIR /app
-
-# Install Python 3 for external plugin development
-RUN apk --no-cache add python3 py3-pip && \
-    pip3 install --no-cache-dir grpcio protobuf
-
-# Copy go mod files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
-COPY . .
-
-# Build the binary
-RUN go build -o stackyrd ./cmd/app
-
-# Create plugin store directory
-RUN mkdir -p store/plugins
-
-# Configure for Docker environment
+COPY --from=builder /app/dist/stackyrd ./stackyrd
+COPY --from=builder /app/dist/config.yaml ./config.yaml
+RUN mkdir -p store/plugins && adduser -D -H appuser && chown -R appuser /app
+USER appuser
 ENV APP_QUIET_STARTUP=false
 ENV APP_ENABLE_TUI=false
+EXPOSE 8452
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s CMD wget --no-verbose --tries=1 --spider http://localhost:8452/health || exit 1
+CMD ["./stackyrd", "-env", "production"]
 
-# Expose ports for main API server
-EXPOSE 8080
+FROM ubuntu:24.04 AS prod-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/dist/stackyrd ./stackyrd
+COPY --from=builder /app/dist/config.yaml ./config.yaml
+RUN mkdir -p store/plugins && useradd -m appuser && chown -R appuser /app
+USER appuser
+ENV APP_QUIET_STARTUP=false
+ENV APP_ENABLE_TUI=false
+EXPOSE 8452
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s CMD wget --no-verbose --tries=1 --spider http://localhost:8452/health || exit 1
+CMD ["./stackyrd", "-env", "production"]
 
-# Run the application
+FROM gcr.io/distroless/static:nonroot AS prod-distroless
+WORKDIR /app
+COPY --from=builder /app/dist/stackyrd ./stackyrd
+COPY --from=builder /app/dist/config.yaml ./config.yaml
+EXPOSE 8452
+ENV APP_QUIET_STARTUP=false
+ENV APP_ENABLE_TUI=false
+CMD ["/app/stackyrd", "-env", "production"]
+
+FROM prod-distroless AS prod-minimal
+
+FROM golang:${GO_VERSION}-alpine AS dev
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN apk add --no-cache bash && chmod +x ./scripts/yrd && chmod +x ./scripts/dist/* 2>/dev/null || true && \
+    CGO_ENABLED=0 ./scripts/yrd build --dev --no-tui && cp dist/stackyrd ./stackyrd
+RUN mkdir -p store/plugins
+ENV APP_QUIET_STARTUP=false
+ENV APP_ENABLE_TUI=false
+EXPOSE 8452
 CMD ["./stackyrd", "-env", "development"]
+
+FROM prod AS ultra-prod
+FROM dev AS ultra-dev
+FROM test AS ultra-test

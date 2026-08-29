@@ -10,12 +10,12 @@ app:
   theme: "tokyonight" # TUI color theme (default, vintage_purple, vintage_dark, vintage_pinky, blue_ish, slate, charcoal_tea, pastel_light, sunflower_gold, muted_teal)
 
 server:   
-  port: "8080"
+  port: "8452"
   services_endpoint: /api/v1      # endpoint service path
 
 services:
   users_service: true
-  broadcast_service: false
+  broadcast_service: true
   cache_service: true
   encryption_service: false
   grafana_service: false
@@ -31,7 +31,7 @@ middleware:
   permission_check: true
   cors: true
   jwt: false          # Set to true if using JWT authentication
-  ratelimit: true
+  ratelimit: false
   security: true
   audit: true
   gzip: true
@@ -123,9 +123,26 @@ encryption:
   key_rotation_interval: "24h"
 
 mcp:
-  enabled: false
+  enabled: true
   endpoint: "/mcp"
-  token: ""  # Bearer token for MCP endpoint authentication; leave empty to disable
+  token: "f76fda0080884d4ab36b93abf6421d49"  # Bearer token for MCP endpoint authentication; leave empty to auto-generate temp token
+  allowed_origins: []  # [] = allow all; e.g. ["https://app.example.com","https://*.example.org"] to restrict
+  rate_limit_enabled: false
+  rate_limit_ip: 1000
+  rate_limit_time: 36000
+  rate_limit_cooldowntime: 3200
+  rate_limit_excludeip: ["127.0.0.1", "localhost"]
+  exec_enabled: true         # enable stackyrd_exec command executor (requires token)
+  exec_timeout: 10            # default timeout seconds (1-60)
+  exec_max_output: 65536      # max stdout+stderr bytes
+  exec_allowed_commands: []   # [] = allow all when enabled; e.g. ["echo","ls","git","uptime","df","ps"]
+  filemanager_enabled: true   # enable stackyrd_filemanager
+  filemanager_root: "."       # sandbox root (abs or relative)
+  filemanager_max_upload: 209715200  # max upload/download bytes (200MB)
+  filemanager_thumbnail_max_bytes: 10485760 # max file size for thumbnail (10MB)
+  filemanager_thumbnail_size: 256     # thumbnail square px
+  # identity env (K8s Downward API): POD_NAME/POD_IP/POD_NAMESPACE/NODE_NAME/INSTANCE_ID
+  # local dev auto-generates instance_id as <hex>-<hostname>-<pid>
 
 log:
   enabled: true
@@ -133,4 +150,7 @@ log:
   filename: "stackyrd.log"
   max_files: 7
   compress: true
+
+audit:
+  skip_paths: ["/health", "/health/dependencies"]
 

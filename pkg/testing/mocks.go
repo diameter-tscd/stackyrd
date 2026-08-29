@@ -5,8 +5,11 @@ import (
 	"io"
 	"sync"
 	"time"
-)
 
+	"github.com/labstack/echo/v4"
+
+	"stackyrd/pkg/interfaces"
+)
 // MockService implements a mock service for testing
 type MockService struct {
 	name      string
@@ -29,9 +32,14 @@ func (m *MockService) Enabled() bool       { return m.enabled }
 func (m *MockService) Endpoints() []string { return m.endpoints }
 func (m *MockService) Get() any    { return m }
 
-func (m *MockService) RegisterRoutes(g any) {
+func (m *MockService) RegisterRoutes(g *echo.Group) {
 	// Mock implementation - does nothing
 }
+
+// Compile-time assertion: MockService must satisfy interfaces.Service.
+// If this fails to compile, a real Service method signature changed and this
+// mock is silently divergent — fix the mock, don't silence the guard.
+var _ interfaces.Service = (*MockService)(nil)
 
 // MockLogger implements a mock logger for testing
 type MockLogger struct {

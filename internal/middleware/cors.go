@@ -13,7 +13,20 @@ import (
 
 func init() {
 	RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		return CORSAllowAll(), nil
+		mcpEndpoint := cfg.MCP.Endpoint
+		if mcpEndpoint == "" {
+			mcpEndpoint = "/mcp"
+		}
+		base := CORSAllowAll()
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			corsHandler := base(next)
+			return func(c echo.Context) error {
+				if strings.HasPrefix(c.Request().URL.Path, mcpEndpoint) {
+					return next(c)
+				}
+				return corsHandler(c)
+			}
+		}, nil
 	})
 }
 
@@ -103,10 +116,10 @@ func CORS(config CORSConfig) echo.MiddlewareFunc {
 }
 
 func matchSubdomain(pattern, origin string) bool {
-	if !strings.HasPrefix(pattern, "*.") {
+	idx := strings.Index(pattern, "*.")
+	if idx < 0 {
 		return false
 	}
-
-	suffix := pattern[1:]
+	suffix := pattern[idx+1:]
 	return strings.HasSuffix(origin, suffix)
 }

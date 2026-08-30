@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -78,6 +79,13 @@ func (s *Server) Start() error {
 
 	s.dependencies.Seal()
 	s.logger.Info("Dependencies sealed — no further infrastructure registration allowed")
+
+	if comp, ok := componentRegistry.Get("logfile"); ok && comp != nil {
+		if w, ok := comp.(io.Writer); ok {
+			s.logger.AddWriter(w)
+			s.logger.Info("File logging enabled", "path", comp.GetStatus()["path"], "filename", comp.GetStatus()["filename"])
+		}
+	}
 
 	s.logger.Info("Initializing Middleware...")
 

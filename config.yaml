@@ -31,7 +31,7 @@ middleware:
   permission_check: true
   cors: true
   jwt: false          # Set to true if using JWT authentication
-  ratelimit: false
+  ratelimit: true
   security: true
   audit: true
   gzip: true

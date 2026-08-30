@@ -51,9 +51,11 @@ func DefaultLoggerConfig() LoggerConfig {
 
 // Logger wraps the zerolog logger with modular configuration
 type Logger struct {
+	mu     sync.RWMutex
 	z      zerolog.Logger
 	quiet  bool
 	config LoggerConfig
+	extra  []io.Writer
 }
 
 // setTimeFormatOnce guards the process-wide zerolog.TimeFieldFormat write.
@@ -77,15 +79,7 @@ func NewQuiet(debug bool, broadcaster io.Writer) *Logger {
 	return NewWithConfig(cfg)
 }
 
-// NewWithConfig creates a new logger with full configuration
-func NewWithConfig(cfg LoggerConfig) *Logger {
-	// TimeFieldFormat is a process-wide zerolog setting; set it exactly once
-	// so concurrent NewWithConfig calls can't race on it.
-	setTimeFormatOnce.Do(func() {
-		zerolog.TimeFieldFormat = time.RFC3339
-	})
-
-	// Create console output based on configuration
+func buildWriters(cfg LoggerConfig, extra []io.Writer) zerolog.LevelWriter {
 	var consoleOutput zerolog.ConsoleWriter
 	if cfg.Output.ConsoleEnabled {
 		consoleOutput = zerolog.ConsoleWriter{
@@ -96,43 +90,63 @@ func NewWithConfig(cfg LoggerConfig) *Logger {
 			NoColor:       !cfg.Output.Colors || cfg.Output.NoColor,
 		}
 	} else {
-		// Console disabled, use discard writer
 		consoleOutput = zerolog.ConsoleWriter{Out: io.Discard}
 	}
-
-	var multi zerolog.LevelWriter
-
+	var writers []io.Writer
 	if cfg.Quiet {
-		// Quiet mode: only write to broadcaster (if available), not to console
 		if cfg.Broadcaster != nil {
-			// Create a simple console writer for the broadcaster (without stdout)
 			broadcasterOutput := zerolog.ConsoleWriter{
 				Out:        cfg.Broadcaster,
 				TimeFormat: cfg.Output.TimestampFormat,
 				NoColor:    true,
 			}
-			multi = zerolog.MultiLevelWriter(broadcasterOutput)
-		} else {
-			// No broadcaster and quiet mode = discard all logs
-			multi = zerolog.MultiLevelWriter(zerolog.ConsoleWriter{Out: io.Discard})
+			writers = append(writers, broadcasterOutput)
+		} else if len(extra) == 0 {
+			writers = append(writers, zerolog.ConsoleWriter{Out: io.Discard})
 		}
 	} else {
-		// Normal mode: write to console and broadcaster
+		writers = append(writers, consoleOutput)
 		if cfg.Broadcaster != nil {
-			multi = zerolog.MultiLevelWriter(consoleOutput, cfg.Broadcaster)
-		} else {
-			multi = zerolog.MultiLevelWriter(consoleOutput)
+			broadcasterOutput := zerolog.ConsoleWriter{
+				Out:        cfg.Broadcaster,
+				TimeFormat: cfg.Output.TimestampFormat,
+				NoColor:    true,
+			}
+			writers = append(writers, broadcasterOutput)
 		}
 	}
-
-	logLevel := zerolog.InfoLevel
-	if cfg.Debug {
-		logLevel = zerolog.DebugLevel
+	writers = append(writers, extra...)
+	if len(writers) == 0 {
+		writers = append(writers, zerolog.ConsoleWriter{Out: io.Discard})
 	}
+	return zerolog.MultiLevelWriter(writers...)
+}
 
-	z := zerolog.New(multi).Level(logLevel).With().Timestamp().Logger()
+func newZerolog(cfg LoggerConfig, extra []io.Writer) zerolog.Logger {
+	setTimeFormatOnce.Do(func() {
+		zerolog.TimeFieldFormat = time.RFC3339
+	})
+	multi := buildWriters(cfg, extra)
+	lvl := zerolog.InfoLevel
+	if cfg.Debug {
+		lvl = zerolog.DebugLevel
+	}
+	return zerolog.New(multi).Level(lvl).With().Timestamp().Logger()
+}
 
-	return &Logger{z: z, quiet: cfg.Quiet, config: cfg}
+// NewWithConfig creates a new logger with full configuration
+func NewWithConfig(cfg LoggerConfig) *Logger {
+	return &Logger{z: newZerolog(cfg, nil), quiet: cfg.Quiet, config: cfg}
+}
+
+func (l *Logger) AddWriter(w io.Writer) {
+	if w == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.extra = append(l.extra, w)
+	l.z = newZerolog(l.config, l.extra)
 }
 
 // getLevelFormatter returns the appropriate level formatter based on output configuration
@@ -225,34 +239,49 @@ func (l *Logger) IsQuiet() bool {
 
 // Info logs an info message
 func (l *Logger) Info(msg string, keyvals ...any) {
-	l.log(l.z.Info(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Info(), msg, keyvals...)
 }
 
 // Error logs an error message
 func (l *Logger) Error(msg string, err error, keyvals ...any) {
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
 	if err != nil {
-		l.log(l.z.Error().Err(err), msg, keyvals...)
+		l.log(z.Error().Err(err), msg, keyvals...)
 	} else {
-		l.log(l.z.Error(), msg, keyvals...)
+		l.log(z.Error(), msg, keyvals...)
 	}
 }
 
 // Debug logs a debug message
 func (l *Logger) Debug(msg string, keyvals ...any) {
-	l.log(l.z.Debug(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Debug(), msg, keyvals...)
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(msg string, keyvals ...any) {
-	l.log(l.z.Warn(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Warn(), msg, keyvals...)
 }
 
 // Fatal logs a fatal message and exits
 func (l *Logger) Fatal(msg string, err error) {
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
 	if err != nil {
-		l.z.Fatal().Err(err).Msg(msg)
+		z.Fatal().Err(err).Msg(msg)
 	} else {
-		l.z.Fatal().Msg(msg)
+		z.Fatal().Msg(msg)
 	}
 }
 

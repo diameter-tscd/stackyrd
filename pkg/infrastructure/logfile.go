@@ -11,6 +11,8 @@ import (
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+
+	"github.com/rs/zerolog"
 )
 
 type FileLogger struct {
@@ -87,20 +89,20 @@ func (f *FileLogger) GetStatus() map[string]interface{} {
 func (f *FileLogger) Write(p []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
 	if f.needsRotation() {
 		f.rotate()
 	}
-
 	if f.file == nil {
 		f.openCurrentFile()
 	}
-
 	if f.file == nil {
 		return 0, os.ErrClosed
 	}
-
 	return f.file.Write(p)
+}
+
+func (f *FileLogger) WriteLevel(_ zerolog.Level, p []byte) (int, error) {
+	return f.Write(p)
 }
 
 func (f *FileLogger) needsRotation() bool {

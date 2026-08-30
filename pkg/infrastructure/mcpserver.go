@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -101,6 +100,137 @@ func (m *MCPServer) getIdentity() InstanceIdentity {
 	return resolveIdentity(now)
 }
 
+// resolveEffective returns the live MCP instance. The HTTP handler is bound
+// to the singleton, but a few tool paths may receive a zero-value receiver;
+// fall back to the global singleton in that case instead of duplicating the
+// lookup in every tool.
+func (m *MCPServer) resolveEffective() *MCPServer {
+	if m != nil && !m.startTime.IsZero() {
+		return m
+	}
+	mcpSingletonMu.RLock()
+	s := mcpSingleton
+	mcpSingletonMu.RUnlock()
+	if s != nil {
+		return s
+	}
+	return m
+}
+
+func memoryThresholds() []map[string]any {
+	return []map[string]any{
+		{"level": "low", "label": "Healthy", "min": 0, "max": 50, "color": "#22c55e", "bg": "rgba(34,197,94,0.15)"},
+		{"level": "moderate", "label": "Moderate", "min": 50, "max": 75, "color": "#eab308", "bg": "rgba(234,179,8,0.15)"},
+		{"level": "high", "label": "High", "min": 75, "max": 90, "color": "#f97316", "bg": "rgba(249,115,22,0.15)"},
+		{"level": "critical", "label": "Critical", "min": 90, "max": 100, "color": "#ef4444", "bg": "rgba(239,68,68,0.15)"},
+	}
+}
+
+func memoryStatus(pct float64) map[string]any {
+	switch {
+	case pct >= 90:
+		return map[string]any{"level": "critical", "label": "Critical", "color": "#ef4444"}
+	case pct >= 75:
+		return map[string]any{"level": "high", "label": "High", "color": "#f97316"}
+	case pct >= 50:
+		return map[string]any{"level": "moderate", "label": "Moderate", "color": "#eab308"}
+	default:
+		return map[string]any{"level": "low", "label": "Healthy", "color": "#22c55e"}
+	}
+}
+
+func buildMemoryDetails() map[string]any {
+	var vm *mem.VirtualMemoryStat
+	if v, err := mem.VirtualMemory(); err == nil {
+		vm = v
+	}
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	toMiB := func(b uint64) uint64 { return b / 1024 / 1024 }
+	toMiB32 := func(b uint64) float64 { return float64(b) / 1024 / 1024 }
+	var sysTotal, sysAvailable, sysUsed, sysFree, sysBuffers, sysCached uint64
+	var usedPct float64
+	if vm != nil {
+		sysTotal = vm.Total
+		sysAvailable = vm.Available
+		sysUsed = vm.Used
+		sysFree = vm.Free
+		sysBuffers = vm.Buffers
+		sysCached = vm.Cached
+		usedPct = vm.UsedPercent
+	}
+	thresholds := memoryThresholds()
+	status := memoryStatus(usedPct)
+	scale := []map[string]any{
+		{"value": 0, "label": "0%"},
+		{"value": 25, "label": "25%"},
+		{"value": 50, "label": "50%"},
+		{"value": 75, "label": "75%"},
+		{"value": 90, "label": "90%"},
+		{"value": 100, "label": "100%"},
+	}
+	return map[string]any{
+		"system": map[string]any{
+			"total_bytes":     sysTotal,
+			"total_mib":       toMiB(sysTotal),
+			"total_gib":       toMiB32(sysTotal) / 1024,
+			"available_bytes": sysAvailable,
+			"available_mib":   toMiB(sysAvailable),
+			"used_bytes":      sysUsed,
+			"used_mib":        toMiB(sysUsed),
+			"free_bytes":      sysFree,
+			"free_mib":        toMiB(sysFree),
+			"buffers_mib":     toMiB(sysBuffers),
+			"cached_mib":      toMiB(sysCached),
+			"used_percent":    usedPct,
+			"available_percent": func() float64 {
+				if sysTotal == 0 {
+					return 0
+				}
+				return float64(sysAvailable) / float64(sysTotal) * 100
+			}(),
+			"free_percent": func() float64 {
+				if sysTotal == 0 {
+					return 0
+				}
+				return float64(sysFree) / float64(sysTotal) * 100
+			}(),
+		},
+		"app": map[string]any{
+			"alloc_mib":       toMiB(ms.Alloc),
+			"alloc_bytes":     ms.Alloc,
+			"total_alloc_mib": toMiB(ms.TotalAlloc),
+			"sys_mib":         toMiB(ms.Sys),
+			"sys_bytes":       ms.Sys,
+			"heap_alloc_mib":  toMiB(ms.HeapAlloc),
+			"heap_sys_mib":    toMiB(ms.HeapSys),
+			"heap_idle_mib":   toMiB(ms.HeapIdle),
+			"heap_inuse_mib":  toMiB(ms.HeapInuse),
+			"heap_released_mib": toMiB(ms.HeapReleased),
+			"heap_objects":    ms.HeapObjects,
+			"stack_inuse_mib": toMiB(ms.StackInuse),
+			"stack_sys_mib":   toMiB(ms.StackSys),
+			"gc_sys_mib":      toMiB(ms.GCSys),
+			"gc_cpu_fraction": ms.GCCPUFraction,
+			"num_gc":          ms.NumGC,
+			"num_goroutine":   runtime.NumGoroutine(),
+			"self_mib":        utils.GetMemSelf(),
+		},
+		"visualization": map[string]any{
+			"thresholds": thresholds,
+			"scale":      scale,
+			"gauge": map[string]any{
+				"percent":    usedPct,
+				"normalized": usedPct / 100,
+				"status":     status,
+			},
+			"status": status,
+		},
+		"used_percent": usedPct,
+		"status":       status,
+	}
+}
+
 type ServiceMeta struct {
 	Name      string   `json:"name"`
 	State     string   `json:"state"`
@@ -142,6 +272,8 @@ type MCPServer struct {
 	appEnv      string
 	serverPort  string
 	identity InstanceIdentity
+
+	toolDefsCache []ToolDef
 }
 
 var (
@@ -237,7 +369,7 @@ func init() {
 		if token == "" {
 			token = generateTempToken()
 			if log != nil {
-				log.Warn("MCP temporary token generated — set mcp.token in config.yaml for persistence", "token", token, "endpoint", cfg.MCP.Endpoint)
+				log.Warn("MCP temporary token generated — set mcp.token in config.yaml for persistence", "endpoint", cfg.MCP.Endpoint)
 			}
 		}
 		window := time.Duration(cfg.MCP.RateLimitTime) * time.Second
@@ -399,7 +531,7 @@ func (m *MCPServer) Handler() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		origin := c.Request().Header.Get("Origin")
 		reqHeaders := c.Request().Header.Get("Access-Control-Request-Headers")
-		allowHeaders := "Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name, X-MCP-Token, X-Requested-With"
+		allowHeaders := "Content-Type, Accept, Authorization, MCP-Protocol-Version, X-MCP-Token, X-Requested-With"
 		if reqHeaders != "" {
 			allowHeaders = reqHeaders
 		}
@@ -574,15 +706,6 @@ func (m *MCPServer) Handler() echo.HandlerFunc {
 			})
 		}
 		c.Response().Header().Set("MCP-Protocol-Version", requestedVersion)
-		if isModernVersion(requestedVersion) {
-			if err := validateStreamableHTTPHeaders(c, &req, bodyVersion); err != nil {
-				return c.JSON(http.StatusBadRequest, jsonRPCResp{
-					JSONRPC: "2.0",
-					ID:      req.ID,
-					Error:   err,
-				})
-			}
-		}
 		resp := m.route(&req)
 		if resp.Error != nil && resp.Error.Code == -32601 && isModernVersion(requestedVersion) {
 			if sse {
@@ -611,69 +734,6 @@ func extractProtocolVersion(params json.RawMessage) string {
 		return ""
 	}
 	if v, ok := tmp.Meta["io.modelcontextprotocol/protocolVersion"].(string); ok {
-		return v
-	}
-	return ""
-}
-
-func decodeHeaderValue(v string) string {
-	if strings.HasPrefix(v, "=?base64?") && strings.HasSuffix(v, "?=") {
-		b64 := v[9 : len(v)-2]
-		if decoded, err := base64.StdEncoding.DecodeString(b64); err == nil {
-			return string(decoded)
-		}
-	}
-	return v
-}
-
-func validateStreamableHTTPHeaders(c echo.Context, req *jsonRPCReq, bodyVersion string) *jsonRPCErr {
-	headerVersion := c.Request().Header.Get("MCP-Protocol-Version")
-	if headerVersion == "" {
-		headerVersion = c.Request().Header.Get("Mcp-Protocol-Version")
-	}
-	if headerVersion == "" {
-		return &jsonRPCErr{Code: -32020, Message: "Header mismatch: missing required MCP-Protocol-Version header"}
-	}
-	mcpMethod := c.Request().Header.Get("Mcp-Method")
-	if mcpMethod == "" {
-		mcpMethod = c.Request().Header.Get("MCP-Method")
-	}
-	if mcpMethod == "" {
-		return &jsonRPCErr{Code: -32020, Message: "Header mismatch: missing required Mcp-Method header"}
-	}
-	if mcpMethod != req.Method {
-		return &jsonRPCErr{Code: -32020, Message: fmt.Sprintf("Header mismatch: Mcp-Method header %q does not match body method %q", mcpMethod, req.Method)}
-	}
-	if req.Method == "tools/call" || req.Method == "resources/read" || req.Method == "prompts/get" {
-		expectedName := extractNameOrURI(req.Params, req.Method)
-		if expectedName != "" {
-			mcpName := c.Request().Header.Get("Mcp-Name")
-			if mcpName == "" {
-				return &jsonRPCErr{Code: -32020, Message: "Header mismatch: missing required Mcp-Name header"}
-			}
-			decoded := decodeHeaderValue(mcpName)
-			if decoded != expectedName {
-				return &jsonRPCErr{Code: -32020, Message: fmt.Sprintf("Header mismatch: Mcp-Name header %q does not match body value %q", decoded, expectedName)}
-			}
-		}
-	}
-	return nil
-}
-
-func extractNameOrURI(params json.RawMessage, method string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	var m map[string]any
-	if err := json.Unmarshal(params, &m); err != nil {
-		return ""
-	}
-	if method == "resources/read" {
-		if v, ok := m["uri"].(string); ok {
-			return v
-		}
-	}
-	if v, ok := m["name"].(string); ok {
 		return v
 	}
 	return ""
@@ -808,12 +868,19 @@ func (m *MCPServer) route(req *jsonRPCReq) jsonRPCResp {
 	return resp
 }
 
+func (m *MCPServer) serverVersion() string {
+	if v := m.appVersion; v != "" {
+		return v
+	}
+	return "1.0"
+}
+
 func (m *MCPServer) handleInitialize() map[string]any {
 	id := m.getIdentity()
 	return map[string]any{
 		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{"tools": map[string]any{}, "resources": map[string]any{}, "prompts": map[string]any{}},
-		"serverInfo":      map[string]any{"name": "stackyrd", "version": "1.0", "instanceId": id.InstanceID},
+		"serverInfo":      map[string]any{"name": "stackyrd", "version": m.serverVersion(), "instanceId": id.InstanceID},
 		"_meta":           map[string]any{"io.stackyrd/instance": id},
 	}
 }
@@ -824,7 +891,7 @@ func (m *MCPServer) handleDiscover() map[string]any {
 		"supportedVersions": supportedMCPVersions,
 		"capabilities":      map[string]any{"tools": map[string]any{}, "resources": map[string]any{}, "prompts": map[string]any{}},
 		"_meta": map[string]any{
-			"io.modelcontextprotocol/serverInfo": map[string]any{"name": "stackyrd", "version": "1.0", "instanceId": id.InstanceID},
+			"io.modelcontextprotocol/serverInfo": map[string]any{"name": "stackyrd", "version": m.serverVersion(), "instanceId": id.InstanceID},
 			"io.stackyrd/instance":               id,
 		},
 		"instructions": "stackyrd MCP server exposes health, services, infra, and endpoint introspection tools.",
@@ -850,6 +917,8 @@ func (m *MCPServer) resourceDefs() []map[string]any {
 		{"uri": "stackyrd://app", "name": "App Info", "description": "App name, version, env, port, uptime and start time", "mimeType": "application/json"},
 		{"uri": "stackyrd://identity", "name": "Instance Identity", "description": "Pod identity: instance_id, pod_name, pod_ip, namespace, node, hostname, pid", "mimeType": "application/json"},
 		{"uri": "stackyrd://cluster", "name": "Cluster", "description": "Cluster members (phase 1: local instance only; phase 2: Redis-aggregated)", "mimeType": "application/json"},
+		{"uri": "stackyrd://memory", "name": "Memory Details", "description": "Detailed memory usage with visualization thresholds and scale for frontend gauges", "mimeType": "application/json"},
+		{"uri": "stackyrd://goroutines", "name": "Goroutine Dump", "description": "All goroutines with id, function, state and stack trace for leak detection and visualization", "mimeType": "application/json"},
 	}
 }
 
@@ -880,6 +949,10 @@ func (m *MCPServer) handleResourcesRead(params json.RawMessage) (any, *jsonRPCEr
 		data = m.toolIdentity()
 	case "stackyrd://cluster":
 		data = m.toolCluster()
+	case "stackyrd://memory":
+		data = m.toolMemory()
+	case "stackyrd://goroutines":
+		data = m.toolGoroutines()
 	default:
 		return nil, &jsonRPCErr{Code: -32602, Message: "Resource not found: " + p.URI}
 	}
@@ -889,6 +962,17 @@ func (m *MCPServer) handleResourcesRead(params json.RawMessage) (any, *jsonRPCEr
 }
 
 func (m *MCPServer) toolDefs() []ToolDef {
+	if m.toolDefsCache == nil {
+		m.mu.Lock()
+		if m.toolDefsCache == nil {
+			m.toolDefsCache = m.buildToolDefs()
+		}
+		m.mu.Unlock()
+	}
+	return m.toolDefsCache
+}
+
+func (m *MCPServer) buildToolDefs() []ToolDef {
 	return []ToolDef{
 		{Name: "stackyrd_health", Description: "Get stackyrd infrastructure initialization status and overall progress.", InputSchema: emptySchema()},
 		{Name: "stackyrd_services", Description: "List all registered services with their run state, wire name, and endpoints.", InputSchema: emptySchema()},
@@ -908,6 +992,14 @@ func (m *MCPServer) toolDefs() []ToolDef {
 		{Name: "stackyrd_app", Description: "Get app info (name, version, env, port, uptime).", InputSchema: emptySchema()},
 		{Name: "stackyrd_identity", Description: "Get this pod's instance identity (instance_id, pod_name, pod_ip, namespace, node, hostname, pid).", InputSchema: emptySchema()},
 		{Name: "stackyrd_cluster", Description: "List cluster members (currently local instance only; future Redis-aggregated).", InputSchema: emptySchema()},
+		{Name: "stackyrd_memory", Description: "Get detailed memory usage with visualization thresholds and scale (system, app heap, gauge).", InputSchema: emptySchema()},
+		{Name: "stackyrd_goroutines", Description: "Dump all goroutines with id, function, state and full stack trace for leak detection and visualization.", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"filter": map[string]any{"type": "string", "description": "Optional case-insensitive substring filter on function or state (e.g. 'chan', 'net/http')."},
+				"limit":  map[string]any{"type": "integer", "description": "Max goroutines to return (default 500, 0 = unlimited)."},
+			},
+		}},
 	}
 }
 
@@ -954,6 +1046,10 @@ func (m *MCPServer) handleToolsCall(params json.RawMessage) (map[string]any, *js
 		text = m.toolIdentity()
 	case "stackyrd_cluster":
 		text = m.toolCluster()
+	case "stackyrd_memory":
+		text = m.toolMemory()
+	case "stackyrd_goroutines":
+		text = m.toolGoroutines()
 	default:
 		text = fmt.Sprintf(`{"error":"unknown tool: %s"}`, cp.Name)
 		isErr = true
@@ -976,22 +1072,11 @@ func argString(args map[string]any, key string) string {
 }
 
 func (m *MCPServer) toolHealth() string {
-	m.mu.RLock()
-	im := m.initManager
-	st := m.startTime
-	m.mu.RUnlock()
-	if im == nil {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			im = mcpSingleton.initManager
-			if st.IsZero() {
-				st = mcpSingleton.startTime
-			}
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-	}
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	im := eff.initManager
+	st := eff.startTime
+	eff.mu.RUnlock()
 	if im == nil {
 		return `{"status":"unknown","reason":"infra init manager not ready"}`
 	}
@@ -1010,6 +1095,7 @@ func (m *MCPServer) toolHealth() string {
 	}
 	slices.SortFunc(comps, func(a, b comp) int { return cmp.Compare(a.Name, b.Name) })
 	uptime := time.Since(st).Round(time.Second)
+	id := eff.getIdentity()
 	return marshalJSON(map[string]any{
 		"status":         map[bool]string{true: "ready", false: "initializing"}[im.IsReady()],
 		"progress":       im.GetInitializationProgress(),
@@ -1017,29 +1103,21 @@ func (m *MCPServer) toolHealth() string {
 		"uptime":         uptime.String(),
 		"uptime_seconds": int64(uptime.Seconds()),
 		"started_at":     st.Format(time.RFC3339),
-		"instance_id":    m.getIdentity().InstanceID,
-		"instance":       m.getIdentity(),
+		"instance_id":    id.InstanceID,
+		"instance":       id,
 	})
 }
 
 func (m *MCPServer) toolUptime() string {
-	m.mu.RLock()
-	st := m.startTime
-	m.mu.RUnlock()
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	st := eff.startTime
+	eff.mu.RUnlock()
 	if st.IsZero() {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			st = mcpSingleton.startTime
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-		if st.IsZero() {
-			st = time.Now()
-		}
+		st = time.Now()
 	}
 	uptime := time.Since(st).Round(time.Second)
-	id := m.getIdentity()
+	id := eff.getIdentity()
 	return marshalJSON(map[string]any{
 		"uptime":          uptime.String(),
 		"uptime_seconds":  int64(uptime.Seconds()),
@@ -1051,38 +1129,16 @@ func (m *MCPServer) toolUptime() string {
 }
 
 func (m *MCPServer) toolAppInfo() string {
-	m.mu.RLock()
-	st := m.startTime
-	name, ver, env, port := m.appName, m.appVersion, m.appEnv, m.serverPort
-	m.mu.RUnlock()
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	st := eff.startTime
+	name, ver, env, port := eff.appName, eff.appVersion, eff.appEnv, eff.serverPort
+	eff.mu.RUnlock()
 	if st.IsZero() {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			if st.IsZero() {
-				st = mcpSingleton.startTime
-			}
-			if name == "" {
-				name = mcpSingleton.appName
-			}
-			if ver == "" {
-				ver = mcpSingleton.appVersion
-			}
-			if env == "" {
-				env = mcpSingleton.appEnv
-			}
-			if port == "" {
-				port = mcpSingleton.serverPort
-			}
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-		if st.IsZero() {
-			st = time.Now()
-		}
+		st = time.Now()
 	}
 	uptime := time.Since(st).Round(time.Second)
-	id := m.getIdentity()
+	id := eff.getIdentity()
 	return marshalJSON(map[string]any{
 		"name":           name,
 		"version":        ver,
@@ -1146,35 +1202,13 @@ func (m *MCPServer) toolMiddleware() string {
 }
 
 func (m *MCPServer) toolDashboard() string {
-	m.mu.RLock()
-	st := m.startTime
-	name, ver, env, port := m.appName, m.appVersion, m.appEnv, m.serverPort
-	m.mu.RUnlock()
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	st := eff.startTime
+	name, ver, env, port := eff.appName, eff.appVersion, eff.appEnv, eff.serverPort
+	eff.mu.RUnlock()
 	if st.IsZero() {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			if st.IsZero() {
-				st = mcpSingleton.startTime
-			}
-			if name == "" {
-				name = mcpSingleton.appName
-			}
-			if ver == "" {
-				ver = mcpSingleton.appVersion
-			}
-			if env == "" {
-				env = mcpSingleton.appEnv
-			}
-			if port == "" {
-				port = mcpSingleton.serverPort
-			}
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-		if st.IsZero() {
-			st = time.Now()
-		}
+		st = time.Now()
 	}
 	uptime := time.Since(st).Round(time.Second)
 	var cpuPct float64
@@ -1220,18 +1254,9 @@ func (m *MCPServer) toolDashboard() string {
 	for _, n := range mwNames {
 		mwOut = append(mwOut, map[string]any{"name": n, "enabled": mwReg.IsEnabled(n)})
 	}
-	m.mu.RLock()
-	svcMetas := m.services
-	m.mu.RUnlock()
-	if svcMetas == nil {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			svcMetas = mcpSingleton.services
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-	}
+	eff.mu.RLock()
+	svcMetas := eff.services
+	eff.mu.RUnlock()
 	if svcMetas == nil {
 		svcMetas = []ServiceMeta{}
 	}
@@ -1256,7 +1281,7 @@ func (m *MCPServer) toolDashboard() string {
 	if endpoints == nil {
 		endpoints = []string{}
 	}
-	id := m.getIdentity()
+	id := eff.getIdentity()
 	return marshalJSON(map[string]any{
 		"app": map[string]any{
 			"name":           name,
@@ -1291,18 +1316,10 @@ func (m *MCPServer) toolDashboard() string {
 }
 
 func (m *MCPServer) toolServices() string {
-	m.mu.RLock()
-	svcs := m.services
-	m.mu.RUnlock()
-	if svcs == nil {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			svcs = mcpSingleton.services
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-	}
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	svcs := eff.services
+	eff.mu.RUnlock()
 	if svcs == nil {
 		svcs = []ServiceMeta{}
 	}
@@ -1340,18 +1357,10 @@ func (m *MCPServer) toolInfraDetail(name string) string {
 }
 
 func (m *MCPServer) toolEndpoints() string {
-	m.mu.RLock()
-	svcs := m.services
-	m.mu.RUnlock()
-	if svcs == nil {
-		mcpSingletonMu.RLock()
-		if mcpSingleton != nil && mcpSingleton != m {
-			mcpSingleton.mu.RLock()
-			svcs = mcpSingleton.services
-			mcpSingleton.mu.RUnlock()
-		}
-		mcpSingletonMu.RUnlock()
-	}
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	svcs := eff.services
+	eff.mu.RUnlock()
 	seen := map[string]bool{}
 	var eps []string
 	for _, svc := range svcs {
@@ -1377,6 +1386,100 @@ func (m *MCPServer) toolCluster() string {
 		"count":   1,
 		"self":    id,
 	})
+}
+
+func (m *MCPServer) toolMemory() string {
+	return marshalJSON(buildMemoryDetails())
+}
+
+func parseGoroutineDump(filter string, limit int) map[string]any {
+	buf := make([]byte, 1<<20)
+	n := runtime.Stack(buf, true)
+	dump := string(buf[:n])
+
+	type goroutineInfo struct {
+		ID       int    `json:"id"`
+		Function string `json:"function"`
+		State    string `json:"state"`
+		Stack    string `json:"stack"`
+	}
+
+	goroutines := []goroutineInfo{}
+	lines := strings.Split(dump, "\n")
+	var current *goroutineInfo
+	var stackLines []string
+	flush := func() {
+		if current == nil {
+			return
+		}
+		if len(stackLines) > 0 {
+			current.Stack = strings.Join(stackLines, "\n")
+		}
+		goroutines = append(goroutines, *current)
+		current = nil
+		stackLines = nil
+	}
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "goroutine ") {
+			flush()
+			g := &goroutineInfo{}
+			rest := strings.TrimPrefix(line, "goroutine ")
+			if idx := strings.Index(rest, " ["); idx >= 0 {
+				idStr := strings.TrimSpace(rest[:idx])
+				if id, err := strconv.Atoi(idStr); err == nil {
+					g.ID = id
+				}
+				statePart := rest[idx+2:]
+				if end := strings.Index(statePart, "]"); end >= 0 {
+					g.State = strings.TrimSpace(statePart[:end])
+					if comma := strings.Index(g.State, ","); comma >= 0 {
+						g.State = strings.TrimSpace(g.State[:comma])
+					}
+				}
+			}
+			current = g
+		} else if current != nil {
+			if strings.HasPrefix(line, "\t") {
+				stackLines = append(stackLines, line)
+			} else if line != "" && current.Function == "" {
+				current.Function = strings.TrimSpace(line)
+			}
+		}
+	}
+	flush()
+
+	filtered := []goroutineInfo{}
+	f := strings.ToLower(filter)
+	for _, g := range goroutines {
+		if f != "" && !strings.Contains(strings.ToLower(g.Function), f) && !strings.Contains(strings.ToLower(g.State), f) {
+			continue
+		}
+		filtered = append(filtered, g)
+	}
+
+	total := len(filtered)
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+
+	states := map[string]int{}
+	for _, g := range filtered {
+		states[g.State]++
+	}
+
+	return map[string]any{
+		"count":       total,
+		"returned":    len(filtered),
+		"truncated":   limit > 0 && total > limit,
+		"filter":      filter,
+		"states":      states,
+		"goroutines":  filtered,
+	}
+}
+
+func (m *MCPServer) toolGoroutines() string {
+	return marshalJSON(parseGoroutineDump("", 0))
 }
 
 func marshalJSON(v any) string {

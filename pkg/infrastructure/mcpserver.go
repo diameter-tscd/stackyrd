@@ -19,6 +19,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
+	"gopkg.in/yaml.v3"
 
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
@@ -274,6 +275,20 @@ type MCPServer struct {
 	identity InstanceIdentity
 
 	toolDefsCache []ToolDef
+
+	dashboardCache   string
+	dashboardExpiry  time.Time
+	resourcesCache   string
+	resourcesExpiry  time.Time
+	memoryCache      string
+	memoryExpiry     time.Time
+	cachedHostname   string
+	cachedCPUModel   string
+	cachedHostExpiry time.Time
+	cachedCPUExpiry  time.Time
+
+	configCache  string
+	configExpiry time.Time
 }
 
 var (
@@ -294,9 +309,18 @@ func (m *MCPServer) GetStatus() map[string]any {
 	}
 	uptime := time.Since(st).Round(time.Second)
 	m.ipMu.Lock()
+	now := time.Now()
+	for ip, s := range m.ipStates {
+		if !s.blockedUntil.IsZero() && now.After(s.blockedUntil) && time.Since(s.windowStart) > m.rateLimitWindow+m.rateLimitCooldown {
+			delete(m.ipStates, ip)
+			continue
+		}
+		if s.blockedUntil.IsZero() && time.Since(s.windowStart) > m.rateLimitWindow*2 && s.count == 0 {
+			delete(m.ipStates, ip)
+		}
+	}
 	tracked := len(m.ipStates)
 	blocked := 0
-	now := time.Now()
 	for _, s := range m.ipStates {
 		if !s.blockedUntil.IsZero() && now.Before(s.blockedUntil) {
 			blocked++
@@ -919,6 +943,7 @@ func (m *MCPServer) resourceDefs() []map[string]any {
 		{"uri": "stackyrd://cluster", "name": "Cluster", "description": "Cluster members (phase 1: local instance only; phase 2: Redis-aggregated)", "mimeType": "application/json"},
 		{"uri": "stackyrd://memory", "name": "Memory Details", "description": "Detailed memory usage with visualization thresholds and scale for frontend gauges", "mimeType": "application/json"},
 		{"uri": "stackyrd://goroutines", "name": "Goroutine Dump", "description": "All goroutines with id, function, state and stack trace for leak detection and visualization", "mimeType": "application/json"},
+		{"uri": "stackyrd://config", "name": "Configuration", "description": "Raw config.yaml from embed afero fs (alias config.yaml) with parsed view", "mimeType": "application/json"},
 	}
 }
 
@@ -953,6 +978,8 @@ func (m *MCPServer) handleResourcesRead(params json.RawMessage) (any, *jsonRPCEr
 		data = m.toolMemory()
 	case "stackyrd://goroutines":
 		data = m.toolGoroutines()
+	case "stackyrd://config":
+		data = m.toolConfig()
 	default:
 		return nil, &jsonRPCErr{Code: -32602, Message: "Resource not found: " + p.URI}
 	}
@@ -1000,6 +1027,7 @@ func (m *MCPServer) buildToolDefs() []ToolDef {
 				"limit":  map[string]any{"type": "integer", "description": "Max goroutines to return (default 500, 0 = unlimited)."},
 			},
 		}},
+		{Name: "stackyrd_config", Description: "Read config.yaml from embed afero fs (alias config.yaml) — raw YAML + parsed view.", InputSchema: emptySchema()},
 	}
 }
 
@@ -1049,7 +1077,27 @@ func (m *MCPServer) handleToolsCall(params json.RawMessage) (map[string]any, *js
 	case "stackyrd_memory":
 		text = m.toolMemory()
 	case "stackyrd_goroutines":
-		text = m.toolGoroutines()
+		filter := argString(cp.Arguments, "filter")
+		limit := 500
+		if v, ok := cp.Arguments["limit"]; ok {
+			switch n := v.(type) {
+			case float64:
+				limit = int(n)
+			case int:
+				limit = n
+			case int64:
+				limit = int(n)
+			}
+			if limit < 0 {
+				limit = 0
+			}
+			if limit > 2000 {
+				limit = 2000
+			}
+		}
+		text = m.toolGoroutinesFiltered(filter, limit)
+	case "stackyrd_config":
+		text = m.toolConfig()
 	default:
 		text = fmt.Sprintf(`{"error":"unknown tool: %s"}`, cp.Name)
 		isErr = true
@@ -1154,6 +1202,14 @@ func (m *MCPServer) toolAppInfo() string {
 }
 
 func (m *MCPServer) toolResources() string {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	if eff.resourcesCache != "" && time.Now().Before(eff.resourcesExpiry) {
+		cached := eff.resourcesCache
+		eff.mu.RUnlock()
+		return cached
+	}
+	eff.mu.RUnlock()
 	var cpuPct float64
 	if p, err := cpu.Percent(0, false); err == nil && len(p) > 0 {
 		cpuPct = p[0]
@@ -1165,16 +1221,10 @@ func (m *MCPServer) toolResources() string {
 		memUsed = v.Used / 1024 / 1024
 		memTotal = v.Total / 1024 / 1024
 	}
-	hostname := ""
-	if info, err := utils.GetNetworkInfo(); err == nil {
-		hostname = info["hostname"]
-	}
-	cpuModel := ""
-	if info, err := cpu.Info(); err == nil && len(info) > 0 {
-		cpuModel = info[0].ModelName
-	}
-	id := m.getIdentity()
-	return marshalJSON(map[string]any{
+	hostname := eff.getCachedHostname()
+	cpuModel := eff.getCachedCPUModel()
+	id := eff.getIdentity()
+	result := marshalJSON(map[string]any{
 		"cpu_percent":  cpuPct,
 		"mem_percent":  memPct,
 		"mem_used_mib": memUsed,
@@ -1188,6 +1238,11 @@ func (m *MCPServer) toolResources() string {
 		"instance_id":  id.InstanceID,
 		"instance":     id,
 	})
+	eff.mu.Lock()
+	eff.resourcesCache = result
+	eff.resourcesExpiry = time.Now().Add(2 * time.Second)
+	eff.mu.Unlock()
+	return result
 }
 
 func (m *MCPServer) toolMiddleware() string {
@@ -1204,6 +1259,11 @@ func (m *MCPServer) toolMiddleware() string {
 func (m *MCPServer) toolDashboard() string {
 	eff := m.resolveEffective()
 	eff.mu.RLock()
+	if eff.dashboardCache != "" && time.Now().Before(eff.dashboardExpiry) {
+		cached := eff.dashboardCache
+		eff.mu.RUnlock()
+		return cached
+	}
 	st := eff.startTime
 	name, ver, env, port := eff.appName, eff.appVersion, eff.appEnv, eff.serverPort
 	eff.mu.RUnlock()
@@ -1222,14 +1282,8 @@ func (m *MCPServer) toolDashboard() string {
 		memUsed = v.Used / 1024 / 1024
 		memTotal = v.Total / 1024 / 1024
 	}
-	hostname := ""
-	if info, err := utils.GetNetworkInfo(); err == nil {
-		hostname = info["hostname"]
-	}
-	cpuModel := ""
-	if info, err := cpu.Info(); err == nil && len(info) > 0 {
-		cpuModel = info[0].ModelName
-	}
+	hostname := eff.getCachedHostname()
+	cpuModel := eff.getCachedCPUModel()
 	reg := GetGlobalRegistry()
 	all := reg.GetAll()
 	infra := make([]map[string]any, 0, len(all))
@@ -1282,7 +1336,7 @@ func (m *MCPServer) toolDashboard() string {
 		endpoints = []string{}
 	}
 	id := eff.getIdentity()
-	return marshalJSON(map[string]any{
+	payload := map[string]any{
 		"app": map[string]any{
 			"name":           name,
 			"version":        ver,
@@ -1307,12 +1361,18 @@ func (m *MCPServer) toolDashboard() string {
 			"cpu_model":     cpuModel,
 			"pid":           os.Getpid(),
 		},
-		"services":   svcs,
-		"infra":      infra,
+		"services":       svcs,
+		"infra":          infra,
 		"infra_disabled": disabledInfra,
-		"middleware": mwOut,
-		"endpoints":  endpoints,
-	})
+		"middleware":     mwOut,
+		"endpoints":      endpoints,
+	}
+	result := marshalJSON(payload)
+	eff.mu.Lock()
+	eff.dashboardCache = result
+	eff.dashboardExpiry = time.Now().Add(2 * time.Second)
+	eff.mu.Unlock()
+	return result
 }
 
 func (m *MCPServer) toolServices() string {
@@ -1389,12 +1449,108 @@ func (m *MCPServer) toolCluster() string {
 }
 
 func (m *MCPServer) toolMemory() string {
-	return marshalJSON(buildMemoryDetails())
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	if eff.memoryCache != "" && time.Now().Before(eff.memoryExpiry) {
+		cached := eff.memoryCache
+		eff.mu.RUnlock()
+		return cached
+	}
+	eff.mu.RUnlock()
+	result := marshalJSON(buildMemoryDetails())
+	eff.mu.Lock()
+	eff.memoryCache = result
+	eff.memoryExpiry = time.Now().Add(2 * time.Second)
+	eff.mu.Unlock()
+	return result
+}
+
+func (m *MCPServer) toolConfig() string {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	if eff.configCache != "" && time.Now().Before(eff.configExpiry) {
+		cached := eff.configCache
+		eff.mu.RUnlock()
+		return cached
+	}
+	eff.mu.RUnlock()
+	data, err := Read("config.yaml")
+	if err != nil {
+		if data2, err2 := Read("config"); err2 == nil {
+			data = data2
+			err = nil
+		}
+	}
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "source": "afero:config.yaml"})
+	}
+	var parsed any
+	if err := yaml.Unmarshal(data, &parsed); err == nil {
+		result := marshalJSON(map[string]any{"source": "afero:config.yaml", "raw": string(data), "parsed": parsed})
+		eff.mu.Lock()
+		eff.configCache = result
+		eff.configExpiry = time.Now().Add(5 * time.Second)
+		eff.mu.Unlock()
+		return result
+	}
+	result := marshalJSON(map[string]any{"source": "afero:config.yaml", "raw": string(data)})
+	eff.mu.Lock()
+	eff.configCache = result
+	eff.configExpiry = time.Now().Add(5 * time.Second)
+	eff.mu.Unlock()
+	return result
+}
+
+func (m *MCPServer) getCachedHostname() string {
+	m.mu.RLock()
+	if m.cachedHostname != "" && time.Now().Before(m.cachedHostExpiry) {
+		h := m.cachedHostname
+		m.mu.RUnlock()
+		return h
+	}
+	m.mu.RUnlock()
+	hostname := ""
+	if info, err := utils.GetNetworkInfo(); err == nil {
+		hostname = info["hostname"]
+	}
+	m.mu.Lock()
+	m.cachedHostname = hostname
+	m.cachedHostExpiry = time.Now().Add(30 * time.Second)
+	m.mu.Unlock()
+	return hostname
+}
+
+func (m *MCPServer) getCachedCPUModel() string {
+	m.mu.RLock()
+	if m.cachedCPUModel != "" && time.Now().Before(m.cachedCPUExpiry) {
+		c := m.cachedCPUModel
+		m.mu.RUnlock()
+		return c
+	}
+	m.mu.RUnlock()
+	cpuModel := ""
+	if info, err := cpu.Info(); err == nil && len(info) > 0 {
+		cpuModel = info[0].ModelName
+	}
+	m.mu.Lock()
+	m.cachedCPUModel = cpuModel
+	m.cachedCPUExpiry = time.Now().Add(30 * time.Second)
+	m.mu.Unlock()
+	return cpuModel
 }
 
 func parseGoroutineDump(filter string, limit int) map[string]any {
-	buf := make([]byte, 1<<20)
+	size := 256 << 10
+	buf := make([]byte, size)
 	n := runtime.Stack(buf, true)
+	for n == size {
+		size *= 2
+		if size > 8<<20 {
+			break
+		}
+		buf = make([]byte, size)
+		n = runtime.Stack(buf, true)
+	}
 	dump := string(buf[:n])
 
 	type goroutineInfo struct {
@@ -1479,7 +1635,11 @@ func parseGoroutineDump(filter string, limit int) map[string]any {
 }
 
 func (m *MCPServer) toolGoroutines() string {
-	return marshalJSON(parseGoroutineDump("", 0))
+	return marshalJSON(parseGoroutineDump("", 500))
+}
+
+func (m *MCPServer) toolGoroutinesFiltered(filter string, limit int) string {
+	return marshalJSON(parseGoroutineDump(filter, limit))
 }
 
 func marshalJSON(v any) string {

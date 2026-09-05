@@ -108,6 +108,13 @@ type TerminalModel struct {
 	isSidebarHidden     bool
 	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
 	sidebarForced       *bool // nil = auto-hide logic applies; non-nil = forced show/hide
+
+	logCacheLines  []string
+	logCacheWidth  int
+	logCacheCount  int
+	logCacheFilter string
+	logCacheGen    uint64
+	logGen         uint64
 }
 
 type terminalTickMsg time.Time
@@ -358,6 +365,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.allLogs = m.allLogs[len(m.allLogs)-m.maxLogs:]
 		}
 		m.updateFilteredLogs()
+		m.logGen++
 		m.logsMutex.Unlock()
 		return m, nil
 	}
@@ -849,11 +857,18 @@ func wrapLogMessage(msg string, maxLen int) []string {
 	if maxLen < 20 {
 		maxLen = 20
 	}
-	// A single token longer than the wrap width cannot be word-wrapped (e.g. a
-	// serialized JSON error). Detect it and print the message plainly instead.
-	for _, tok := range strings.Fields(msg) {
-		if len(tok) > maxLen {
-			return []string{flatLogLine(msg, maxLen)}
+	tokenLen := 0
+	for i := 0; i < len(msg); i++ {
+		if msg[i] == ' ' || msg[i] == '\n' || msg[i] == '\t' {
+			if tokenLen > maxLen {
+				return []string{flatLogLine(msg, maxLen)}
+			}
+			tokenLen = 0
+		} else {
+			tokenLen++
+			if tokenLen > maxLen {
+				return []string{flatLogLine(msg, maxLen)}
+			}
 		}
 	}
 	return strings.Split(wordwrap.String(msg, maxLen), "\n")
@@ -869,41 +884,46 @@ func flatLogLine(msg string, maxLen int) string {
 }
 
 func (m *TerminalModel) renderLogEntries() []string {
-	var lines []string
-
 	lw := m.logWidth
 	if lw < 40 {
 		lw = 40
 	}
 
 	m.logsMutex.RLock()
-	defer m.logsMutex.RUnlock()
-
 	logsToShow := m.filteredLogs
 	if m.filterText == "" {
 		logsToShow = m.allLogs
 	}
+	count := len(logsToShow)
+	filter := m.filterText
+	gen := m.logGen
+	if m.logCacheLines != nil && m.logCacheWidth == lw && m.logCacheCount == count && m.logCacheFilter == filter && m.logCacheGen == gen {
+		cached := m.logCacheLines
+		m.logsMutex.RUnlock()
+		return cached
+	}
+	copied := make([]LogEntry, count)
+	copy(copied, logsToShow)
+	m.logsMutex.RUnlock()
 
-	if len(logsToShow) == 0 {
+	var lines []string
+	if count == 0 {
 		lines = append(lines, sidebarDimStyle().Render("  Waiting for logs..."))
 	} else {
-		for _, log := range logsToShow {
+		textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
+		for _, log := range copied {
 			ls := m.levelStyle(log.Level)
 			timeStr := log.Time.Format("15:04:05")
 			icon := m.levelIcon(log.Level)
-
 			maxMsgLen := lw - 22
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
-			// Word-wrap instead of truncating so long messages stay readable.
-			// Long error blobs are flattened to one line by wrapLogMessage.
 			msgLines := wrapLogMessage(log.Message, maxMsgLen)
-
 			prefix := fmt.Sprintf("  %s %s", sidebarDimStyle().Render(timeStr), ls.Render(icon))
 			indent := strings.Repeat(" ", 14)
 			for i, ml := range msgLines {
-				styled := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(ml)
+				styled := textStyle.Render(ml)
 				if i == 0 {
 					lines = append(lines, prefix+" "+styled)
 				} else {
@@ -912,6 +932,14 @@ func (m *TerminalModel) renderLogEntries() []string {
 			}
 		}
 	}
+
+	m.logsMutex.Lock()
+	m.logCacheLines = lines
+	m.logCacheWidth = lw
+	m.logCacheCount = count
+	m.logCacheFilter = filter
+	m.logCacheGen = gen
+	m.logsMutex.Unlock()
 
 	return lines
 }
@@ -1431,6 +1459,8 @@ func (m *TerminalModel) clearLogs() {
 	m.filteredLogs = make([]LogEntry, 0)
 	m.scrollOffset = 0
 	m.filterText = ""
+	m.logGen++
+	m.logCacheLines = nil
 }
 
 // Terminal layout thresholds — tune these to change how the sidebar and log

@@ -10,18 +10,19 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 )
 
 type RedisManager struct {
 	Client *redis.Client
-	Pool   *WorkerPool // Async worker pool — lazily initialised on first async call
+	Pool   *WorkerPool
 	once   sync.Once
 	poolMu sync.Mutex
 
-	// statusCache avoids re-running Ping + PoolStats on every /health call.
 	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.RWMutex
+	sf           singleflight.Group
 }
 
 // Name returns the display name of the component
@@ -97,7 +98,6 @@ func (r *RedisManager) GetStatus() map[string]any {
 		return stats
 	}
 
-	// Fast path: return cached result when still within TTL.
 	r.statusMu.RLock()
 	if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
 		cached := make(map[string]any, len(r.statusCache))
@@ -109,30 +109,51 @@ func (r *RedisManager) GetStatus() map[string]any {
 	}
 	r.statusMu.RUnlock()
 
-	// Slow path: actually ping the server.
-	addr := r.Client.Options().Addr
-	db := r.Client.Options().DB
+	v, _, _ := r.sf.Do("status", func() (any, error) {
+		r.statusMu.RLock()
+		if time.Now().Before(r.statusExpiry) && r.statusCache != nil {
+			cached := make(map[string]any, len(r.statusCache))
+			for k, v := range r.statusCache {
+				cached[k] = v
+			}
+			r.statusMu.RUnlock()
+			return cached, nil
+		}
+		r.statusMu.RUnlock()
 
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	pong, err := r.Client.Ping(pingCtx).Result()
-	pingCancel()
-	stats["connected"] = err == nil
-	stats["ping"] = pong
-	stats["addr"] = addr
-	stats["db"] = db
+		addr := r.Client.Options().Addr
+		db := r.Client.Options().DB
 
-	pool := r.Client.PoolStats()
-	stats["pool_hits"] = pool.Hits
-	stats["pool_misses"] = pool.Misses
-	stats["pool_timeouts"] = pool.Timeouts
-	stats["pool_total_conns"] = pool.TotalConns
-	stats["pool_idle_conns"] = pool.IdleConns
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		pong, err := r.Client.Ping(pingCtx).Result()
+		pingCancel()
+		s := make(map[string]any)
+		s["connected"] = err == nil
+		s["ping"] = pong
+		s["addr"] = addr
+		s["db"] = db
 
-	r.statusMu.Lock()
-	r.statusCache = stats
-	r.statusExpiry = time.Now().Add(2 * time.Second)
-	r.statusMu.Unlock()
+		pool := r.Client.PoolStats()
+		s["pool_hits"] = pool.Hits
+		s["pool_misses"] = pool.Misses
+		s["pool_timeouts"] = pool.Timeouts
+		s["pool_total_conns"] = pool.TotalConns
+		s["pool_idle_conns"] = pool.IdleConns
 
+		r.statusMu.Lock()
+		r.statusCache = s
+		r.statusExpiry = time.Now().Add(2 * time.Second)
+		r.statusMu.Unlock()
+
+		return s, nil
+	})
+	if m, ok := v.(map[string]any); ok {
+		cached := make(map[string]any, len(m))
+		for k, vv := range m {
+			cached[k] = vv
+		}
+		return cached
+	}
 	return stats
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/sync/singleflight"
 )
 
 type MinIOManager struct {
@@ -23,6 +24,7 @@ type MinIOManager struct {
 	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.RWMutex
+	sf           singleflight.Group
 }
 
 // Name returns the display name of the component
@@ -82,33 +84,53 @@ func (m *MinIOManager) GetStatus() map[string]any {
 	}
 	m.statusMu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	exists, err := m.Client.BucketExists(ctx, m.BucketName)
-	if err != nil || !exists {
-		stats := map[string]any{
-			"connected":   true,
-			"bucket_name": m.BucketName,
-			"status":      "Bucket not found",
+	v, _, _ := m.sf.Do("status", func() (any, error) {
+		m.statusMu.RLock()
+		if m.statusCache != nil && time.Now().Before(m.statusExpiry) {
+			cached := make(map[string]any, len(m.statusCache))
+			for k, v := range m.statusCache {
+				cached[k] = v
+			}
+			m.statusMu.RUnlock()
+			return cached, nil
+		}
+		m.statusMu.RUnlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		exists, err := m.Client.BucketExists(ctx, m.BucketName)
+		cancel()
+		var stats map[string]any
+		if err != nil || !exists {
+			stats = map[string]any{
+				"connected":   true,
+				"bucket_name": m.BucketName,
+				"status":      "Bucket not found",
+			}
+		} else {
+			stats = map[string]any{
+				"connected":   true,
+				"bucket_name": m.BucketName,
+				"status":      "Healthy",
+				"endpoint":    m.Client.EndpointURL().String(),
+			}
 		}
 		m.statusMu.Lock()
 		m.statusCache = stats
 		m.statusExpiry = time.Now().Add(2 * time.Second)
 		m.statusMu.Unlock()
-		return stats
+		return stats, nil
+	})
+	if mm, ok := v.(map[string]any); ok {
+		cached := make(map[string]any, len(mm))
+		for k, vv := range mm {
+			cached[k] = vv
+		}
+		return cached
 	}
-
-	stats := map[string]any{
-		"connected":   true,
-		"bucket_name": m.BucketName,
-		"status":      "Healthy",
-		"endpoint":    m.Client.EndpointURL().String(),
+	return map[string]any{
+		"connected": false,
+		"error":     "Not configured or connection failed",
 	}
-	m.statusMu.Lock()
-	m.statusCache = stats
-	m.statusExpiry = time.Now().Add(2 * time.Second)
-	m.statusMu.Unlock()
-	return stats
 }
 
 // Async MinIO Operations

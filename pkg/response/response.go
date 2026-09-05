@@ -90,7 +90,6 @@ func getPooledResponse() *Response {
 
 func Success(c echo.Context, data any, message ...string) error {
 	resp := getPooledResponse()
-	// Reset to zero values
 	*resp = Response{}
 
 	msg := ""
@@ -108,6 +107,7 @@ func Success(c echo.Context, data any, message ...string) error {
 	resp.CorrelationID = getCorrelationID(c)
 
 	err := c.JSON(http.StatusOK, resp)
+	*resp = Response{}
 	responsePool.Put(resp)
 	return err
 }
@@ -132,6 +132,7 @@ func SuccessWithMeta(c echo.Context, data any, meta *Meta, message ...string) er
 	resp.CorrelationID = getCorrelationID(c)
 
 	err := c.JSON(http.StatusOK, resp)
+	*resp = Response{}
 	responsePool.Put(resp)
 	return err
 }
@@ -155,6 +156,7 @@ func Created(c echo.Context, data any, message ...string) error {
 	resp.CorrelationID = getCorrelationID(c)
 
 	err := c.JSON(http.StatusCreated, resp)
+	*resp = Response{}
 	responsePool.Put(resp)
 	return err
 }
@@ -229,9 +231,12 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 	resp := getPooledResponse()
 	*resp = Response{}
 
-	errorDetailsCopy := make(map[string]any, len(errorDetails))
-	for k, v := range errorDetails {
-		errorDetailsCopy[k] = v
+	var errorDetailsCopy map[string]any
+	if len(errorDetails) > 0 {
+		errorDetailsCopy = make(map[string]any, len(errorDetails))
+		for k, v := range errorDetails {
+			errorDetailsCopy[k] = v
+		}
 	}
 
 	resp.Success = false
@@ -246,6 +251,7 @@ func Error(c echo.Context, statusCode int, errorCode string, message string, det
 	resp.CorrelationID = getCorrelationID(c)
 
 	err := c.JSON(statusCode, resp)
+	*resp = Response{}
 	responsePool.Put(resp)
 	return err
 }

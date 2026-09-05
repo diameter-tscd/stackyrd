@@ -24,11 +24,12 @@ import (
 
 func main() {
 	var configURL, port, env string
-	var verbose bool
+	var verbose, noTUI bool
 	flag.StringVar(&configURL, "c", "", "URL to load configuration from (YAML format)")
 	flag.StringVar(&port, "port", "", "Server port (overrides config)")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.StringVar(&env, "env", "", "Environment (development/staging/production)")
+	flag.BoolVar(&noTUI, "no-tui", false, "Force disable TUI (overrides config)")
 	flag.Parse()
 
 	if configURL != "" {
@@ -42,6 +43,7 @@ func main() {
 	_ = verbose
 
 	configManager := NewConfigManager(configURL, port, env)
+	configManager.SetNoTUI(noTUI)
 
 	app := NewApplication(configManager)
 

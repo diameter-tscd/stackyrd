@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -19,13 +20,13 @@ import (
 type PostgresManager struct {
 	DB   *sql.DB
 	ORM  *gorm.DB
-	Pool *WorkerPool // Async worker pool
+	Pool *WorkerPool
 
-	// statusCache avoids re-running Ping on every /health call.
 	statusTTL    time.Duration
 	statusExpiry time.Time
 	statusCache  map[string]any
 	statusMu     sync.RWMutex
+	sf           singleflight.Group
 }
 
 type PostgresConnectionManager struct {
@@ -217,13 +218,10 @@ func (m *PostgresConnectionManager) CloseAll() error {
 }
 
 func (p *PostgresManager) GetStatus() map[string]any {
-	stats := make(map[string]any)
 	if p == nil || p.DB == nil {
-		stats["connected"] = false
-		return stats
+		return map[string]any{"connected": false}
 	}
 
-	// Fast path: return cached result when still within TTL.
 	p.statusMu.RLock()
 	if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
 		cached := make(map[string]any, len(p.statusCache))
@@ -235,24 +233,45 @@ func (p *PostgresManager) GetStatus() map[string]any {
 	}
 	p.statusMu.RUnlock()
 
-	// Slow path: actually ping and collect DB stats.
-	err := p.DB.Ping()
-	stats["connected"] = err == nil
+	v, _, _ := p.sf.Do("status", func() (any, error) {
+		p.statusMu.RLock()
+		if time.Now().Before(p.statusExpiry) && p.statusCache != nil {
+			cached := make(map[string]any, len(p.statusCache))
+			for k, v := range p.statusCache {
+				cached[k] = v
+			}
+			p.statusMu.RUnlock()
+			return cached, nil
+		}
+		p.statusMu.RUnlock()
 
-	// DB Stats (concurrent-safe)
-	dbStats := p.DB.Stats()
-	stats["open_connections"] = dbStats.OpenConnections
-	stats["in_use"] = dbStats.InUse
-	stats["idle"] = dbStats.Idle
-	stats["wait_count"] = dbStats.WaitCount
-	stats["wait_duration_ms"] = dbStats.WaitDuration.Milliseconds()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := p.DB.PingContext(ctx)
+		cancel()
+		stats := make(map[string]any)
+		stats["connected"] = err == nil
+		dbStats := p.DB.Stats()
+		stats["open_connections"] = dbStats.OpenConnections
+		stats["in_use"] = dbStats.InUse
+		stats["idle"] = dbStats.Idle
+		stats["wait_count"] = dbStats.WaitCount
+		stats["wait_duration_ms"] = dbStats.WaitDuration.Milliseconds()
 
-	p.statusMu.Lock()
-	p.statusCache = stats
-	p.statusExpiry = time.Now().Add(2 * time.Second)
-	p.statusMu.Unlock()
+		p.statusMu.Lock()
+		p.statusCache = stats
+		p.statusExpiry = time.Now().Add(2 * time.Second)
+		p.statusMu.Unlock()
 
-	return stats
+		return stats, nil
+	})
+	if m, ok := v.(map[string]any); ok {
+		cached := make(map[string]any, len(m))
+		for k, vv := range m {
+			cached[k] = vv
+		}
+		return cached
+	}
+	return map[string]any{"connected": false}
 }
 
 // Query executes a query that returns rows, typically a SELECT.

@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +31,8 @@ type EventBroadcaster struct {
 	streams   map[string][]*StreamClient // streamID -> clients
 	clients   map[string]*StreamClient   // clientID -> client
 	mu        sync.RWMutex
-	nextID    int
+	nextID    atomic.Int64
+	evtID     atomic.Int64
 	clientTTL time.Duration
 	stopCh    chan struct{}
 	startOnce sync.Once
@@ -42,7 +43,6 @@ func NewEventBroadcaster() *EventBroadcaster {
 	eb := &EventBroadcaster{
 		streams:   make(map[string][]*StreamClient),
 		clients:   make(map[string]*StreamClient),
-		nextID:    1,
 		clientTTL: 24 * time.Hour, // Clients automatically removed after 24 hours
 		stopCh:    make(chan struct{}),
 	}
@@ -125,8 +125,7 @@ func (eb *EventBroadcaster) Subscribe(streamID string) *StreamClient {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	clientID := fmt.Sprintf("client_%d", eb.nextID)
-	eb.nextID++
+	clientID := "client_" + strconv.FormatInt(eb.nextID.Add(1), 10)
 
 	now := time.Now().Unix()
 	client := &StreamClient{
@@ -165,7 +164,7 @@ func copyData(data map[string]any) map[string]any {
 // Broadcast sends an event to all clients subscribed to a stream
 func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message string, data map[string]any) {
 	event := EventData{
-		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		ID:        "evt_" + strconv.FormatInt(eb.evtID.Add(1), 10),
 		Type:      eventType,
 		Message:   message,
 		Data:      copyData(data),
@@ -207,7 +206,7 @@ func (eb *EventBroadcaster) Broadcast(streamID string, eventType string, message
 // BroadcastToAll sends an event to all clients across all streams
 func (eb *EventBroadcaster) BroadcastToAll(eventType string, message string, data map[string]any) {
 	event := EventData{
-		ID:        fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		ID:        "evt_" + strconv.FormatInt(eb.evtID.Add(1), 10),
 		Type:      eventType,
 		Message:   message,
 		Data:      copyData(data),

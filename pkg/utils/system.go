@@ -54,8 +54,6 @@ func getRuntimeStats() runtime.MemStats {
 
 // GetMemSelf gathers stackyrd memory usage.
 func GetMemSelf() uint64 {
-	_ = getRuntimeStats()
-
 	last := memSelfLastFetch.Load()
 	now := time.Now()
 	interval := memSelfInterval.Load()

@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"golang.org/x/sync/singleflight"
 )
 
 type MongoManager struct {
@@ -28,6 +29,7 @@ type MongoManager struct {
 	statusExpiry time.Time
 	statusCache  map[string]any
 	statusMu     sync.RWMutex
+	sf           singleflight.Group
 }
 
 // Name returns the display name of the component
@@ -230,13 +232,10 @@ func (m *MongoConnectionManager) CloseAll() error {
 }
 
 func (m *MongoManager) GetStatus() map[string]any {
-	stats := make(map[string]any)
 	if m == nil || m.Client == nil {
-		stats["connected"] = false
-		return stats
+		return map[string]any{"connected": false}
 	}
 
-	// Fast path: return cached result when still within TTL.
 	m.statusMu.RLock()
 	if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
 		cached := make(map[string]any, len(m.statusCache))
@@ -248,43 +247,63 @@ func (m *MongoManager) GetStatus() map[string]any {
 	}
 	m.statusMu.RUnlock()
 
-	// Slow path: actually ping the server and collect stats.
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	err := m.Client.Ping(pingCtx, nil)
-	pingCancel()
-	stats["connected"] = err == nil
+	v, _, _ := m.sf.Do("status", func() (any, error) {
+		m.statusMu.RLock()
+		if time.Now().Before(m.statusExpiry) && m.statusCache != nil {
+			cached := make(map[string]any, len(m.statusCache))
+			for k, v := range m.statusCache {
+				cached[k] = v
+			}
+			m.statusMu.RUnlock()
+			return cached, nil
+		}
+		m.statusMu.RUnlock()
 
-	if err != nil {
+		stats := make(map[string]any)
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := m.Client.Ping(pingCtx, nil)
+		pingCancel()
+		stats["connected"] = err == nil
+
+		if err != nil {
+			m.statusMu.Lock()
+			m.statusCache = stats
+			m.statusExpiry = time.Now().Add(2 * time.Second)
+			m.statusMu.Unlock()
+			return stats, nil
+		}
+
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		dbStats := m.Database.RunCommand(dbCtx, map[string]any{"dbStats": 1})
+		dbCancel()
+		if dbStats.Err() == nil {
+			var result map[string]any
+			if err := dbStats.Decode(&result); err == nil {
+				stats["db_name"] = result["db"]
+				stats["collections"] = result["collections"]
+				stats["objects"] = result["objects"]
+				stats["data_size"] = result["dataSize"]
+				stats["storage_size"] = result["storageSize"]
+				stats["indexes"] = result["indexes"]
+				stats["index_size"] = result["indexSize"]
+			}
+		}
+
 		m.statusMu.Lock()
 		m.statusCache = stats
 		m.statusExpiry = time.Now().Add(2 * time.Second)
 		m.statusMu.Unlock()
-		return stats
-	}
 
-	// Get database stats
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	dbStats := m.Database.RunCommand(dbCtx, map[string]any{"dbStats": 1})
-	dbCancel()
-	if dbStats.Err() == nil {
-		var result map[string]any
-		if err := dbStats.Decode(&result); err == nil {
-			stats["db_name"] = result["db"]
-			stats["collections"] = result["collections"]
-			stats["objects"] = result["objects"]
-			stats["data_size"] = result["dataSize"]
-			stats["storage_size"] = result["storageSize"]
-			stats["indexes"] = result["indexes"]
-			stats["index_size"] = result["indexSize"]
+		return stats, nil
+	})
+	if mm, ok := v.(map[string]any); ok {
+		cached := make(map[string]any, len(mm))
+		for k, vv := range mm {
+			cached[k] = vv
 		}
+		return cached
 	}
-
-	m.statusMu.Lock()
-	m.statusCache = stats
-	m.statusExpiry = time.Now().Add(2 * time.Second)
-	m.statusMu.Unlock()
-
-	return stats
+	return map[string]any{"connected": false}
 }
 
 // Collection returns a collection from the database

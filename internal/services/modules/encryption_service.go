@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -30,6 +31,9 @@ type EncryptionService struct {
 	keyMu         sync.RWMutex
 	lastRotation  int64
 	logger        *logger.Logger
+	cachedAEAD    cipher.AEAD
+	cachedKey     [32]byte
+	cachedValid   bool
 }
 
 func NewEncryptionService(enabled bool, cfg map[string]any, log ...*logger.Logger) *EncryptionService {
@@ -74,6 +78,46 @@ func NewEncryptionService(enabled bool, cfg map[string]any, log ...*logger.Logge
 		encryptionKey: keyBytes,
 		logger:        l,
 	}
+}
+
+func (s *EncryptionService) getAEAD() (cipher.AEAD, error) {
+	s.keyMu.RLock()
+	if s.cachedValid && s.cachedAEAD != nil {
+		aead := s.cachedAEAD
+		s.keyMu.RUnlock()
+		return aead, nil
+	}
+	keyCopy := make([]byte, len(s.encryptionKey))
+	copy(keyCopy, s.encryptionKey)
+	s.keyMu.RUnlock()
+	block, err := aes.NewCipher(keyCopy)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	s.keyMu.Lock()
+	if !s.cachedValid || s.cachedAEAD == nil {
+		var k [32]byte
+		copy(k[:], keyCopy)
+		s.cachedKey = k
+		s.cachedAEAD = gcm
+		s.cachedValid = true
+	} else {
+		if bytes.Equal(s.cachedKey[:], keyCopy) {
+			gcm = s.cachedAEAD
+		} else {
+			var k [32]byte
+			copy(k[:], keyCopy)
+			s.cachedKey = k
+			s.cachedAEAD = gcm
+			s.cachedValid = true
+		}
+	}
+	s.keyMu.Unlock()
+	return gcm, nil
 }
 
 func (s *EncryptionService) Name() string     { return "Encryption Service" }
@@ -128,25 +172,14 @@ type KeyRotateRequest struct {
 }
 
 func (s *EncryptionService) encrypt(data []byte) (string, error) {
-	s.keyMu.RLock()
-	key := s.encryptionKey
-	s.keyMu.RUnlock()
-
-	block, err := aes.NewCipher(key)
+	gcm, err := s.getAEAD()
 	if err != nil {
 		return "", oops.In("encryption-service").Tags("aes", "cipher").Wrapf(err, "failed to create cipher")
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", oops.In("encryption-service").Tags("aes", "gcm").Wrapf(err, "failed to create gcm")
-	}
-
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", oops.In("encryption-service").Tags("aes", "nonce").Wrapf(err, "failed to generate nonce")
 	}
-
 	encrypted := gcm.Seal(nonce, nonce, data, nil)
 	return base64.StdEncoding.EncodeToString(encrypted), nil
 }
@@ -156,21 +189,10 @@ func (s *EncryptionService) decrypt(encryptedData string) ([]byte, error) {
 	if err != nil {
 		return nil, oops.In("encryption-service").Tags("decode").Wrapf(err, "failed to decode base64")
 	}
-
-	s.keyMu.RLock()
-	key := s.encryptionKey
-	s.keyMu.RUnlock()
-
-	block, err := aes.NewCipher(key)
+	gcm, err := s.getAEAD()
 	if err != nil {
 		return nil, oops.In("encryption-service").Tags("aes", "cipher").Wrapf(err, "failed to create cipher")
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, oops.In("encryption-service").Tags("aes", "gcm").Wrapf(err, "failed to create gcm")
-	}
-
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {
 		return nil, oops.In("encryption-service").Tags("data", "decryption").Code("encrypted_data_too_short").Public("Encrypted data too short").Errorf("encrypted data too short")
@@ -273,6 +295,8 @@ func (s *EncryptionService) RotateKey(c echo.Context) error {
 	s.keyMu.Lock()
 	s.encryptionKey = sum[:]
 	s.lastRotation = time.Now().Unix()
+	s.cachedValid = false
+	s.cachedAEAD = nil
 	s.keyMu.Unlock()
 
 	return response.Success(c, map[string]string{

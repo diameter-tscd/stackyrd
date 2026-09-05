@@ -41,7 +41,7 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 	e.Use(echomiddleware.BodyLimit("2M"))
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.WriteTimeout = 0
 	e.Server.IdleTimeout = 60 * time.Second
 
 	e.RouteNotFound("/*", func(c echo.Context) error {

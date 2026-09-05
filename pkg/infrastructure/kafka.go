@@ -34,8 +34,27 @@ func NewKafkaManager(cfg config.KafkaConfig, logger *logger.Logger) (*KafkaManag
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Retry.Max = 5
 	config.Net.MaxOpenRequests = 64
+	config.Net.DialTimeout = 5 * time.Second
+	config.Version = sarama.V2_8_0_0
 
-	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	type result struct {
+		p   sarama.SyncProducer
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, err := sarama.NewSyncProducer(cfg.Brokers, config)
+		ch <- result{p, err}
+	}()
+	var producer sarama.SyncProducer
+	var err error
+	select {
+	case r := <-ch:
+		producer = r.p
+		err = r.err
+	case <-time.After(5 * time.Second):
+		return nil, fmt.Errorf("kafka producer connect timeout after 5s")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to start kafka producer: %w", err)
 	}
@@ -91,21 +110,14 @@ func (k *KafkaManager) Consume(ctx context.Context, topic string, handler func(k
 	}
 
 	for {
-		// back-off ticker: between rebalance cycles, the goroutine drains the
-		// ctx.Done notification while sleeping (draining the proactive-close
-		// case above) and resumes once the ticker fires, allowing Go's
-		// scheduler to pre-empt the consumer loop between rebalances.
-		ticker := time.NewTicker(500 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			ticker.Stop()
-			return nil
-		case <-ticker.C:
-			ticker.Stop()
-		}
-
 		if err := consumerGroup.Consume(ctx, []string{topic}, consumer); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return fmt.Errorf("error from consumer: %w", err)
+		}
+		if ctx.Err() != nil {
+			return nil
 		}
 	}
 }

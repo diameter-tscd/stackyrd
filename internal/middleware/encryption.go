@@ -22,13 +22,13 @@ func init() {
 	})
 }
 
-func GzipMiddleware() echo.MiddlewareFunc {
-	var gzPool = sync.Pool{
-		New: func() any {
-			return gzip.NewWriter(io.Discard)
-		},
-	}
+var gzPool = sync.Pool{
+	New: func() any {
+		return gzip.NewWriter(io.Discard)
+	},
+}
 
+func GzipMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if !strings.Contains(c.Request().Header.Get("Accept-Encoding"), "gzip") {

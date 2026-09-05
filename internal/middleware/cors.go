@@ -13,7 +13,20 @@ import (
 
 func init() {
 	RegisterMiddleware("cors", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		return CORSAllowAll(), nil
+		mcpEndpoint := cfg.MCP.Endpoint
+		if mcpEndpoint == "" {
+			mcpEndpoint = "/mcp"
+		}
+		base := CORSAllowAll()
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			corsHandler := base(next)
+			return func(c echo.Context) error {
+				if strings.HasPrefix(c.Request().URL.Path, mcpEndpoint) {
+					return next(c)
+				}
+				return corsHandler(c)
+			}
+		}, nil
 	})
 }
 
@@ -62,6 +75,13 @@ func hasWildcard(allowOrigins []string) bool {
 }
 
 func CORS(config CORSConfig) echo.MiddlewareFunc {
+	allowMethods := strings.Join(config.AllowMethods, ", ")
+	allowHeaders := strings.Join(config.AllowHeaders, ", ")
+	hasWild := hasWildcard(config.AllowOrigins)
+	maxAge := ""
+	if config.MaxAge > 0 {
+		maxAge = strconv.Itoa(config.MaxAge)
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			origin := c.Request().Header.Get("Origin")
@@ -70,27 +90,25 @@ func CORS(config CORSConfig) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// Credentialed CORS must never combine with the "*" origin per the
-			// Fetch spec: an explicit, allow-listed origin is required instead.
 			if config.AllowCredentials {
-				if origin == "" || hasWildcard(config.AllowOrigins) {
+				if origin == "" || hasWild {
 					return next(c)
 				}
 				c.Response().Header().Set("Access-Control-Allow-Origin", origin)
 				c.Response().Header().Set("Vary", "Origin")
 				c.Response().Header().Set("Access-Control-Allow-Credentials", "true")
-			} else if hasWildcard(config.AllowOrigins) {
+			} else if hasWild {
 				c.Response().Header().Set("Access-Control-Allow-Origin", "*")
 			} else if origin != "" {
 				c.Response().Header().Set("Access-Control-Allow-Origin", origin)
 				c.Response().Header().Set("Vary", "Origin")
 			}
 
-			c.Response().Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowMethods, ", "))
-			c.Response().Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowHeaders, ", "))
+			c.Response().Header().Set("Access-Control-Allow-Methods", allowMethods)
+			c.Response().Header().Set("Access-Control-Allow-Headers", allowHeaders)
 
-			if config.MaxAge > 0 {
-				c.Response().Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+			if maxAge != "" {
+				c.Response().Header().Set("Access-Control-Max-Age", maxAge)
 			}
 
 			if c.Request().Method == "OPTIONS" {
@@ -103,10 +121,10 @@ func CORS(config CORSConfig) echo.MiddlewareFunc {
 }
 
 func matchSubdomain(pattern, origin string) bool {
-	if !strings.HasPrefix(pattern, "*.") {
+	idx := strings.Index(pattern, "*.")
+	if idx < 0 {
 		return false
 	}
-
-	suffix := pattern[1:]
+	suffix := pattern[idx+1:]
 	return strings.HasSuffix(origin, suffix)
 }

@@ -4,12 +4,48 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+var themeColorFunc func(string) string
+var themeColorMu sync.RWMutex
+
+func SetThemeColorFunc(fn func(string) string) {
+	themeColorMu.Lock()
+	themeColorFunc = fn
+	themeColorMu.Unlock()
+}
+
+func getThemeColor(key string) string {
+	themeColorMu.RLock()
+	fn := themeColorFunc
+	themeColorMu.RUnlock()
+	if fn != nil {
+		if c := fn(key); c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+func hexToANSI(hex string) string {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return ""
+	}
+	r, err1 := strconv.ParseInt(hex[0:2], 16, 0)
+	g, err2 := strconv.ParseInt(hex[2:4], 16, 0)
+	b, err3 := strconv.ParseInt(hex[4:6], 16, 0)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return ""
+	}
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
+}
 
 // OutputConfig defines the output formatting configuration
 type OutputConfig struct {
@@ -51,9 +87,11 @@ func DefaultLoggerConfig() LoggerConfig {
 
 // Logger wraps the zerolog logger with modular configuration
 type Logger struct {
+	mu     sync.RWMutex
 	z      zerolog.Logger
 	quiet  bool
 	config LoggerConfig
+	extra  []io.Writer
 }
 
 // setTimeFormatOnce guards the process-wide zerolog.TimeFieldFormat write.
@@ -77,15 +115,7 @@ func NewQuiet(debug bool, broadcaster io.Writer) *Logger {
 	return NewWithConfig(cfg)
 }
 
-// NewWithConfig creates a new logger with full configuration
-func NewWithConfig(cfg LoggerConfig) *Logger {
-	// TimeFieldFormat is a process-wide zerolog setting; set it exactly once
-	// so concurrent NewWithConfig calls can't race on it.
-	setTimeFormatOnce.Do(func() {
-		zerolog.TimeFieldFormat = time.RFC3339
-	})
-
-	// Create console output based on configuration
+func buildWriters(cfg LoggerConfig, extra []io.Writer) zerolog.LevelWriter {
 	var consoleOutput zerolog.ConsoleWriter
 	if cfg.Output.ConsoleEnabled {
 		consoleOutput = zerolog.ConsoleWriter{
@@ -96,46 +126,65 @@ func NewWithConfig(cfg LoggerConfig) *Logger {
 			NoColor:       !cfg.Output.Colors || cfg.Output.NoColor,
 		}
 	} else {
-		// Console disabled, use discard writer
 		consoleOutput = zerolog.ConsoleWriter{Out: io.Discard}
 	}
-
-	var multi zerolog.LevelWriter
-
+	var writers []io.Writer
 	if cfg.Quiet {
-		// Quiet mode: only write to broadcaster (if available), not to console
 		if cfg.Broadcaster != nil {
-			// Create a simple console writer for the broadcaster (without stdout)
 			broadcasterOutput := zerolog.ConsoleWriter{
 				Out:        cfg.Broadcaster,
 				TimeFormat: cfg.Output.TimestampFormat,
 				NoColor:    true,
 			}
-			multi = zerolog.MultiLevelWriter(broadcasterOutput)
-		} else {
-			// No broadcaster and quiet mode = discard all logs
-			multi = zerolog.MultiLevelWriter(zerolog.ConsoleWriter{Out: io.Discard})
+			writers = append(writers, broadcasterOutput)
+		} else if len(extra) == 0 {
+			writers = append(writers, zerolog.ConsoleWriter{Out: io.Discard})
 		}
 	} else {
-		// Normal mode: write to console and broadcaster
+		writers = append(writers, consoleOutput)
 		if cfg.Broadcaster != nil {
-			multi = zerolog.MultiLevelWriter(consoleOutput, cfg.Broadcaster)
-		} else {
-			multi = zerolog.MultiLevelWriter(consoleOutput)
+			broadcasterOutput := zerolog.ConsoleWriter{
+				Out:        cfg.Broadcaster,
+				TimeFormat: cfg.Output.TimestampFormat,
+				NoColor:    true,
+			}
+			writers = append(writers, broadcasterOutput)
 		}
 	}
-
-	logLevel := zerolog.InfoLevel
-	if cfg.Debug {
-		logLevel = zerolog.DebugLevel
+	writers = append(writers, extra...)
+	if len(writers) == 0 {
+		writers = append(writers, zerolog.ConsoleWriter{Out: io.Discard})
 	}
-
-	z := zerolog.New(multi).Level(logLevel).With().Timestamp().Logger()
-
-	return &Logger{z: z, quiet: cfg.Quiet, config: cfg}
+	return zerolog.MultiLevelWriter(writers...)
 }
 
-// getLevelFormatter returns the appropriate level formatter based on output configuration
+func newZerolog(cfg LoggerConfig, extra []io.Writer) zerolog.Logger {
+	setTimeFormatOnce.Do(func() {
+		zerolog.TimeFieldFormat = time.RFC3339
+	})
+	multi := buildWriters(cfg, extra)
+	lvl := zerolog.InfoLevel
+	if cfg.Debug {
+		lvl = zerolog.DebugLevel
+	}
+	return zerolog.New(multi).Level(lvl).With().Timestamp().Logger()
+}
+
+// NewWithConfig creates a new logger with full configuration
+func NewWithConfig(cfg LoggerConfig) *Logger {
+	return &Logger{z: newZerolog(cfg, nil), quiet: cfg.Quiet, config: cfg}
+}
+
+func (l *Logger) AddWriter(w io.Writer) {
+	if w == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.extra = append(l.extra, w)
+	l.z = newZerolog(l.config, l.extra)
+}
+
 func getLevelFormatter(output OutputConfig) func(any) string {
 	if !output.Colors || output.NoColor {
 		return func(i any) string {
@@ -146,34 +195,52 @@ func getLevelFormatter(output OutputConfig) func(any) string {
 		}
 	}
 
-	// TUI‑matching color formatter
 	return func(i any) string {
-		var l string
-		if ll, ok := i.(string); ok {
-			switch ll {
-			case "debug":
-				l = "\x1b[38;2;179;235;248m[ DEBUG ]\x1b[0m" // #b3ebf8ff
-			case "info":
-				l = "\x1b[38;2;154;248;177m[ INFO  ]\x1b[0m" // #9af8b1ff
-			case "warn":
-				l = "\x1b[38;2;245;250;192m[ WARN  ]\x1b[0m" // #f5fac0ff
-			case "error":
-				l = "\x1b[38;2;246;115;115m[ ERROR ]\x1b[0m" // #f67373ff
-			case "fatal":
-				l = "\x1b[38;2;248;38;38m[ FATAL ]\x1b[0m" // #f82626ff
-			case "panic":
-				l = "\x1b[38;2;248;38;38m[ PANIC ]\x1b[0m" // #f82626ff
-			default:
-				l = strings.ToUpper(ll)
-			}
+		var ll string
+		if s, ok := i.(string); ok {
+			ll = s
 		} else {
-			if i == nil {
-				l = strings.ToUpper(fmt.Sprintf("%s", i))
-			} else {
-				l = strings.ToUpper(fmt.Sprintf("%s", i))
-			}
+			return strings.ToUpper(fmt.Sprintf("%s", i))
 		}
-		return l
+		var hex, label string
+		switch ll {
+		case "debug":
+			hex = getThemeColor("secondary")
+			if hex == "" {
+				hex = "#8BE9FD"
+			}
+			label = "[ DEBUG ]"
+		case "info":
+			hex = getThemeColor("success")
+			if hex == "" {
+				hex = "#50FA7B"
+			}
+			label = "[ INFO  ]"
+		case "warn":
+			hex = getThemeColor("warning")
+			if hex == "" {
+				hex = "#F1FA8C"
+			}
+			label = "[ WARN  ]"
+		case "error":
+			hex = getThemeColor("error")
+			if hex == "" {
+				hex = "#FF5555"
+			}
+			label = "[ ERROR ]"
+		case "fatal", "panic":
+			hex = getThemeColor("error")
+			if hex == "" {
+				hex = "#FF5555"
+			}
+			label = "[ " + strings.ToUpper(ll) + " ]"
+		default:
+			return strings.ToUpper(ll)
+		}
+		if ansi := hexToANSI(hex); ansi != "" {
+			return ansi + label + "\x1b[0m"
+		}
+		return label
 	}
 }
 
@@ -225,34 +292,49 @@ func (l *Logger) IsQuiet() bool {
 
 // Info logs an info message
 func (l *Logger) Info(msg string, keyvals ...any) {
-	l.log(l.z.Info(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Info(), msg, keyvals...)
 }
 
 // Error logs an error message
 func (l *Logger) Error(msg string, err error, keyvals ...any) {
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
 	if err != nil {
-		l.log(l.z.Error().Err(err), msg, keyvals...)
+		l.log(z.Error().Err(err), msg, keyvals...)
 	} else {
-		l.log(l.z.Error(), msg, keyvals...)
+		l.log(z.Error(), msg, keyvals...)
 	}
 }
 
 // Debug logs a debug message
 func (l *Logger) Debug(msg string, keyvals ...any) {
-	l.log(l.z.Debug(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Debug(), msg, keyvals...)
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(msg string, keyvals ...any) {
-	l.log(l.z.Warn(), msg, keyvals...)
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
+	l.log(z.Warn(), msg, keyvals...)
 }
 
 // Fatal logs a fatal message and exits
 func (l *Logger) Fatal(msg string, err error) {
+	l.mu.RLock()
+	z := l.z
+	l.mu.RUnlock()
 	if err != nil {
-		l.z.Fatal().Err(err).Msg(msg)
+		z.Fatal().Err(err).Msg(msg)
 	} else {
-		l.z.Fatal().Msg(msg)
+		z.Fatal().Msg(msg)
 	}
 }
 

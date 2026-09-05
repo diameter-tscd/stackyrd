@@ -69,6 +69,11 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
+	if sg.streamID == "dashboard-logs" {
+		<-sg.stopChan
+		return
+	}
+
 	events := []struct {
 		Type    string
 		Message string
@@ -89,8 +94,6 @@ func (sg *SimpleStreamGenerator) generateEvents() {
 			event := events[i%len(events)]
 			i++
 
-			// Shallow-copy the template map: each broadcast must carry its own
-			// map so previously delivered events never mutate under a client.
 			data := make(map[string]any, len(event.Data)+2)
 			for k, v := range event.Data {
 				data[k] = v
@@ -119,6 +122,7 @@ func NewBroadcastService(enabled bool, logger *logger.Logger) *BroadcastService 
 		streams:     make(map[string]*SimpleStreamGenerator),
 		logger:      logger,
 	}
+	utils.SetDashboardBroadcaster(service.broadcaster)
 
 	if enabled {
 		logger.Info("Broadcast Service starting - broadcasting made easy!")
@@ -156,21 +160,33 @@ func (s *BroadcastService) streamEvents(c echo.Context) error {
 	c.Response().Header().Set("Connection", "keep-alive")
 	c.Response().Header().Set("Access-Control-Allow-Origin", "*")
 
-	initialEvent := utils.EventData{
-		ID:        "connected",
-		Type:      "connection",
-		Message:   "Connected to stream: " + streamID,
-		Data:      map[string]any{"stream_id": streamID, "service": "broadcast_service"},
-		Timestamp: time.Now().Unix(),
-		StreamID:  streamID,
-	}
-
-	if err := s.sendSSEEvent(c, initialEvent); err != nil {
-		s.logger.Error("Failed to send initial SSE event", err)
-		return nil
-	}
-
 	c.Response().WriteHeader(http.StatusOK)
+
+	if streamID == "dashboard-logs" {
+		initialLog := map[string]any{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"level":     "info",
+			"message":   "Connected to stream: " + streamID,
+			"source":    "broadcast_service",
+		}
+		if err := s.sendLogEntry(c, initialLog); err != nil {
+			s.logger.Error("Failed to send initial SSE event", err)
+			return nil
+		}
+	} else {
+		initialEvent := utils.EventData{
+			ID:        "connected",
+			Type:      "connection",
+			Message:   "Connected to stream: " + streamID,
+			Data:      map[string]any{"stream_id": streamID, "service": "broadcast_service"},
+			Timestamp: time.Now().Unix(),
+			StreamID:  streamID,
+		}
+		if err := s.sendSSEEvent(c, initialEvent); err != nil {
+			s.logger.Error("Failed to send initial SSE event", err)
+			return nil
+		}
+	}
 
 	for {
 		select {
@@ -178,8 +194,26 @@ func (s *BroadcastService) streamEvents(c echo.Context) error {
 			if !ok {
 				return nil
 			}
-			if err := s.sendSSEEvent(c, event); err != nil {
-				return nil
+			if streamID == "dashboard-logs" {
+				logEntry := map[string]any{
+					"timestamp": event.Data["timestamp"],
+					"level":     event.Data["level"],
+					"message":   event.Message,
+					"source":    event.Data["source"],
+				}
+				if logEntry["timestamp"] == nil {
+					logEntry["timestamp"] = time.Now().Format(time.RFC3339)
+				}
+				if logEntry["level"] == nil {
+					logEntry["level"] = event.Type
+				}
+				if err := s.sendLogEntry(c, logEntry); err != nil {
+					return nil
+				}
+			} else {
+				if err := s.sendSSEEvent(c, event); err != nil {
+					return nil
+				}
 			}
 		case <-c.Request().Context().Done():
 			return nil
@@ -299,8 +333,31 @@ func (s *BroadcastService) sendSSEEvent(c echo.Context, event utils.EventData) e
 	return nil
 }
 
+func (s *BroadcastService) sendLogEntry(c echo.Context, entry map[string]any) error {
+	buf, ok := sseBufPool.Get().(*bytes.Buffer)
+	if !ok || buf == nil {
+		buf = &bytes.Buffer{}
+	}
+	buf.Reset()
+	defer sseBufPool.Put(buf)
+
+	if err := json.NewEncoder(buf).Encode(entry); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintf(c.Response().Writer, "data: %s\n\n", strings.TrimRight(buf.String(), "\n"))
+	if err != nil {
+		return err
+	}
+
+	if flusher, ok := c.Response().Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
 func (s *BroadcastService) startDemoStreams() {
-	streams := []string{"demo-notifications", "demo-metrics", "demo-alerts"}
+	streams := []string{"demo-notifications", "demo-metrics", "demo-alerts", "dashboard-logs"}
 
 	for _, streamID := range streams {
 		generator := NewSimpleStreamGenerator(streamID, s.broadcaster)

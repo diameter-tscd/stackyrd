@@ -78,6 +78,7 @@ func JWTOptional(secretKey string) echo.MiddlewareFunc {
 }
 
 func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
+	secret := []byte(config.SecretKey)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			authHeader := c.Request().Header.Get("Authorization")
@@ -89,11 +90,11 @@ func JWT(config JWTConfig, optional bool) echo.MiddlewareFunc {
 			}
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 
-parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
+			parsedToken, err := jwt.ParseWithClaims(token, &JWTClaims{}, func(token *jwt.Token) (any, error) {
 			if token.Method != jwt.SigningMethodHS256 {
 				return nil, oops.In("jwt-middleware").Tags("jwt", "auth").Code("unexpected_signing_method").With("method", token.Method.Alg()).Errorf("unexpected signing method: %s", token.Method.Alg())
 			}
-			return []byte(config.SecretKey), nil
+			return secret, nil
 		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}),
 				jwt.WithIssuer(jwtIssuer), jwt.WithAudience(jwtAudience),
 				jwt.WithIssuedAt(), jwt.WithLeeway(30*time.Second))

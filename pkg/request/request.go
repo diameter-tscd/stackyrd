@@ -69,36 +69,36 @@ func (e *ValidationError) GetFieldErrors() map[string]string {
 	return e.Errors
 }
 
-// FormatValidationErrors formats validator errors into a readable map
 func FormatValidationErrors(errs validator.ValidationErrors) map[string]string {
-	errors := make(map[string]string)
+	errors := make(map[string]string, len(errs))
 
 	for _, err := range errs {
 		field := strings.ToLower(err.Field())
+		f := err.Field()
 
 		switch err.Tag() {
 		case "required":
-			errors[field] = fmt.Sprintf("%s is required", err.Field())
+			errors[field] = f + " is required"
 		case "email":
 			errors[field] = "Invalid email format"
 		case "min":
-			errors[field] = fmt.Sprintf("%s must be at least %s characters", err.Field(), err.Param())
+			errors[field] = f + " must be at least " + err.Param() + " characters"
 		case "max":
-			errors[field] = fmt.Sprintf("%s must not exceed %s characters", err.Field(), err.Param())
+			errors[field] = f + " must not exceed " + err.Param() + " characters"
 		case "len":
-			errors[field] = fmt.Sprintf("%s must be exactly %s characters", err.Field(), err.Param())
+			errors[field] = f + " must be exactly " + err.Param() + " characters"
 		case "gte":
-			errors[field] = fmt.Sprintf("%s must be greater than or equal to %s", err.Field(), err.Param())
+			errors[field] = f + " must be greater than or equal to " + err.Param()
 		case "lte":
-			errors[field] = fmt.Sprintf("%s must be less than or equal to %s", err.Field(), err.Param())
+			errors[field] = f + " must be less than or equal to " + err.Param()
 		case "phone":
 			errors[field] = "Invalid phone number format"
 		case "username":
 			errors[field] = "Username must be alphanumeric and 3-20 characters"
 		case "oneof":
-			errors[field] = fmt.Sprintf("%s must be one of: %s", err.Field(), err.Param())
+			errors[field] = f + " must be one of: " + err.Param()
 		default:
-			errors[field] = fmt.Sprintf("%s failed validation: %s", err.Field(), err.Tag())
+			errors[field] = f + " failed validation: " + err.Tag()
 		}
 	}
 

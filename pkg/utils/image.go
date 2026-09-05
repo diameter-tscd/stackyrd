@@ -204,11 +204,7 @@ func Crop(img image.Image, spec Cropspec) image.Image {
 	}
 
 	cropped := image.NewRGBA(image.Rect(0, 0, w, h))
-	for dy := 0; dy < h; dy++ {
-		for dx := 0; dx < w; dx++ {
-			cropped.Set(dx, dy, img.At(x+dx, y+dy))
-		}
-	}
+	draw.Draw(cropped, cropped.Bounds(), img, image.Pt(x, y), draw.Src)
 	return cropped
 }
 
@@ -523,7 +519,49 @@ func compressWithAutoDetect(reader io.Reader, writer io.Writer, options Compress
 		return fmt.Errorf("unable to detect image format")
 	}
 
-	return Compress(bytes.NewReader(data), writer, inputFormat, options)
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("invalid image: %w", err)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxImagePixels {
+		return fmt.Errorf("image dimensions exceed safety limit (%dx%d)", cfg.Width, cfg.Height)
+	}
+
+	var img image.Image
+	switch inputFormat {
+	case FormatJPEG:
+		img, err = jpeg.Decode(bytes.NewReader(data))
+	case FormatPNG:
+		img, err = png.Decode(bytes.NewReader(data))
+	case FormatGIF:
+		img, err = gif.Decode(bytes.NewReader(data))
+	case FormatBMP:
+		img, err = bmp.Decode(bytes.NewReader(data))
+	case FormatTIFF:
+		img, err = tiff.Decode(bytes.NewReader(data))
+	case FormatWebP:
+		img, err = webp.Decode(bytes.NewReader(data))
+	default:
+		return fmt.Errorf("unsupported image format: %s", inputFormat)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	if options.MaxWidth > 0 || options.MaxHeight > 0 {
+		img = ResizeImage(img, options)
+	}
+
+	outputFormat := options.OutputFormat
+	if outputFormat == "" {
+		outputFormat = inputFormat
+	}
+
+	if err := encodeImage(writer, img, outputFormat, options.Quality); err != nil {
+		return fmt.Errorf("failed to encode compressed image: %w", err)
+	}
+
+	return nil
 }
 
 // BatchProcessOptions configures batch image processing.

@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
-	"fmt"
+	"hash/fnv"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +21,11 @@ import (
 
 func init() {
 	RegisterMiddleware("ratelimit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
+		mcpEndpoint := cfg.MCP.Endpoint
+		if mcpEndpoint == "" {
+			mcpEndpoint = "/mcp"
+		}
+		var base echo.MiddlewareFunc
 		if cfg.Redis.Enabled {
 			logger.Info("Rate limit using Redis backend")
 			client := redis.NewClient(&redis.Options{
@@ -32,23 +39,43 @@ func init() {
 			if pingErr != nil {
 				return nil, oops.In("ratelimit-middleware").Tags("redis", "middleware-init").With("addr", cfg.Redis.Address).Wrapf(pingErr, "redis rate limiter: failed to connect")
 			}
-			return RedisRateLimitWithConfig(logger, client, 60, time.Minute), nil
+			base = RedisRateLimitWithConfig(logger, client, 60, time.Minute)
+		} else {
+			logger.Info("Rate limit using in-memory backend")
+			base = RateLimit()
 		}
-		logger.Info("Rate limit using in-memory backend")
-		return RateLimit(), nil
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			rlHandler := base(next)
+			return func(c echo.Context) error {
+				if strings.HasPrefix(c.Request().URL.Path, mcpEndpoint) {
+					return next(c)
+				}
+				return rlHandler(c)
+			}
+		}, nil
 	})
 }
 
-type RateLimiter struct {
-	visitors map[string]*visitor
+type shard struct {
 	mu       sync.RWMutex
-	rate     int
-	window   time.Duration
+	visitors map[string]*visitor
+}
+
+type RateLimiter struct {
+	shards [16]shard
+	rate   int
+	window time.Duration
 }
 
 type visitor struct {
 	count    int
 	lastSeen time.Time
+}
+
+func (rl *RateLimiter) shardFor(key string) *shard {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	return &rl.shards[h.Sum32()%16]
 }
 
 var (
@@ -75,9 +102,11 @@ func startRateLimitCleanup() {
 
 func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 	rl := &RateLimiter{
-		visitors: make(map[string]*visitor),
-		rate:     rate,
-		window:   window,
+		rate:   rate,
+		window: window,
+	}
+	for i := range rl.shards {
+		rl.shards[i].visitors = make(map[string]*visitor)
 	}
 
 	rateLimitersMu.Lock()
@@ -90,31 +119,33 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 
 func (rl *RateLimiter) cleanup() {
 	now := time.Now()
-
-	rl.mu.RLock()
-	expired := make([]string, 0, len(rl.visitors)>>4)
-	for ip, v := range rl.visitors {
-		if now.Sub(v.lastSeen) > rl.window {
-			expired = append(expired, ip)
+	for i := range rl.shards {
+		sh := &rl.shards[i]
+		sh.mu.RLock()
+		expired := make([]string, 0, len(sh.visitors)>>4)
+		for ip, v := range sh.visitors {
+			if now.Sub(v.lastSeen) > rl.window {
+				expired = append(expired, ip)
+			}
 		}
-	}
-	rl.mu.RUnlock()
-
-	if len(expired) > 0 {
-		rl.mu.Lock()
-		for _, ip := range expired {
-			delete(rl.visitors, ip)
+		sh.mu.RUnlock()
+		if len(expired) > 0 {
+			sh.mu.Lock()
+			for _, ip := range expired {
+				delete(sh.visitors, ip)
+			}
+			sh.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
 func (rl *RateLimiter) isAllowed(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+	sh := rl.shardFor(ip)
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
 
 	now := time.Now()
-	v, exists := rl.visitors[ip]
+	v, exists := sh.visitors[ip]
 	if exists && now.Sub(v.lastSeen) <= rl.window {
 		if v.count >= rl.rate {
 			return false
@@ -124,7 +155,7 @@ func (rl *RateLimiter) isAllowed(ip string) bool {
 		return true
 	}
 
-	rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+	sh.visitors[ip] = &visitor{count: 1, lastSeen: now}
 	return true
 }
 
@@ -190,14 +221,18 @@ func NewRedisRateLimiter(client *redis.Client, rate int, window time.Duration) *
 var redisSeq atomic.Int64
 
 func (rl *RedisRateLimiter) isAllowed(ctx context.Context, key string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	defer cancel()
 	now := time.Now().UnixMilli()
 	windowStart := now - rl.window.Milliseconds()
 	redisKey := "ratelimit:" + key
 
 	pipe := rl.client.Pipeline()
 
-	pipe.ZRemRangeByScore(ctx, redisKey, "0", fmt.Sprintf("%d", windowStart))
-	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: fmt.Sprintf("%d-%d", now, redisSeq.Add(1))})
+	ws := strconv.FormatInt(windowStart, 10)
+	member := strconv.FormatInt(now, 10) + "-" + strconv.FormatInt(redisSeq.Add(1), 10)
+	pipe.ZRemRangeByScore(ctx, redisKey, "0", ws)
+	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: member})
 	pipe.ZCard(ctx, redisKey)
 	pipe.Expire(ctx, redisKey, rl.window)
 

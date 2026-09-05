@@ -2,7 +2,6 @@ package utils
 
 import (
 	"crypto/rand"
-	"math/big"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,14 +14,16 @@ func RandomString(length int) string {
 	if length < 0 {
 		length = 0
 	}
+	if length == 0 {
+		return ""
+	}
 	b := make([]byte, length)
-	limit := big.NewInt(int64(len(charset)))
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		panic("crypto/rand failure: " + err.Error())
+	}
 	for i := range b {
-		n, err := rand.Int(rand.Reader, limit)
-		if err != nil {
-			panic("crypto/rand failure: " + err.Error())
-		}
-		b[i] = charset[n.Int64()]
+		b[i] = charset[int(buf[i])%len(charset)]
 	}
 	return string(b)
 }

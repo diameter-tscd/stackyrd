@@ -187,12 +187,21 @@ func (c *Cache[T]) Delete(key string) {
 func (c *Cache[T]) Cleanup() {
 	now := time.Now().UnixNano()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	expired := make([]string, 0)
 	for k, v := range c.items {
 		if v.Expiration > 0 && now > v.Expiration {
+			expired = append(expired, k)
+		}
+	}
+	c.mu.RUnlock()
+
+	for _, k := range expired {
+		c.mu.Lock()
+		if item, ok := c.items[k]; ok && item.Expiration > 0 && now >= item.Expiration {
 			delete(c.items, k)
 		}
+		c.mu.Unlock()
 	}
 }
 
@@ -200,12 +209,21 @@ func (c *ShardedCache[T]) Cleanup() {
 	now := time.Now().UnixNano()
 
 	for shard := 0; shard < len(c.shards); shard++ {
-		c.shards[shard].Lock()
+		c.shards[shard].RLock()
+		expired := make([]string, 0)
 		for key, item := range c.items[shard] {
 			if item.Expiration > 0 && now > item.Expiration {
-				delete(c.items[shard], key)
+				expired = append(expired, key)
 			}
 		}
-		c.shards[shard].Unlock()
+		c.shards[shard].RUnlock()
+
+		for _, key := range expired {
+			c.shards[shard].Lock()
+			if item, ok := c.items[shard][key]; ok && item.Expiration > 0 && now >= item.Expiration {
+				delete(c.items[shard], key)
+			}
+			c.shards[shard].Unlock()
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"stackyrd/pkg/utils"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,10 @@ var (
 	configCacheTime time.Time
 	configCacheTTL  = 5 * time.Minute
 	viperMu         sync.Mutex // serializes global-viper mutations across goroutines
+
+	saveThemeMu       sync.Mutex
+	saveThemeLast     time.Time
+	saveThemeDebounce = 100 * time.Millisecond
 )
 
 func setupViperDefaults() {
@@ -33,6 +38,8 @@ func setupViperDefaults() {
 	viper.SetDefault("app.startup_delay", 15)
 	viper.SetDefault("app.quiet_startup", true)
 	viper.SetDefault("app.enable_tui", false)
+	viper.SetDefault("app.tui.sidebar_min_width", 135)
+	viper.SetDefault("app.tui.sidebar_min_height", 42)
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.services_endpoint", "/api/v1")
 	viper.SetDefault("auth.type", "none")
@@ -42,7 +49,8 @@ func setupViperDefaults() {
 	viper.SetDefault("postgres.enabled", false)
 	viper.SetDefault("mongo.enabled", false)
 	viper.SetDefault("swagger.enabled", false)
-	viper.SetDefault("app.debug", false)
+	viper.SetDefault("log.max_age_hours", 168)
+	viper.SetDefault("log.max_size_mb", 100)
 	viper.SetDefault("swagger.base_path", "/swagger")
 	viper.SetDefault("metrics.enabled", false)
 	viper.SetDefault("metrics.path", "/metrics")
@@ -53,6 +61,13 @@ func setupViperDefaults() {
 	viper.SetDefault("mcp.enabled", false)
 	viper.SetDefault("mcp.endpoint", "/mcp")
 	viper.SetDefault("mcp.token", "")
+	viper.SetDefault("mcp.allowed_origins", []string{})
+	viper.SetDefault("mcp.rate_limit_enabled", false)
+	viper.SetDefault("mcp.rate_limit_ip", 100)
+	viper.SetDefault("mcp.rate_limit_time", 60)
+	viper.SetDefault("mcp.rate_limit_cooldowntime", 300)
+	viper.SetDefault("mcp.rate_limit_excludeip", []string{"127.0.0.1", "::1", "localhost"})
+	viper.SetDefault("audit.skip_paths", []string{"/health", "/health/dependencies"})
 }
 
 type Config struct {
@@ -74,15 +89,22 @@ type Config struct {
 	MinIO      MinIOConfig      `mapstructure:"minio"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Log        LogConfig        `mapstructure:"log"`
+	Audit      AuditConfig      `mapstructure:"audit"`
 }
 
 type LogConfig struct {
-	Enabled     bool   `mapstructure:"enabled"`
-	Path        string `mapstructure:"path"`
-	Filename    string `mapstructure:"filename"`
-	MaxFiles    int    `mapstructure:"max_files"`
-	Compress    bool   `mapstructure:"compress"`
-	CompressAfter int  `mapstructure:"compress_after"`
+	Enabled       bool   `mapstructure:"enabled"`
+	Path          string `mapstructure:"path"`
+	Filename      string `mapstructure:"filename"`
+	MaxFiles      int    `mapstructure:"max_files"`
+	MaxAgeHours   int    `mapstructure:"max_age_hours"`
+	MaxSizeMB     int    `mapstructure:"max_size_mb"`
+	Compress      bool   `mapstructure:"compress"`
+	CompressAfter int    `mapstructure:"compress_after"`
+}
+
+type AuditConfig struct {
+	SkipPaths []string `mapstructure:"skip_paths"`
 }
 
 // MiddlewareConfig is a dynamic map of middleware names to their enabled status.
@@ -107,9 +129,15 @@ type WebhookConfig struct {
 }
 
 type MCPConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	Endpoint string `mapstructure:"endpoint"`
-	Token    string `mapstructure:"token"`
+	Enabled               bool     `mapstructure:"enabled"`
+	Endpoint              string   `mapstructure:"endpoint"`
+	Token                 string   `mapstructure:"token"`
+	AllowedOrigins        []string `mapstructure:"allowed_origins"`
+	RateLimitEnabled      bool     `mapstructure:"rate_limit_enabled"`
+	RateLimitIP           int      `mapstructure:"rate_limit_ip"`
+	RateLimitTime         int      `mapstructure:"rate_limit_time"`
+	RateLimitCooldownTime int      `mapstructure:"rate_limit_cooldowntime"`
+	RateLimitExcludeIP    []string `mapstructure:"rate_limit_excludeip"`
 }
 
 type MinIOConfig struct {
@@ -148,6 +176,11 @@ type SwaggerConfig struct {
 	BasePath string `mapstructure:"base_path"`
 }
 
+type TUIConfig struct {
+	SidebarMinWidth  int `mapstructure:"sidebar_min_width"`
+	SidebarMinHeight int `mapstructure:"sidebar_min_height"`
+}
+
 type AppConfig struct {
 	Name         string `mapstructure:"name"`
 	Version      string `mapstructure:"version"`
@@ -158,6 +191,7 @@ type AppConfig struct {
 	QuietStartup bool   `mapstructure:"quiet_startup"`
 	EnableTUI    bool   `mapstructure:"enable_tui"`
 	Theme        string `mapstructure:"theme"`
+	TUI          TUIConfig `mapstructure:"tui"`
 }
 
 type ServerConfig struct {
@@ -284,7 +318,24 @@ func loadFromSource() (*Config, error) {
 	configCacheTime = time.Now()
 	configCacheMu.Unlock()
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	return &cfg, nil
+}
+
+func (cfg *Config) Validate() error {
+	if port, err := strconv.Atoi(cfg.Server.Port); err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid server.port: %s (must be 1-65535)", cfg.Server.Port)
+	}
+	if cfg.App.Env != "development" && cfg.App.Env != "production" && cfg.App.Env != "staging" {
+		return fmt.Errorf("invalid app.env: %s (must be development, production, or staging)", cfg.App.Env)
+	}
+	if cfg.Log.MaxFiles < 0 {
+		return fmt.Errorf("invalid log.max_files: %d (must be >= 0)", cfg.Log.MaxFiles)
+	}
+	return nil
 }
 
 // LoadConfigWithURL loads configuration from URL (if provided) or local file
@@ -317,6 +368,14 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 // theme change survives a restart. It edits only the theme line, preserving the
 // rest of the file byte-for-byte. Remote-URL configs have no file to write.
 func SaveTheme(name string) error {
+	saveThemeMu.Lock()
+	since := time.Since(saveThemeLast)
+	if since < saveThemeDebounce {
+		time.Sleep(saveThemeDebounce - since)
+	}
+	saveThemeLast = time.Now()
+	saveThemeMu.Unlock()
+
 	viperMu.Lock()
 	defer viperMu.Unlock()
 
@@ -332,18 +391,18 @@ func SaveTheme(name string) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
+	lines := strings.Split(string(data), "\n")
+
 	// Locate the top-level "app:" key so a "theme:" nested in some other block
 	// (datasource config, plugin settings, ...) is never rewritten.
 	appIndent := -1
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "app:") {
 			appIndent = len(line) - len(trimmed)
 			break
 		}
 	}
-
-	lines := strings.Split(string(data), "\n")
 	replaced := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)

@@ -22,16 +22,19 @@ func init() {
 	})
 }
 
-func GzipMiddleware() echo.MiddlewareFunc {
-	var gzPool = sync.Pool{
-		New: func() any {
-			return gzip.NewWriter(io.Discard)
-		},
-	}
+var gzPool = sync.Pool{
+	New: func() any {
+		return gzip.NewWriter(io.Discard)
+	},
+}
 
+func GzipMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if !strings.Contains(c.Request().Header.Get("Accept-Encoding"), "gzip") {
+				return next(c)
+			}
+			if strings.Contains(c.Request().URL.Path, "/events/stream") {
 				return next(c)
 			}
 
@@ -60,15 +63,30 @@ func GzipMiddleware() echo.MiddlewareFunc {
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	io.Writer
+	wroteHeader bool
 }
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.Header().Get("Content-Type") == "text/event-stream" {
+		return w.ResponseWriter.Write(b)
+	}
 	return w.Writer.Write(b)
 }
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+	if w.Header().Get("Content-Type") == "text/event-stream" {
+		w.ResponseWriter.Header().Del("Content-Encoding")
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
 	w.ResponseWriter.Header().Del("Content-Length")
-	// A bodyless response must not carry Content-Encoding: gzip.
 	if statusCode >= 100 && statusCode < 200 ||
 		statusCode == http.StatusNoContent || statusCode == http.StatusNotModified {
 		w.ResponseWriter.Header().Del("Content-Encoding")

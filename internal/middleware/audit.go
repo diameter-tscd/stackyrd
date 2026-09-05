@@ -12,7 +12,12 @@ import (
 
 func init() {
 	RegisterMiddleware("audit", func(cfg *config.Config, logger *logger.Logger) (echo.MiddlewareFunc, error) {
-		return AuditWithConfig(logger), nil
+		ac := defaultAuditConfig
+		ac.Logger = logger
+		if len(cfg.Audit.SkipPaths) > 0 {
+			ac.SkipPaths = cfg.Audit.SkipPaths
+		}
+		return Audit(ac, logger), nil
 	})
 }
 
@@ -42,12 +47,18 @@ func AuditSkipHealthCheck(l *logger.Logger) echo.MiddlewareFunc {
 }
 
 func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
+	skipSet := make(map[string]struct{}, len(config.SkipPaths))
+	for _, p := range config.SkipPaths {
+		skipSet[p] = struct{}{}
+	}
+	sensitiveSet := make(map[string]struct{}, len(config.SensitiveHeaders))
+	for _, h := range config.SensitiveHeaders {
+		sensitiveSet[h] = struct{}{}
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			for _, path := range config.SkipPaths {
-				if c.Request().URL.Path == path {
-					return next(c)
-				}
+			if _, ok := skipSet[c.Request().URL.Path]; ok {
+				return next(c)
 			}
 
 			start := time.Now()
@@ -59,52 +70,39 @@ func Audit(config AuditConfig, l *logger.Logger) echo.MiddlewareFunc {
 			latency := time.Since(start)
 			statusCode := c.Response().Status
 
-			fields := map[string]any{
-				"method":     c.Request().Method,
-				"path":       path,
-				"query":      query,
-				"status":     statusCode,
-				"latency":    latency.String(),
-				"client_ip":  c.RealIP(),
-				"user_agent": c.Request().UserAgent(),
-				"request_id": c.Response().Header().Get("X-Request-ID"),
-			}
-
+			var kv [24]any
+			n := 0
+			kv[n] = "method"; kv[n+1] = c.Request().Method; n += 2
+			kv[n] = "path"; kv[n+1] = path; n += 2
+			kv[n] = "query"; kv[n+1] = query; n += 2
+			kv[n] = "status"; kv[n+1] = statusCode; n += 2
+			kv[n] = "latency"; kv[n+1] = latency.String(); n += 2
+			kv[n] = "client_ip"; kv[n+1] = c.RealIP(); n += 2
+			kv[n] = "user_agent"; kv[n+1] = c.Request().UserAgent(); n += 2
+			kv[n] = "request_id"; kv[n+1] = c.Response().Header().Get("X-Request-ID"); n += 2
 			if userID := c.Get("user_id"); userID != nil {
-				fields["user_id"] = userID
+				kv[n] = "user_id"; kv[n+1] = userID; n += 2
 			}
 			if username := c.Get("username"); username != nil {
-				fields["username"] = username
+				kv[n] = "username"; kv[n+1] = username; n += 2
 			}
-
 			if config.LogHeaders {
-				headers := make(map[string]string)
+				headers := make(map[string]string, len(c.Request().Header))
 				for name, values := range c.Request().Header {
-					skip := false
-					for _, sensitive := range config.SensitiveHeaders {
-						if name == sensitive {
-							skip = true
-							break
-						}
+					if _, skip := sensitiveSet[name]; skip {
+						continue
 					}
-					if !skip {
-						headers[name] = strings.Join(values, ",")
-					}
+					headers[name] = strings.Join(values, ",")
 				}
-				fields["headers"] = headers
-			}
-
-			keyvals := make([]any, 0, len(fields)*2)
-			for k, v := range fields {
-				keyvals = append(keyvals, k, v)
+				kv[n] = "headers"; kv[n+1] = headers; n += 2
 			}
 
 			if statusCode >= 500 {
-				l.Error("API Request", nil, keyvals...)
+				l.Error("API Request", nil, kv[:n]...)
 			} else if statusCode >= 400 {
-				l.Warn("API Request", keyvals...)
+				l.Warn("API Request", kv[:n]...)
 			} else {
-				l.Info("API Request", keyvals...)
+				l.Info("API Request", kv[:n]...)
 			}
 
 			return err

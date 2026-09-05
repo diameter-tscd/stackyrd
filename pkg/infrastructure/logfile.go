@@ -11,10 +11,12 @@ import (
 
 	"stackyrd/config"
 	"stackyrd/pkg/logger"
+
+	"github.com/rs/zerolog"
 )
 
 type FileLogger struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	basePath    string
 	filename    string
 	maxFiles    int
@@ -72,8 +74,8 @@ func (f *FileLogger) Close() error {
 }
 
 func (f *FileLogger) GetStatus() map[string]interface{} {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return map[string]interface{}{
 		"connected":    f.file != nil,
 		"path":         f.basePath,
@@ -85,22 +87,40 @@ func (f *FileLogger) GetStatus() map[string]interface{} {
 }
 
 func (f *FileLogger) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
+	needRotate := false
+	f.mu.RLock()
 	if f.needsRotation() {
-		f.rotate()
+		needRotate = true
 	}
-
-	if f.file == nil {
-		f.openCurrentFile()
+	f.mu.RUnlock()
+	if needRotate {
+		f.mu.Lock()
+		if f.needsRotation() {
+			f.rotateLocked()
+		}
+		f.mu.Unlock()
 	}
-
+	f.mu.RLock()
 	if f.file == nil {
+		f.mu.RUnlock()
+		f.mu.Lock()
+		if f.file == nil {
+			f.openCurrentFile()
+		}
+		f.mu.Unlock()
+		f.mu.RLock()
+	}
+	if f.file == nil {
+		f.mu.RUnlock()
 		return 0, os.ErrClosed
 	}
+	n, err := f.file.Write(p)
+	f.mu.RUnlock()
+	return n, err
+}
 
-	return f.file.Write(p)
+func (f *FileLogger) WriteLevel(_ zerolog.Level, p []byte) (int, error) {
+	return f.Write(p)
 }
 
 func (f *FileLogger) needsRotation() bool {
@@ -118,12 +138,19 @@ func (f *FileLogger) openCurrentFile() {
 }
 
 func (f *FileLogger) rotate() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rotateLocked()
+}
+
+func (f *FileLogger) rotateLocked() {
 	if f.file != nil {
 		f.file.Close()
 		f.file = nil
 	}
 
 	oldDate := f.currentDate
+	compressJobs := make([][2]string, 0)
 	for i := f.maxFiles - 1; i >= 0; i-- {
 		var oldFile string
 		if i == 0 {
@@ -144,8 +171,7 @@ func (f *FileLogger) rotate() {
 
 		if f.compress {
 			gzPath := oldFile + ".gz"
-			f.compressFile(oldFile, gzPath)
-			os.Remove(oldFile)
+			compressJobs = append(compressJobs, [2]string{oldFile, gzPath})
 		} else if nextFile != "" && i > 0 {
 			os.Rename(oldFile, nextFile)
 		}
@@ -153,6 +179,13 @@ func (f *FileLogger) rotate() {
 
 	f.currentDate = time.Now().Format("2006-01-02")
 	f.openCurrentFile()
+	for _, j := range compressJobs {
+		src, dst := j[0], j[1]
+		go func() {
+			f.compressFile(src, dst)
+			os.Remove(src)
+		}()
+	}
 }
 
 func (f *FileLogger) compressFile(src, dst string) {

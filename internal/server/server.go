@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 	e.Use(echomiddleware.BodyLimit("2M"))
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.WriteTimeout = 30 * time.Second
+	e.Server.WriteTimeout = 0
 	e.Server.IdleTimeout = 60 * time.Second
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
@@ -78,6 +79,13 @@ func (s *Server) Start() error {
 
 	s.dependencies.Seal()
 	s.logger.Info("Dependencies sealed — no further infrastructure registration allowed")
+
+	if comp, ok := componentRegistry.Get("logfile"); ok && comp != nil {
+		if w, ok := comp.(io.Writer); ok {
+			s.logger.AddWriter(w)
+			s.logger.Info("File logging enabled", "path", comp.GetStatus()["path"], "filename", comp.GetStatus()["filename"])
+		}
+	}
 
 	s.logger.Info("Initializing Middleware...")
 
@@ -185,6 +193,19 @@ func (s *Server) registerHealthEndpoints() {
 			"list_infrastructure":  infraKeys,
 			"total_service":        len(allFactories),
 			"list_service":         svcKeys,
+		})
+	})
+
+	s.e.GET("/api/v1/config", func(c echo.Context) error {
+		return response.Success(c, map[string]any{
+			"app":        s.config.App,
+			"server":     s.config.Server,
+			"services":   s.config.Services,
+			"middleware": s.config.Middleware,
+			"mcp":        s.config.MCP,
+			"metrics":    s.config.Metrics,
+			"log":        s.config.Log,
+			"audit":      s.config.Audit,
 		})
 	})
 }

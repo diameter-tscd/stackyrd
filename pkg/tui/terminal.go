@@ -108,6 +108,17 @@ type TerminalModel struct {
 	isSidebarHidden     bool
 	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
 	sidebarForced       *bool // nil = auto-hide logic applies; non-nil = forced show/hide
+
+	logCacheLines      []string
+	logCacheWidth      int
+	logCacheCount      int
+	logCacheFilter     string
+	logCacheGen        uint64
+	logGen             uint64
+	filterLower        string
+	physicalLineCount  int
+	textStyle          lipgloss.Style
+	dimStyle           lipgloss.Style
 }
 
 type terminalTickMsg time.Time
@@ -159,6 +170,8 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 	if info, err := utils.GetNetworkInfo(); err == nil {
 		m.hostname = info["hostname"]
 	}
+	m.textStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
+	m.dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
 
 	return m
 }
@@ -221,6 +234,8 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterText = ""
 					m.updateFilteredLogs()
 				}
+				m.logGen++
+				m.logCacheLines = nil
 			}
 			return m, dialogCmd
 		}
@@ -353,11 +368,25 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case logMsg:
 		m.logsMutex.Lock()
-		m.allLogs = append(m.allLogs, LogEntry(msg))
+		entry := LogEntry(msg)
+		m.allLogs = append(m.allLogs, entry)
 		if m.maxLogs > 0 && len(m.allLogs) > m.maxLogs {
 			m.allLogs = m.allLogs[len(m.allLogs)-m.maxLogs:]
+			m.updateFilteredLogsLocked()
+		} else {
+			if m.filterText == "" {
+				m.filteredLogs = m.allLogs
+			} else {
+				if m.filterLower == "" {
+					m.filterLower = strings.ToLower(m.filterText)
+				}
+				if strings.Contains(strings.ToLower(entry.Level), m.filterLower) ||
+					strings.Contains(strings.ToLower(entry.Message), m.filterLower) {
+					m.filteredLogs = append(m.filteredLogs, entry)
+				}
+			}
 		}
-		m.updateFilteredLogs()
+		m.logGen++
 		m.logsMutex.Unlock()
 		return m, nil
 	}
@@ -849,11 +878,18 @@ func wrapLogMessage(msg string, maxLen int) []string {
 	if maxLen < 20 {
 		maxLen = 20
 	}
-	// A single token longer than the wrap width cannot be word-wrapped (e.g. a
-	// serialized JSON error). Detect it and print the message plainly instead.
-	for _, tok := range strings.Fields(msg) {
-		if len(tok) > maxLen {
-			return []string{flatLogLine(msg, maxLen)}
+	tokenLen := 0
+	for i := 0; i < len(msg); i++ {
+		if msg[i] == ' ' || msg[i] == '\n' || msg[i] == '\t' {
+			if tokenLen > maxLen {
+				return []string{flatLogLine(msg, maxLen)}
+			}
+			tokenLen = 0
+		} else {
+			tokenLen++
+			if tokenLen > maxLen {
+				return []string{flatLogLine(msg, maxLen)}
+			}
 		}
 	}
 	return strings.Split(wordwrap.String(msg, maxLen), "\n")
@@ -868,50 +904,66 @@ func flatLogLine(msg string, maxLen int) string {
 	return flat
 }
 
-func (m *TerminalModel) renderLogEntries() []string {
-	var lines []string
+var logIndent = strings.Repeat(" ", 14)
 
+func (m *TerminalModel) renderLogEntries() []string {
 	lw := m.logWidth
 	if lw < 40 {
 		lw = 40
 	}
 
 	m.logsMutex.RLock()
-	defer m.logsMutex.RUnlock()
-
 	logsToShow := m.filteredLogs
 	if m.filterText == "" {
 		logsToShow = m.allLogs
 	}
+	count := len(logsToShow)
+	filter := m.filterText
+	gen := m.logGen
+	if m.logCacheLines != nil && m.logCacheWidth == lw && m.logCacheCount == count && m.logCacheFilter == filter && m.logCacheGen == gen {
+		cached := m.logCacheLines
+		plc := m.physicalLineCount
+		m.logsMutex.RUnlock()
+		_ = plc
+		return cached
+	}
+	copied := make([]LogEntry, count)
+	copy(copied, logsToShow)
+	m.logsMutex.RUnlock()
 
-	if len(logsToShow) == 0 {
+	var lines []string
+	if count == 0 {
 		lines = append(lines, sidebarDimStyle().Render("  Waiting for logs..."))
 	} else {
-		for _, log := range logsToShow {
+		for _, log := range copied {
 			ls := m.levelStyle(log.Level)
 			timeStr := log.Time.Format("15:04:05")
 			icon := m.levelIcon(log.Level)
-
 			maxMsgLen := lw - 22
 			if maxMsgLen < 20 {
 				maxMsgLen = 20
 			}
-			// Word-wrap instead of truncating so long messages stay readable.
-			// Long error blobs are flattened to one line by wrapLogMessage.
 			msgLines := wrapLogMessage(log.Message, maxMsgLen)
-
-			prefix := fmt.Sprintf("  %s %s", sidebarDimStyle().Render(timeStr), ls.Render(icon))
-			indent := strings.Repeat(" ", 14)
+			prefix := fmt.Sprintf("  %s %s", m.dimStyle.Render(timeStr), ls.Render(icon))
 			for i, ml := range msgLines {
-				styled := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text"))).Render(ml)
+				styled := m.textStyle.Render(ml)
 				if i == 0 {
 					lines = append(lines, prefix+" "+styled)
 				} else {
-					lines = append(lines, indent+styled)
+					lines = append(lines, logIndent+styled)
 				}
 			}
 		}
 	}
+
+	m.logsMutex.Lock()
+	m.logCacheLines = lines
+	m.logCacheWidth = lw
+	m.logCacheCount = count
+	m.logCacheFilter = filter
+	m.logCacheGen = gen
+	m.physicalLineCount = len(lines)
+	m.logsMutex.Unlock()
 
 	return lines
 }
@@ -959,7 +1011,7 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 	}
 	switch cmd {
 	case "help":
-		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
+		return m.logCmd("info", "Commands: help, clear, stats, gc, version, uptime, services, infra [name], mcp, mw, deps, endpoints, list, themes, theme <name>, sidebar, sidebar force-show, sidebar force-hide")
 	case "clear":
 		m.clearLogs()
 		return nil
@@ -1024,6 +1076,8 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		return m.logCmd("info", "Sidebar force-hidden (overrides auto-hide)")
 	case "themes":
 		return m.listThemes()
+	case "mcp":
+		return m.mcpDetails()
 	case "redis", "postgres", "mongo", "kafka", "grafana", "minio", "cron", "webhook", "websocket", "afero":
 		return m.infraStatus(cmd)
 	default:
@@ -1032,6 +1086,9 @@ func (m *TerminalModel) executeCommand(raw string) tea.Cmd {
 		}
 		if name, ok := strings.CutPrefix(cmd, "infra"); ok && strings.TrimSpace(name) != "" {
 			return m.infraStatus(strings.TrimSpace(name))
+		}
+		if strings.HasPrefix(cmd, "mcp") {
+			return m.mcpDetails()
 		}
 		return m.logCmd("warn", "Unknown command: "+cmd+" (try help)")
 	}
@@ -1127,6 +1184,28 @@ func (m *TerminalModel) infraStatus(name string) tea.Cmd {
 	sb.WriteString("Component: " + name)
 	for k, v := range status {
 		sb.WriteString(fmt.Sprintf("\n  %s=%v", k, v))
+	}
+	return m.logCmd("info", sb.String())
+}
+
+func (m *TerminalModel) mcpDetails() tea.Cmd {
+	comp, ok := infrastructure.GetGlobalRegistry().Get("mcp")
+	if !ok {
+		return m.logCmd("warn", "MCP disabled (mcp.enabled=false) — no component registered (try infra)")
+	}
+	status := comp.GetStatus()
+	keys := make([]string, 0, len(status))
+	for k := range status {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var sb strings.Builder
+	sb.WriteString("MCP Server:")
+	for _, k := range keys {
+		sb.WriteString(fmt.Sprintf("\n  %s=%v", k, status[k]))
+	}
+	if ep, ok := status["endpoint"].(string); ok && ep != "" {
+		sb.WriteString(fmt.Sprintf("\n  url=http://localhost:%s%s", m.config.Port, ep))
 	}
 	return m.logCmd("info", sb.String())
 }
@@ -1279,25 +1358,36 @@ func (m *TerminalModel) SetProgram(p *tea.Program) {
 }
 
 func (m *TerminalModel) updateFilteredLogs() {
+	m.logsMutex.Lock()
+	defer m.logsMutex.Unlock()
+	m.updateFilteredLogsLocked()
+}
+
+func (m *TerminalModel) updateFilteredLogsLocked() {
 	if m.filterText == "" {
 		m.filteredLogs = m.allLogs
+		m.filterLower = ""
 		return
 	}
-	filterLower := strings.ToLower(m.filterText)
-	var filtered []LogEntry
+	m.filterLower = strings.ToLower(m.filterText)
+	filtered := make([]LogEntry, 0, len(m.allLogs))
 	for _, log := range m.allLogs {
-		if strings.Contains(strings.ToLower(log.Level), filterLower) ||
-			strings.Contains(strings.ToLower(log.Message), filterLower) {
+		if strings.Contains(strings.ToLower(log.Level), m.filterLower) ||
+			strings.Contains(strings.ToLower(log.Message), m.filterLower) {
 			filtered = append(filtered, log)
 		}
 	}
 	m.filteredLogs = filtered
 }
 
-// logLineCount returns the number of physical lines the log view renders.
-// Word-wrapped entries occupy more than one line, so scroll bounds must be
-// based on physical lines, not log-entry counts.
 func (m *TerminalModel) logLineCount() int {
+	m.logsMutex.RLock()
+	if m.logCacheLines != nil && m.physicalLineCount > 0 {
+		n := m.physicalLineCount
+		m.logsMutex.RUnlock()
+		return n
+	}
+	m.logsMutex.RUnlock()
 	return len(m.renderLogEntries())
 }
 
@@ -1404,6 +1494,10 @@ func (m *TerminalModel) clearLogs() {
 	m.filteredLogs = make([]LogEntry, 0)
 	m.scrollOffset = 0
 	m.filterText = ""
+	m.filterLower = ""
+	m.logGen++
+	m.logCacheLines = nil
+	m.physicalLineCount = 0
 }
 
 // Terminal layout thresholds — tune these to change how the sidebar and log
@@ -1426,13 +1520,12 @@ const (
 )
 
 func (m *TerminalModel) calculateWidths() {
-	tooSmall := m.width < sidebarHideMinWidth || m.height < sidebarHideMinHeight
+	tooSmall := m.width < m.config.TUI.SidebarMinWidth || m.height < m.config.TUI.SidebarMinHeight
 	if m.sidebarForced != nil {
 		m.isSidebarHidden = !*m.sidebarForced
 	} else if m.sidebarManualHidden != nil {
 		m.isSidebarHidden = tooSmall || *m.sidebarManualHidden
 	} else {
-		// Auto-hide sidebar unless terminal is at least sidebarHideMinWidth x sidebarHideMinHeight
 		m.isSidebarHidden = tooSmall
 	}
 

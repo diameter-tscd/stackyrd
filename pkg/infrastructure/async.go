@@ -230,7 +230,7 @@ func NewWorkerPool(workers int, log ...*logger.Logger) *WorkerPool {
 	}
 	return &WorkerPool{
 		workers:  workers,
-		jobQueue: make(chan func(), workers*2),
+		jobQueue: make(chan func(), workers*10),
 		stopChan: make(chan struct{}),
 		logger:   l,
 	}
@@ -253,15 +253,15 @@ func (wp *WorkerPool) Stop() {
 	})
 }
 
-// Submit submits a job to the worker pool.  Blocks if the queue is full;
-// call SubmitOrDrop for a non-blocking variant.  After Stop/Close, Submit
-// never blocks forever: it either lands in the queue (drained by workers)
-// or is dropped when shutdown is signaled.
 func (wp *WorkerPool) Submit(job func()) {
 	select {
 	case wp.jobQueue <- job:
+		return
 	case <-wp.stopChan:
+		return
+	default:
 	}
+	go utils.GoSafe(wp.logger, job)
 }
 
 // SubmitOrDrop attempts to submit a job without blocking.  Returns false

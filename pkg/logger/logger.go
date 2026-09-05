@@ -4,12 +4,48 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+var themeColorFunc func(string) string
+var themeColorMu sync.RWMutex
+
+func SetThemeColorFunc(fn func(string) string) {
+	themeColorMu.Lock()
+	themeColorFunc = fn
+	themeColorMu.Unlock()
+}
+
+func getThemeColor(key string) string {
+	themeColorMu.RLock()
+	fn := themeColorFunc
+	themeColorMu.RUnlock()
+	if fn != nil {
+		if c := fn(key); c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+func hexToANSI(hex string) string {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return ""
+	}
+	r, err1 := strconv.ParseInt(hex[0:2], 16, 0)
+	g, err2 := strconv.ParseInt(hex[2:4], 16, 0)
+	b, err3 := strconv.ParseInt(hex[4:6], 16, 0)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return ""
+	}
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
+}
 
 // OutputConfig defines the output formatting configuration
 type OutputConfig struct {
@@ -149,7 +185,6 @@ func (l *Logger) AddWriter(w io.Writer) {
 	l.z = newZerolog(l.config, l.extra)
 }
 
-// getLevelFormatter returns the appropriate level formatter based on output configuration
 func getLevelFormatter(output OutputConfig) func(any) string {
 	if !output.Colors || output.NoColor {
 		return func(i any) string {
@@ -160,34 +195,52 @@ func getLevelFormatter(output OutputConfig) func(any) string {
 		}
 	}
 
-	// TUI‑matching color formatter
 	return func(i any) string {
-		var l string
-		if ll, ok := i.(string); ok {
-			switch ll {
-			case "debug":
-				l = "\x1b[38;2;179;235;248m[ DEBUG ]\x1b[0m" // #b3ebf8ff
-			case "info":
-				l = "\x1b[38;2;154;248;177m[ INFO  ]\x1b[0m" // #9af8b1ff
-			case "warn":
-				l = "\x1b[38;2;245;250;192m[ WARN  ]\x1b[0m" // #f5fac0ff
-			case "error":
-				l = "\x1b[38;2;246;115;115m[ ERROR ]\x1b[0m" // #f67373ff
-			case "fatal":
-				l = "\x1b[38;2;248;38;38m[ FATAL ]\x1b[0m" // #f82626ff
-			case "panic":
-				l = "\x1b[38;2;248;38;38m[ PANIC ]\x1b[0m" // #f82626ff
-			default:
-				l = strings.ToUpper(ll)
-			}
+		var ll string
+		if s, ok := i.(string); ok {
+			ll = s
 		} else {
-			if i == nil {
-				l = strings.ToUpper(fmt.Sprintf("%s", i))
-			} else {
-				l = strings.ToUpper(fmt.Sprintf("%s", i))
-			}
+			return strings.ToUpper(fmt.Sprintf("%s", i))
 		}
-		return l
+		var hex, label string
+		switch ll {
+		case "debug":
+			hex = getThemeColor("secondary")
+			if hex == "" {
+				hex = "#8BE9FD"
+			}
+			label = "[ DEBUG ]"
+		case "info":
+			hex = getThemeColor("success")
+			if hex == "" {
+				hex = "#50FA7B"
+			}
+			label = "[ INFO  ]"
+		case "warn":
+			hex = getThemeColor("warning")
+			if hex == "" {
+				hex = "#F1FA8C"
+			}
+			label = "[ WARN  ]"
+		case "error":
+			hex = getThemeColor("error")
+			if hex == "" {
+				hex = "#FF5555"
+			}
+			label = "[ ERROR ]"
+		case "fatal", "panic":
+			hex = getThemeColor("error")
+			if hex == "" {
+				hex = "#FF5555"
+			}
+			label = "[ " + strings.ToUpper(ll) + " ]"
+		default:
+			return strings.ToUpper(ll)
+		}
+		if ansi := hexToANSI(hex); ansi != "" {
+			return ansi + label + "\x1b[0m"
+		}
+		return label
 	}
 }
 

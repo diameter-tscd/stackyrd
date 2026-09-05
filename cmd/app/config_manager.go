@@ -11,11 +11,15 @@ import (
 	"strings"
 )
 
-// ConfigManager handles all configuration loading and validation
 type ConfigManager struct {
 	configURL string
 	port      string
 	env       string
+	noTUI     bool
+}
+
+func (cm *ConfigManager) SetNoTUI(v bool) {
+	cm.noTUI = v
 }
 
 // NewConfigManager creates a new configuration manager
@@ -47,12 +51,14 @@ func (cm *ConfigManager) LoadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// Apply CLI overrides on top of the loaded config.
 	if cm.port != "" {
 		cfg.Server.Port = cm.port
 	}
 	if cm.env != "" {
 		cfg.App.Env = cm.env
+	}
+	if cm.noTUI {
+		cfg.App.EnableTUI = false
 	}
 	return cfg, nil
 }

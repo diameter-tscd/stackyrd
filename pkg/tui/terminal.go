@@ -109,12 +109,16 @@ type TerminalModel struct {
 	sidebarManualHidden *bool // nil = auto-hide by terminal size; non-nil = user toggled
 	sidebarForced       *bool // nil = auto-hide logic applies; non-nil = forced show/hide
 
-	logCacheLines  []string
-	logCacheWidth  int
-	logCacheCount  int
-	logCacheFilter string
-	logCacheGen    uint64
-	logGen         uint64
+	logCacheLines      []string
+	logCacheWidth      int
+	logCacheCount      int
+	logCacheFilter     string
+	logCacheGen        uint64
+	logGen             uint64
+	filterLower        string
+	physicalLineCount  int
+	textStyle          lipgloss.Style
+	dimStyle           lipgloss.Style
 }
 
 type terminalTickMsg time.Time
@@ -166,6 +170,8 @@ func NewTerminalModel(cfg LiveConfig) *TerminalModel {
 	if info, err := utils.GetNetworkInfo(); err == nil {
 		m.hostname = info["hostname"]
 	}
+	m.textStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
+	m.dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(TC("dim")))
 
 	return m
 }
@@ -228,6 +234,8 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterText = ""
 					m.updateFilteredLogs()
 				}
+				m.logGen++
+				m.logCacheLines = nil
 			}
 			return m, dialogCmd
 		}
@@ -360,11 +368,24 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case logMsg:
 		m.logsMutex.Lock()
-		m.allLogs = append(m.allLogs, LogEntry(msg))
+		entry := LogEntry(msg)
+		m.allLogs = append(m.allLogs, entry)
 		if m.maxLogs > 0 && len(m.allLogs) > m.maxLogs {
 			m.allLogs = m.allLogs[len(m.allLogs)-m.maxLogs:]
+			m.updateFilteredLogsLocked()
+		} else {
+			if m.filterText == "" {
+				m.filteredLogs = m.allLogs
+			} else {
+				if m.filterLower == "" {
+					m.filterLower = strings.ToLower(m.filterText)
+				}
+				if strings.Contains(strings.ToLower(entry.Level), m.filterLower) ||
+					strings.Contains(strings.ToLower(entry.Message), m.filterLower) {
+					m.filteredLogs = append(m.filteredLogs, entry)
+				}
+			}
 		}
-		m.updateFilteredLogs()
 		m.logGen++
 		m.logsMutex.Unlock()
 		return m, nil
@@ -883,6 +904,8 @@ func flatLogLine(msg string, maxLen int) string {
 	return flat
 }
 
+var logIndent = strings.Repeat(" ", 14)
+
 func (m *TerminalModel) renderLogEntries() []string {
 	lw := m.logWidth
 	if lw < 40 {
@@ -899,7 +922,9 @@ func (m *TerminalModel) renderLogEntries() []string {
 	gen := m.logGen
 	if m.logCacheLines != nil && m.logCacheWidth == lw && m.logCacheCount == count && m.logCacheFilter == filter && m.logCacheGen == gen {
 		cached := m.logCacheLines
+		plc := m.physicalLineCount
 		m.logsMutex.RUnlock()
+		_ = plc
 		return cached
 	}
 	copied := make([]LogEntry, count)
@@ -910,7 +935,6 @@ func (m *TerminalModel) renderLogEntries() []string {
 	if count == 0 {
 		lines = append(lines, sidebarDimStyle().Render("  Waiting for logs..."))
 	} else {
-		textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(TC("text")))
 		for _, log := range copied {
 			ls := m.levelStyle(log.Level)
 			timeStr := log.Time.Format("15:04:05")
@@ -920,14 +944,13 @@ func (m *TerminalModel) renderLogEntries() []string {
 				maxMsgLen = 20
 			}
 			msgLines := wrapLogMessage(log.Message, maxMsgLen)
-			prefix := fmt.Sprintf("  %s %s", sidebarDimStyle().Render(timeStr), ls.Render(icon))
-			indent := strings.Repeat(" ", 14)
+			prefix := fmt.Sprintf("  %s %s", m.dimStyle.Render(timeStr), ls.Render(icon))
 			for i, ml := range msgLines {
-				styled := textStyle.Render(ml)
+				styled := m.textStyle.Render(ml)
 				if i == 0 {
 					lines = append(lines, prefix+" "+styled)
 				} else {
-					lines = append(lines, indent+styled)
+					lines = append(lines, logIndent+styled)
 				}
 			}
 		}
@@ -939,6 +962,7 @@ func (m *TerminalModel) renderLogEntries() []string {
 	m.logCacheCount = count
 	m.logCacheFilter = filter
 	m.logCacheGen = gen
+	m.physicalLineCount = len(lines)
 	m.logsMutex.Unlock()
 
 	return lines
@@ -1334,25 +1358,36 @@ func (m *TerminalModel) SetProgram(p *tea.Program) {
 }
 
 func (m *TerminalModel) updateFilteredLogs() {
+	m.logsMutex.Lock()
+	defer m.logsMutex.Unlock()
+	m.updateFilteredLogsLocked()
+}
+
+func (m *TerminalModel) updateFilteredLogsLocked() {
 	if m.filterText == "" {
 		m.filteredLogs = m.allLogs
+		m.filterLower = ""
 		return
 	}
-	filterLower := strings.ToLower(m.filterText)
-	var filtered []LogEntry
+	m.filterLower = strings.ToLower(m.filterText)
+	filtered := make([]LogEntry, 0, len(m.allLogs))
 	for _, log := range m.allLogs {
-		if strings.Contains(strings.ToLower(log.Level), filterLower) ||
-			strings.Contains(strings.ToLower(log.Message), filterLower) {
+		if strings.Contains(strings.ToLower(log.Level), m.filterLower) ||
+			strings.Contains(strings.ToLower(log.Message), m.filterLower) {
 			filtered = append(filtered, log)
 		}
 	}
 	m.filteredLogs = filtered
 }
 
-// logLineCount returns the number of physical lines the log view renders.
-// Word-wrapped entries occupy more than one line, so scroll bounds must be
-// based on physical lines, not log-entry counts.
 func (m *TerminalModel) logLineCount() int {
+	m.logsMutex.RLock()
+	if m.logCacheLines != nil && m.physicalLineCount > 0 {
+		n := m.physicalLineCount
+		m.logsMutex.RUnlock()
+		return n
+	}
+	m.logsMutex.RUnlock()
 	return len(m.renderLogEntries())
 }
 
@@ -1459,8 +1494,10 @@ func (m *TerminalModel) clearLogs() {
 	m.filteredLogs = make([]LogEntry, 0)
 	m.scrollOffset = 0
 	m.filterText = ""
+	m.filterLower = ""
 	m.logGen++
 	m.logCacheLines = nil
+	m.physicalLineCount = 0
 }
 
 // Terminal layout thresholds — tune these to change how the sidebar and log

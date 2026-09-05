@@ -20,6 +20,10 @@ var (
 	configCacheTime time.Time
 	configCacheTTL  = 5 * time.Minute
 	viperMu         sync.Mutex // serializes global-viper mutations across goroutines
+
+	saveThemeMu       sync.Mutex
+	saveThemeLast     time.Time
+	saveThemeDebounce = 100 * time.Millisecond
 )
 
 func setupViperDefaults() {
@@ -364,6 +368,14 @@ func LoadConfigWithURL(configURL string) (*Config, error) {
 // theme change survives a restart. It edits only the theme line, preserving the
 // rest of the file byte-for-byte. Remote-URL configs have no file to write.
 func SaveTheme(name string) error {
+	saveThemeMu.Lock()
+	since := time.Since(saveThemeLast)
+	if since < saveThemeDebounce {
+		time.Sleep(saveThemeDebounce - since)
+	}
+	saveThemeLast = time.Now()
+	saveThemeMu.Unlock()
+
 	viperMu.Lock()
 	defer viperMu.Unlock()
 
@@ -379,18 +391,18 @@ func SaveTheme(name string) error {
 		return fmt.Errorf("read config: %w", err)
 	}
 
+	lines := strings.Split(string(data), "\n")
+
 	// Locate the top-level "app:" key so a "theme:" nested in some other block
 	// (datasource config, plugin settings, ...) is never rewritten.
 	appIndent := -1
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "app:") {
 			appIndent = len(line) - len(trimmed)
 			break
 		}
 	}
-
-	lines := strings.Split(string(data), "\n")
 	replaced := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)

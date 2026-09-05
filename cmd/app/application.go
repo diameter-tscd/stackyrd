@@ -6,13 +6,19 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"stackyrd/config"
 	"stackyrd/internal/server"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/tui"
 	"stackyrd/pkg/utils"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 // Application represents the main application with all its dependencies
@@ -107,8 +113,13 @@ func (app *Application) checkPortStep(ctx *AppContext) error {
 	return utils.CheckPortAvailability(app.config.Server.Port)
 }
 
-// initLoggerStep initializes the logger
+func (app *Application) applyTheme() {
+	tui.SetThemeName(app.config.App.Theme)
+	logger.SetThemeColorFunc(tui.TC)
+}
+
 func (app *Application) initLoggerStep(ctx *AppContext) error {
+	app.applyTheme()
 	if app.config.App.EnableTUI {
 		return nil
 	}
@@ -131,10 +142,8 @@ func (app *Application) startAppStep(ctx *AppContext) error {
 	return nil
 }
 
-// runWithTUI runs the application with fancy TUI interface
 func (app *Application) runWithTUI() {
-	// Set TUI theme from config
-	tui.SetThemeName(app.config.App.Theme)
+	app.applyTheme()
 
 	// Setup TUI configuration
 	tuiConfig := tui.StartupConfig{
@@ -190,13 +199,13 @@ func (app *Application) runWithTUI() {
 	app.handleShutdown(liveTUI, srv)
 }
 
-// runWithConsole runs the application with traditional console logging
 func (app *Application) runWithConsole() {
+	app.applyTheme()
 	if app.bannerText != "" {
-		_, _ = fmt.Print(ColorPrimary)
-		_, _ = fmt.Println(app.bannerText)
-		_, _ = fmt.Print(ColorReset)
+		banner := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("primary"))).Render(app.bannerText)
+		_, _ = fmt.Println(banner)
 	}
+	app.printConsoleSystemInfo()
 
 	app.logger = logger.New(app.config.App.Debug, utils.DashboardWriter)
 
@@ -298,7 +307,68 @@ func (app *Application) logAllServices() {
 
 }
 
-// logServiceStatus logs whether a service is enabled or skipped
+func (app *Application) printConsoleSystemInfo() {
+	hostname := "unknown"
+	if info, err := utils.GetNetworkInfo(); err == nil {
+		hostname = info["hostname"]
+	}
+	cpuModel := ""
+	if info, err := cpu.Info(); err == nil && len(info) > 0 {
+		cpuModel = info[0].ModelName
+		if len(cpuModel) > 48 {
+			cpuModel = cpuModel[:45] + "..."
+		}
+	}
+	cpuPercent := 0.0
+	if pct, err := cpu.Percent(0, false); err == nil && len(pct) > 0 {
+		cpuPercent = pct[0]
+	}
+	memUsed, memTotal, memPct := uint64(0), uint64(0), 0.0
+	if vm, err := mem.VirtualMemory(); err == nil {
+		memUsed = vm.Used / 1024 / 1024
+		memTotal = vm.Total / 1024 / 1024
+		memPct = vm.UsedPercent
+	}
+	appMem := utils.GetMemSelf()
+	goroutines := runtime.NumGoroutine()
+	ncpu := runtime.NumCPU()
+
+	secStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("dim"))).Bold(true)
+	lblStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("text")))
+	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("text")))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("dim")))
+	priStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.TC("primary"))).Bold(true)
+
+	cpuBar := tui.ProgressBar(cpuPercent, 14, false)
+	memBar := tui.ProgressBar(memPct, 14, false)
+
+	var b strings.Builder
+	b.WriteString(secStyle.Render("⟡ System"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf(" %s %s  %s %s\n",
+		lblStyle.Render("OS"), valStyle.Render(fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)),
+		lblStyle.Render("Host"), valStyle.Render(hostname)))
+	if cpuModel != "" {
+		b.WriteString(fmt.Sprintf(" %s %s\n", lblStyle.Render("CPU"), valStyle.Render(cpuModel)))
+	}
+	b.WriteString(fmt.Sprintf(" %s %s %s  %s %s %s\n",
+		lblStyle.Render("Cores"), valStyle.Render(fmt.Sprintf("%d", ncpu)),
+		dimStyle.Render("│"),
+		lblStyle.Render("Goroutines"), valStyle.Render(fmt.Sprintf("%d", goroutines)),
+		dimStyle.Render("│"),
+	))
+	b.WriteString(fmt.Sprintf(" %s %s %s  %s %s %s / %s GiB\n",
+		lblStyle.Render("CPU"), cpuBar, priStyle.Render(fmt.Sprintf("%5.1f%%", cpuPercent)),
+		lblStyle.Render("RAM"), memBar, valStyle.Render(fmt.Sprintf("%.1f", float64(memUsed)/1024)), dimStyle.Render(fmt.Sprintf("%.1f", float64(memTotal)/1024))))
+	b.WriteString(fmt.Sprintf(" %s %s  %s %s %s\n",
+		lblStyle.Render("AppMem"), valStyle.Render(fmt.Sprintf("%d MiB", appMem)),
+		dimStyle.Render("│"),
+		lblStyle.Render("PID"), valStyle.Render(fmt.Sprintf("%d", os.Getpid()))))
+	b.WriteString(dimStyle.Render(strings.Repeat("─", 52)))
+	_, _ = fmt.Println(b.String())
+	_, _ = fmt.Println(dimStyle.Render(fmt.Sprintf(" Port %s  Env %s  Theme %s", app.config.Server.Port, app.config.App.Env, app.config.App.Theme)))
+}
+
 func (app *Application) logServiceStatus(name string, enabled bool) {
 	if enabled {
 		app.logger.Info("Service initialized", "service", name, "status", ServiceStatusEnabled.String())

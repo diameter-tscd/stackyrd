@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"golang.org/x/sync/singleflight"
 )
 
 // GrafanaManager manages Grafana API interactions
@@ -30,6 +31,7 @@ type GrafanaManager struct {
 	statusCache  map[string]any
 	statusExpiry time.Time
 	statusMu     sync.Mutex
+	sf           singleflight.Group
 }
 
 // grafanaLoggerAdapter adapts our custom logger to go-retryablehttp's LeveledLogger interface
@@ -564,19 +566,13 @@ func (gm *GrafanaManager) GetHealth(ctx context.Context) (map[string]any, error)
 
 // GetStatus returns the current status of the Grafana manager
 func (gm *GrafanaManager) GetStatus() map[string]any {
-	stats := make(map[string]any)
 	if gm == nil {
-		stats["connected"] = false
-		return stats
+		return map[string]any{"connected": false}
 	}
 
-	// HTTP health check is blocking; snapshot immutable fields first, then do I/O
 	baseURL := gm.BaseURL
 	pool := gm.Pool
 
-	// Fast path: return cached result when still within TTL.
-	// Copy before mutating so concurrent fast-path callers never race on the
-	// shared cached map (concurrent map writes would panic).
 	gm.statusMu.Lock()
 	if time.Now().Before(gm.statusExpiry) && gm.statusCache != nil {
 		out := make(map[string]any, len(gm.statusCache)+2)
@@ -594,35 +590,50 @@ func (gm *GrafanaManager) GetStatus() map[string]any {
 	}
 	gm.statusMu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	health, err := gm.GetHealth(ctx)
-	cancel()
-	if err != nil {
-		stats["connected"] = false
-		stats["error"] = err.Error()
-		stats["url"] = baseURL
+	v, _, _ := gm.sf.Do("status", func() (any, error) {
+		gm.statusMu.Lock()
+		if time.Now().Before(gm.statusExpiry) && gm.statusCache != nil {
+			out := make(map[string]any, len(gm.statusCache))
+			for k, v := range gm.statusCache {
+				out[k] = v
+			}
+			gm.statusMu.Unlock()
+			return out, nil
+		}
+		gm.statusMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		health, err := gm.GetHealth(ctx)
+		cancel()
+		var stats map[string]any
+		if err != nil {
+			stats = map[string]any{"connected": false, "error": err.Error(), "url": baseURL}
+		} else {
+			stats = map[string]any{"connected": true, "url": baseURL, "version": health["version"], "database": health["database"]}
+			if pool != nil {
+				stats["pool_active"] = true
+			}
+		}
 		gm.statusMu.Lock()
 		gm.statusCache = stats
 		gm.statusExpiry = time.Now().Add(30 * time.Second)
 		gm.statusMu.Unlock()
-		return stats
+		return stats, nil
+	})
+	if mm, ok := v.(map[string]any); ok {
+		out := make(map[string]any, len(mm)+2)
+		for k, v := range mm {
+			out[k] = v
+		}
+		if _, ok := out["url"]; !ok && baseURL != "" {
+			out["url"] = baseURL
+		}
+		if _, ok := out["pool_active"]; !ok && pool != nil {
+			out["pool_active"] = true
+		}
+		return out
 	}
-
-	stats["connected"] = true
-	stats["url"] = baseURL
-	stats["version"] = health["version"]
-	stats["database"] = health["database"]
-
-	if pool != nil {
-		stats["pool_active"] = true
-	}
-
-	gm.statusMu.Lock()
-	gm.statusCache = stats
-	gm.statusExpiry = time.Now().Add(30 * time.Second)
-	gm.statusMu.Unlock()
-
-	return stats
+	return map[string]any{"connected": false}
 }
 
 // Async Operations

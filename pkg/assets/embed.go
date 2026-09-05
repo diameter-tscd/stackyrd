@@ -2,5 +2,5 @@ package assets
 
 import "embed"
 
-//go:embed banner.txt
+//go:embed banner.txt config.yaml
 var FS embed.FS

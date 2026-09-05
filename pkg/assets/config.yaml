@@ -1,0 +1,147 @@
+app:
+  name: "stackyrd"
+  version: "1.0.4-clover"
+  debug: true
+  env: "development"
+  banner_path: "banner.txt"
+  startup_delay: 3                # seconds to display boot screen (0 to skip)
+  quiet_startup: true             # suppress console logs (TUI only, logs still go to monitoring)
+  enable_tui: true                # enable fancy TUI mode (false = traditional console logging)
+  theme: "tokyonight" # TUI color theme (default, vintage_purple, vintage_dark, vintage_pinky, blue_ish, slate, charcoal_tea, pastel_light, sunflower_gold, muted_teal)
+
+server:   
+  port: "8080"
+  services_endpoint: /api/v1      # endpoint service path
+
+services:
+  users_service: true
+  broadcast_service: true
+  cache_service: true
+  encryption_service: false
+  grafana_service: false
+  mongodb_service: true
+  multi_tenant_service: true
+  products_service: true
+  tasks_service: true
+
+# Middleware configuration - enable/disable middlewares (defaults to true if not specified)
+middleware:
+  request_id: true
+  logger: true
+  permission_check: true
+  cors: true
+  jwt: false          # Set to true if using JWT authentication
+  ratelimit: true
+  security: true
+  audit: true
+  gzip: true
+  swagger: true       # Controlled by swagger.enabled config
+
+auth:
+  type: "apikey"
+  secret: "super-secret-key"
+
+redis:
+  enabled: false
+  address: "localhost:6379"
+  password: ""
+  db: 0
+
+kafka:
+  enabled: false
+  brokers: 
+    - "localhost:9092"
+  topic: "my-topic"
+  group_id: "my-group"
+
+postgres:
+  enabled: true
+  connections:
+    - name: "primary"
+      enabled: true
+      host: "localhost"
+      port: 5432
+      user: "postgres"
+      password: "Mypostgres01"
+      dbname: "postgres"
+      sslmode: "disable"
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: "5m"
+
+    - name: "secondary"
+      enabled: true
+      host: "localhost"
+      port: 5433
+      user: "postgres"
+      password: "Mypostgres01"
+      dbname: "postgres"
+      sslmode: "disable"
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: "5m"
+
+mongo:
+  enabled: true
+  connections:
+    - name: "primary"
+      enabled: true
+      uri: "mongodb://localhost:27017"
+      database: "primary_db"
+
+    - name: "secondary"
+      enabled: true
+      uri: "mongodb://localhost:27018"
+      database: "secondary_db"
+
+grafana:
+  enabled: true
+  url: "http://localhost:3000"
+  api_key: "your-grafana-api-key"
+  username: "admin"
+  password: "admin"
+  
+minio:
+  enabled: true
+  endpoint: "localhost:9003"
+  access_key_id: "minioadmin"
+  secret_access_key: "minioadmin"
+  use_ssl: false
+  bucket_name: "main"
+
+cron:
+  enabled: true
+  jobs:
+    log_cleanup: "0 0 * * *"
+    health_check: "*/10 * * * * *" # Every 10 seconds
+
+encryption:
+  enabled: false
+  algorithm: "aes-256-gcm"
+  key: ""
+  rotate_keys: false
+  key_rotation_interval: "24h"
+
+mcp:
+  enabled: true
+  endpoint: "/mcp"
+  token: "f76fda0080884d4ab36b93abf6421d49"  # Bearer token for MCP endpoint authentication; leave empty to auto-generate temp token
+  allowed_origins: []  # [] = allow all; e.g. ["https://app.example.com","https://*.example.org"] to restrict
+  rate_limit_enabled: false
+  rate_limit_ip: 1000
+  rate_limit_time: 36000
+  rate_limit_cooldowntime: 3200
+  rate_limit_excludeip: ["127.0.0.1", "localhost"]
+  # identity env (K8s Downward API): POD_NAME/POD_IP/POD_NAMESPACE/NODE_NAME/INSTANCE_ID
+  # local dev auto-generates instance_id as <hex>-<hostname>-<pid>
+
+log:
+  enabled: true
+  path: "logs"
+  filename: "stackyrd.log"
+  max_files: 7
+  compress: true
+
+audit:
+  skip_paths: ["/health", "/health/dependencies"]
+

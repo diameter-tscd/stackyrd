@@ -54,15 +54,20 @@ func getRuntimeStats() runtime.MemStats {
 
 // GetMemSelf gathers stackyrd memory usage.
 func GetMemSelf() uint64 {
-	_ = getRuntimeStats() // ensure background stats goroutine is running
+	_ = getRuntimeStats()
 
 	last := memSelfLastFetch.Load()
 	now := time.Now()
-	if last == 0 || now.UnixNano()-last >= memSelfInterval.Load() {
-		if p := runtimeMemStats.Load(); p != nil {
-			memSelfValue.Store(p.Sys / 1024 / 1024)
-		}
+	interval := memSelfInterval.Load()
+	if interval == 0 {
+		interval = int64(5 * time.Second)
+	}
+	if last == 0 || now.UnixNano()-last >= interval {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		memSelfValue.Store(ms.Sys / 1024 / 1024)
 		memSelfLastFetch.Store(now.UnixNano())
+		runtimeMemStats.Store(&ms)
 	}
 	return memSelfValue.Load()
 }
@@ -83,8 +88,23 @@ func GetRoutine() int {
 	return int(routineValue.Load())
 }
 
+var (
+	networkInfoCache     atomic.Pointer[map[string]string]
+	networkInfoLastFetch atomic.Int64
+	networkInfoInterval  = int64(30 * time.Second)
+)
+
 // GetNetworkInfo gathers hostname and IP.
 func GetNetworkInfo() (map[string]string, error) {
+	if cached := networkInfoCache.Load(); cached != nil {
+		if time.Now().UnixNano()-networkInfoLastFetch.Load() < networkInfoInterval {
+			cp := make(map[string]string, len(*cached))
+			for k, v := range *cached {
+				cp[k] = v
+			}
+			return cp, nil
+		}
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
@@ -103,10 +123,17 @@ func GetNetworkInfo() (map[string]string, error) {
 		}
 	}
 
-	return map[string]string{
+	m := map[string]string{
 		"hostname": hostname,
 		"ip":       ip,
-	}, nil
+	}
+	networkInfoCache.Store(&m)
+	networkInfoLastFetch.Store(time.Now().UnixNano())
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp, nil
 }
 
 func resetTerminal() {

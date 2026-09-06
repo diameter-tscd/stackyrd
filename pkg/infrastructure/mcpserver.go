@@ -3,14 +3,22 @@ package infrastructure
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -301,6 +309,18 @@ type MCPServer struct {
 	goroutineCache   string
 	goroutineExpiry  time.Time
 	goroutineKey     string
+
+	execEnabled   bool
+	execTimeout   time.Duration
+	execMaxOutput int
+	execAllowed   map[string]struct{}
+	buildInfo     map[string]any
+
+	fmEnabled        bool
+	fmRoot           string
+	fmMaxUpload      int64
+	fmThumbMaxBytes  int64
+	fmThumbSize      int
 }
 
 var (
@@ -344,6 +364,11 @@ func (m *MCPServer) GetStatus() map[string]any {
 		excludeList = append(excludeList, k)
 	}
 	slices.Sort(excludeList)
+	allowedList := make([]string, 0, len(m.execAllowed))
+	for k := range m.execAllowed {
+		allowedList = append(allowedList, k)
+	}
+	slices.Sort(allowedList)
 	id := m.getIdentity()
 	return map[string]any{
 		"enabled":                    m.enabled,
@@ -366,6 +391,16 @@ func (m *MCPServer) GetStatus() map[string]any {
 		"rate_limit_excludeip":       excludeList,
 		"rate_limit_tracked_ips":     tracked,
 		"rate_limit_blocked_ips":     blocked,
+		"exec_enabled":               m.execEnabled,
+		"exec_timeout_seconds":       int(m.execTimeout.Seconds()),
+		"exec_max_output":            m.execMaxOutput,
+		"exec_allowed_commands":      allowedList,
+		"filemanager_enabled":        m.fmEnabled,
+		"filemanager_root":           m.fmRoot,
+		"filemanager_max_upload":     m.fmMaxUpload,
+		"filemanager_thumbnail_max":  m.fmThumbMaxBytes,
+		"filemanager_thumbnail_size": m.fmThumbSize,
+		"build":                      m.buildInfo,
 		"instance_id":                id.InstanceID,
 		"instance":                   id,
 	}
@@ -432,6 +467,47 @@ func init() {
 			exclude["::1"] = struct{}{}
 			exclude["localhost"] = struct{}{}
 		}
+		execTimeout := time.Duration(cfg.MCP.ExecTimeout) * time.Second
+		if execTimeout <= 0 {
+			execTimeout = 10 * time.Second
+		}
+		if execTimeout > 60*time.Second {
+			execTimeout = 60 * time.Second
+		}
+		execMax := cfg.MCP.ExecMaxOutput
+		if execMax <= 0 {
+			execMax = 65536
+		}
+		execAllowed := make(map[string]struct{}, len(cfg.MCP.ExecAllowedCommands))
+		for _, c := range cfg.MCP.ExecAllowedCommands {
+			c = strings.TrimSpace(c)
+			if c != "" {
+				execAllowed[c] = struct{}{}
+			}
+		}
+		fmMax := cfg.MCP.FileManagerMaxUpload
+		if fmMax <= 0 {
+			fmMax = 209715200
+		}
+		if fmMax > 500<<20 {
+			fmMax = 500 << 20
+		}
+		fmThumbMax := cfg.MCP.FileManagerThumbnailMaxBytes
+		if fmThumbMax <= 0 {
+			fmThumbMax = 10 << 20
+		}
+		fmThumbSize := cfg.MCP.FileManagerThumbnailSize
+		if fmThumbSize <= 0 || fmThumbSize > 1024 {
+			fmThumbSize = 256
+		}
+		fmRoot := strings.TrimSpace(cfg.MCP.FileManagerRoot)
+		if fmRoot == "" {
+			fmRoot = "."
+		}
+		if abs, err := filepath.Abs(fmRoot); err == nil {
+			fmRoot = abs
+		}
+		_ = os.MkdirAll(fmRoot, 0750)
 		now := time.Now()
 		srv := &MCPServer{
 			enabled:            true,
@@ -451,6 +527,16 @@ func init() {
 			appEnv:             cfg.App.Env,
 			serverPort:         cfg.Server.Port,
 			identity: resolveIdentity(now),
+			execEnabled:   cfg.MCP.ExecEnabled,
+			execTimeout:   execTimeout,
+			execMaxOutput: execMax,
+			execAllowed:   execAllowed,
+			buildInfo:     resolveBuildInfo(cfg),
+			fmEnabled:       cfg.MCP.FileManagerEnabled,
+			fmRoot:          fmRoot,
+			fmMaxUpload:     fmMax,
+			fmThumbMaxBytes: fmThumbMax,
+			fmThumbSize:     fmThumbSize,
 		}
 		mcpSingletonMu.Lock()
 		mcpSingleton = srv
@@ -638,7 +724,7 @@ func (m *MCPServer) Handler() echo.HandlerFunc {
 				})
 			}
 		}
-		body, err := io.ReadAll(io.LimitReader(c.Request().Body, 1<<20))
+		body, err := io.ReadAll(io.LimitReader(c.Request().Body, 300<<20))
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, jsonRPCResp{
 				JSONRPC: "2.0",
@@ -788,17 +874,86 @@ func extractProtocolVersion(params json.RawMessage) string {
 }
 
 func (m *MCPServer) authenticate(c echo.Context) bool {
-	auth := c.Request().Header.Get("Authorization")
-	if auth != "" {
+	if token := extractRequestToken(c); token != "" {
+		return token == m.token
+	}
+	return false
+}
+
+func extractRequestToken(c echo.Context) string {
+	if auth := c.Request().Header.Get("Authorization"); auth != "" {
 		const prefix = "Bearer "
 		if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
-			return auth[len(prefix):] == m.token
+			return strings.TrimSpace(auth[len(prefix):])
+		}
+		if strings.TrimSpace(auth) != "" {
+			return strings.TrimSpace(auth)
 		}
 	}
 	if header := c.Request().Header.Get("X-MCP-Token"); header != "" {
-		return header == m.token
+		return strings.TrimSpace(header)
+	}
+	if header := c.Request().Header.Get("X-Api-Key"); header != "" {
+		return strings.TrimSpace(header)
+	}
+	q := c.QueryParams()
+	for _, key := range []string{"token", "mcp_token", "mcpToken", "access_token", "api_key", "apiKey"} {
+		if v := strings.TrimSpace(q.Get(key)); v != "" {
+			if strings.HasPrefix(strings.ToLower(v), "bearer ") {
+				v = strings.TrimSpace(v[7:])
+			}
+			return v
+		}
+	}
+	return ""
+}
+
+func GetMCPToken() string {
+	mcpSingletonMu.RLock()
+	if mcpSingleton != nil && mcpSingleton.token != "" {
+		t := mcpSingleton.token
+		mcpSingletonMu.RUnlock()
+		return t
+	}
+	mcpSingletonMu.RUnlock()
+	if cfg, err := config.LoadConfig(); err == nil && cfg.MCP.Token != "" {
+		return cfg.MCP.Token
+	}
+	return ""
+}
+
+func getEffectiveMCPToken() string {
+	mcpSingletonMu.RLock()
+	if mcpSingleton != nil && mcpSingleton.token != "" {
+		t := mcpSingleton.token
+		mcpSingletonMu.RUnlock()
+		return t
+	}
+	mcpSingletonMu.RUnlock()
+	if cfg, err := config.LoadConfig(); err == nil && cfg.MCP.Token != "" {
+		return cfg.MCP.Token
+	}
+	return ""
+}
+
+func IsMCPAuthenticated(c echo.Context) bool {
+	token := getEffectiveMCPToken()
+	if token == "" {
+		return false
+	}
+	if provided := extractRequestToken(c); provided != "" {
+		return provided == token
 	}
 	return false
+}
+
+func RequireMCPAuth(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if !IsMCPAuthenticated(c) {
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "Unauthorized: valid MCP token required (Authorization: Bearer <token> or X-MCP-Token or ?token=<token>)"})
+		}
+		return next(c)
+	}
 }
 
 func (m *MCPServer) isOriginAllowed(c echo.Context) bool {
@@ -969,6 +1124,9 @@ func (m *MCPServer) resourceDefs() []map[string]any {
 			{"uri": "stackyrd://memory", "name": "Memory Details", "description": "Detailed memory usage with visualization thresholds and scale for frontend gauges", "mimeType": "application/json"},
 			{"uri": "stackyrd://goroutines", "name": "Goroutine Dump", "description": "All goroutines with id, function, state and stack trace for leak detection and visualization", "mimeType": "application/json"},
 			{"uri": "stackyrd://config", "name": "Configuration", "description": "Raw config.yaml from embed afero fs (alias config.yaml) with parsed view", "mimeType": "application/json"},
+			{"uri": "stackyrd://cron", "name": "Cron Jobs", "description": "Scheduled cron jobs with schedule, last/next run and pool status", "mimeType": "application/json"},
+			{"uri": "stackyrd://build", "name": "Build Info", "description": "Build metadata: version, Go version, OS/arch, VCS revision and build time", "mimeType": "application/json"},
+			{"uri": "stackyrd://fs", "name": "Filesystem Root", "description": "Filesystem listing at filemanager root (same as filemanager action=list path=.)", "mimeType": "application/json"},
 		}
 	})
 	return resourceDefsCache
@@ -1007,8 +1165,22 @@ func (m *MCPServer) handleResourcesRead(params json.RawMessage) (any, *jsonRPCEr
 		data = m.toolGoroutines()
 	case "stackyrd://config":
 		data = m.toolConfig()
+	case "stackyrd://cron":
+		data = m.toolCron()
+	case "stackyrd://build":
+		data = m.toolBuild()
+	case "stackyrd://fs":
+		data = m.toolFileManager(map[string]any{"action": "list", "path": "."})
 	default:
-		return nil, &jsonRPCErr{Code: -32602, Message: "Resource not found: " + p.URI}
+		if strings.HasPrefix(p.URI, "stackyrd://fs/") {
+			rel := strings.TrimPrefix(p.URI, "stackyrd://fs/")
+			if rel == "" {
+				rel = "."
+			}
+			data = m.toolFileManager(map[string]any{"action": "list", "path": rel})
+		} else {
+			return nil, &jsonRPCErr{Code: -32602, Message: "Resource not found: " + p.URI}
+		}
 	}
 	return map[string]any{
 		"contents": []map[string]any{{"uri": p.URI, "mimeType": "application/json", "text": data}},
@@ -1055,6 +1227,41 @@ func (m *MCPServer) buildToolDefs() []ToolDef {
 			},
 		}},
 		{Name: "stackyrd_config", Description: "Read config.yaml from embed afero fs (alias config.yaml) — raw YAML + parsed view.", InputSchema: emptySchema()},
+		{Name: "stackyrd_cron", Description: "List all cron jobs with schedule, last/next run and pool status.", InputSchema: emptySchema()},
+		{Name: "stackyrd_cron_trigger", Description: "Trigger a cron job immediately by name or id (async).", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": "Job name (e.g. 'cleanup') — case-insensitive substring match."},
+				"id":   map[string]any{"type": "integer", "description": "Job ID (takes precedence over name if set)."},
+			},
+		}},
+		{Name: "stackyrd_build", Description: "Get build info: version, Go version, OS/arch, VCS revision and build time.", InputSchema: emptySchema()},
+			{Name: "stackyrd_exec", Description: "Execute a shell command via sh -c and return stdout/stderr/stdin (requires mcp.exec_enabled=true, token auth, allowlist + timeout).", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"command": map[string]any{"type": "string", "description": "Shell expression (e.g. 'ls -la | grep foo', 'cat | grep bar', 'echo hello'). Executed via sh -c."},
+				"stdin":   map[string]any{"type": "string", "description": "Optional stdin piped to command (e.g. 'hello\\nworld')."},
+				"input":   map[string]any{"type": "string", "description": "Alias for stdin."},
+				"args":    map[string]any{"type": "array", "description": "Optional shell args available as $0, $1... inside command (sh -c 'echo $0' sh hello)", "items": map[string]any{"type": "string"}},
+				"timeout": map[string]any{"type": "integer", "description": "Timeout seconds (1-60, default from config mcp.exec_timeout)."},
+				"workdir": map[string]any{"type": "string", "description": "Working directory (default '.')."},
+			},
+			"required": []string{"command"},
+		}},
+		{Name: "stackyrd_filemanager", Description: "Filesystem manager: list/read/write/mkdir/stat/delete/upload/download/thumbnail (max upload 200MB, thumbnail only for small images).", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action":   map[string]any{"type": "string", "enum": []string{"list", "read", "write", "mkdir", "stat", "delete", "upload", "download", "thumbnail", "rename"}, "description": "Operation"},
+				"path":     map[string]any{"type": "string", "description": "Relative path within filemanager root (e.g. '.', 'uploads/img.png', 'a/b/c.txt')"},
+				"dest":     map[string]any{"type": "string", "description": "Destination path for rename/move"},
+				"content":  map[string]any{"type": "string", "description": "Text content for write, or base64 for upload/download"},
+				"encoding": map[string]any{"type": "string", "enum": []string{"text", "base64"}, "description": "Encoding for content (default text for read/write, base64 for upload/download)"},
+				"mkdir_parents": map[string]any{"type": "boolean", "description": "Create parent directories for mkdir/write"},
+				"recursive":     map[string]any{"type": "boolean", "description": "Recursive delete"},
+				"size":          map[string]any{"type": "integer", "description": "Thumbnail size px (default from config, 32-1024)"},
+			},
+			"required": []string{"action", "path"},
+		}},
 	}
 }
 
@@ -1125,6 +1332,16 @@ func (m *MCPServer) handleToolsCall(params json.RawMessage) (map[string]any, *js
 		text = m.toolGoroutinesFiltered(filter, limit)
 	case "stackyrd_config":
 		text = m.toolConfig()
+	case "stackyrd_cron":
+		text = m.toolCron()
+	case "stackyrd_cron_trigger":
+		text = m.toolCronTrigger(cp.Arguments)
+	case "stackyrd_build":
+		text = m.toolBuild()
+	case "stackyrd_exec":
+		text, isErr = m.toolExec(cp.Arguments)
+	case "stackyrd_filemanager":
+		text, isErr = m.toolFileManagerResult(cp.Arguments)
 	default:
 		text = fmt.Sprintf(`{"error":"unknown tool: %s"}`, cp.Name)
 		isErr = true
@@ -1558,6 +1775,814 @@ func (m *MCPServer) toolConfig() string {
 	eff.configExpiry = time.Now().Add(5 * time.Second)
 	eff.mu.Unlock()
 	return result
+}
+
+func resolveBuildInfo(cfg *config.Config) map[string]any {
+	info := map[string]any{
+		"name":       cfg.App.Name,
+		"version":    cfg.App.Version,
+		"env":        cfg.App.Env,
+		"go_version": runtime.Version(),
+		"goos":       runtime.GOOS,
+		"goarch":     runtime.GOARCH,
+		"compiler":   runtime.Compiler,
+		"num_cpu":    runtime.NumCPU(),
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		info["module"] = bi.Main.Path
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			info["module_version"] = bi.Main.Version
+		}
+		settings := map[string]string{}
+		for _, s := range bi.Settings {
+			settings[s.Key] = s.Value
+		}
+		if v, ok := settings["vcs.revision"]; ok && v != "" {
+			info["vcs_revision"] = v
+		}
+		if v, ok := settings["vcs.time"]; ok && v != "" {
+			info["vcs_time"] = v
+		}
+		if v, ok := settings["vcs.modified"]; ok {
+			info["vcs_modified"] = v == "true"
+		}
+	}
+	return info
+}
+
+func (m *MCPServer) toolCron() string {
+	comp, ok := GetGlobalRegistry().Get("cron")
+	if !ok {
+		return marshalJSON(map[string]any{"enabled": false, "jobs": []any{}, "count": 0, "reason": "cron not registered"})
+	}
+	cm, ok := comp.(*CronManager)
+	if !ok {
+		return marshalJSON(map[string]any{"enabled": false, "error": "invalid cron manager type"})
+	}
+	jobs := cm.GetJobs()
+	pool := cm.GetPoolStatus()
+	return marshalJSON(map[string]any{"enabled": true, "count": len(jobs), "jobs": jobs, "pool": pool})
+}
+
+func (m *MCPServer) toolCronTrigger(args map[string]any) string {
+	comp, ok := GetGlobalRegistry().Get("cron")
+	if !ok {
+		return `{"error":"cron not registered or disabled"}`
+	}
+	cm, ok := comp.(*CronManager)
+	if !ok {
+		return `{"error":"invalid cron manager type"}`
+	}
+	if v, ok := args["id"]; ok {
+		var id int
+		switch n := v.(type) {
+		case float64:
+			id = int(n)
+		case int:
+			id = n
+		case int64:
+			id = int(n)
+		}
+		if id != 0 {
+			if err := cm.RunJobNow(id); err != nil {
+				return marshalJSON(map[string]any{"error": err.Error(), "id": id})
+			}
+			return marshalJSON(map[string]any{"triggered": true, "id": id, "mode": "id"})
+		}
+	}
+	name := strings.TrimSpace(argString(args, "name"))
+	if name == "" {
+		return `{"error":"param 'name' or 'id' is required"}`
+	}
+	jobs := cm.GetJobs()
+	lower := strings.ToLower(name)
+	var matched *CronJob
+	for i := range jobs {
+		if strings.EqualFold(jobs[i].Name, name) {
+			matched = &jobs[i]
+			break
+		}
+	}
+	if matched == nil {
+		for i := range jobs {
+			if strings.Contains(strings.ToLower(jobs[i].Name), lower) {
+				matched = &jobs[i]
+				break
+			}
+		}
+	}
+	if matched == nil {
+		return marshalJSON(map[string]any{"error": "job not found: " + name, "available": jobs})
+	}
+	if err := cm.RunJobNow(matched.ID); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "name": matched.Name, "id": matched.ID})
+	}
+	return marshalJSON(map[string]any{"triggered": true, "name": matched.Name, "id": matched.ID, "mode": "name"})
+}
+
+func (m *MCPServer) toolBuild() string {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	bi := eff.buildInfo
+	st := eff.startTime
+	appName, appVer, appEnv, port := eff.appName, eff.appVersion, eff.appEnv, eff.serverPort
+	eff.mu.RUnlock()
+	if bi == nil {
+		bi = map[string]any{"version": appVer, "go_version": runtime.Version()}
+	}
+	out := make(map[string]any, len(bi)+5)
+	for k, v := range bi {
+		out[k] = v
+	}
+	out["app_name"] = appName
+	out["app_version"] = appVer
+	out["app_env"] = appEnv
+	out["port"] = port
+	if !st.IsZero() {
+		out["started_at"] = st.Format(time.RFC3339)
+		out["uptime"] = time.Since(st).Round(time.Second).String()
+		out["uptime_seconds"] = int64(time.Since(st).Seconds())
+	}
+	out["pid"] = os.Getpid()
+	out["instance"] = eff.getIdentity()
+	return marshalJSON(out)
+}
+
+func (m *MCPServer) toolExec(args map[string]any) (string, bool) {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	enabled := eff.execEnabled
+	timeout := eff.execTimeout
+	maxOut := eff.execMaxOutput
+	allowed := eff.execAllowed
+	eff.mu.RUnlock()
+	if !enabled {
+		return `{"error":"exec disabled — set mcp.exec_enabled=true in config.yaml"}`, true
+	}
+	cmdStr := strings.TrimSpace(argString(args, "command"))
+	if cmdStr == "" {
+		return `{"error":"param 'command' is required"}`, true
+	}
+	if len(allowed) > 0 {
+		first := cmdStr
+		if idx := strings.IndexFunc(first, func(r rune) bool { return r == ' ' || r == ';' || r == '|' || r == '&' }); idx >= 0 {
+			first = strings.TrimSpace(first[:idx])
+		}
+		if idx := strings.LastIndex(first, "/"); idx >= 0 {
+			first = first[idx+1:]
+		}
+		if _, ok := allowed[first]; !ok {
+			if _, ok := allowed[cmdStr]; !ok {
+				return marshalJSON(map[string]any{"error": "command not allowed: " + first, "allowed": allowed, "hint": "allowed checks first token of shell expression"}), true
+			}
+		}
+	}
+	stdinStr := argString(args, "stdin")
+	if stdinStr == "" {
+		stdinStr = argString(args, "input")
+	}
+	var shellArgs []string
+	if v, ok := args["args"]; ok {
+		switch arr := v.(type) {
+		case []any:
+			for _, e := range arr {
+				if s, ok := e.(string); ok {
+					shellArgs = append(shellArgs, s)
+				}
+			}
+		case []string:
+			shellArgs = arr
+		}
+	}
+	if v, ok := args["timeout"]; ok {
+		var t int
+		switch n := v.(type) {
+		case float64:
+			t = int(n)
+		case int:
+			t = n
+		case int64:
+			t = int(n)
+		}
+		if t > 0 && t <= 60 {
+			timeout = time.Duration(t) * time.Second
+		}
+	}
+	workdir := strings.TrimSpace(argString(args, "workdir"))
+	if workdir == "" {
+		workdir = "."
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		allArgs := append([]string{"/C", cmdStr}, shellArgs...)
+		cmd = exec.CommandContext(ctx, "cmd", allArgs...)
+	} else {
+		allArgs := append([]string{"-c", cmdStr}, shellArgs...)
+		cmd = exec.CommandContext(ctx, "sh", allArgs...)
+	}
+	cmd.Dir = workdir
+	if stdinStr != "" {
+		cmd.Stdin = strings.NewReader(stdinStr)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	start := time.Now()
+	err := cmd.Run()
+	elapsed := time.Since(start).Round(time.Millisecond)
+	outStr := stdout.String()
+	errStr := stderr.String()
+	limited := false
+	totalLen := stdout.Len() + stderr.Len()
+	if maxOut > 0 && totalLen > maxOut {
+		combined := outStr + errStr
+		if len(combined) > maxOut {
+			combined = combined[:maxOut]
+		}
+		outStr = combined
+		errStr = ""
+		limited = true
+	}
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else if ctx.Err() == context.DeadlineExceeded {
+			exitCode = 124
+		} else {
+			exitCode = -1
+		}
+	}
+	result := map[string]any{
+		"command":   cmdStr,
+		"args":      shellArgs,
+		"stdin":     stdinStr,
+		"workdir":   workdir,
+		"shell":     true,
+		"exit_code": exitCode,
+		"stdout":    outStr,
+		"stderr":    errStr,
+		"duration":  elapsed.String(),
+		"duration_ms": elapsed.Milliseconds(),
+		"truncated": limited,
+		"timeout":   timeout.String(),
+	}
+	if err != nil && errStr == "" && outStr == "" {
+		result["error"] = err.Error()
+	}
+	if limited {
+		result["max_output"] = maxOut
+	}
+	return marshalJSON(result), exitCode != 0
+}
+
+func (m *MCPServer) fmResolve(rel string) (string, error) {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	root := eff.fmRoot
+	eff.mu.RUnlock()
+	if root == "" {
+		root = "."
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	rel = filepath.Clean(rel)
+	if filepath.IsAbs(rel) {
+		rel = strings.TrimPrefix(rel, "/")
+	}
+	joined := filepath.Join(root, rel)
+	absJoined, err := filepath.Abs(joined)
+	if err != nil {
+		return "", err
+	}
+	if absJoined != root && !strings.HasPrefix(absJoined, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path escapes filemanager root: %s", rel)
+	}
+	return absJoined, nil
+}
+
+func (m *MCPServer) toolFileManagerResult(args map[string]any) (string, bool) {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	enabled := eff.fmEnabled
+	eff.mu.RUnlock()
+	if !enabled {
+		return `{"error":"filemanager disabled — set mcp.filemanager_enabled=true"}`, true
+	}
+	s := m.toolFileManager(args)
+	isErr := strings.Contains(s, `"error"`) && (strings.Contains(s, `"code"`) || true)
+	if strings.Contains(s, `"error":`) {
+		isErr = true
+		if strings.Contains(s, `"entries"`) || strings.Contains(s, `"content"`) || strings.Contains(s, `"thumbnail"`) {
+			isErr = false
+			if strings.Contains(s, `"error":`) && !strings.Contains(s, `"entries"`) {
+				isErr = strings.Contains(s, `"error":`) && !strings.Contains(s, `"path":`)
+			}
+		}
+	}
+	if strings.Contains(s, `"error":`) {
+		isErr = true
+	} else {
+		isErr = false
+	}
+	return s, isErr
+}
+
+func (m *MCPServer) toolFileManager(args map[string]any) string {
+	action := strings.ToLower(strings.TrimSpace(argString(args, "action")))
+	if action == "" {
+		action = strings.ToLower(strings.TrimSpace(argString(args, "op")))
+	}
+	rel := strings.TrimSpace(argString(args, "path"))
+	if rel == "" {
+		rel = "."
+	}
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	maxUpload := eff.fmMaxUpload
+	thumbMax := eff.fmThumbMaxBytes
+	thumbSize := eff.fmThumbSize
+	eff.mu.RUnlock()
+	if maxUpload <= 0 {
+		maxUpload = 209715200
+	}
+	if thumbMax <= 0 {
+		thumbMax = 10 << 20
+	}
+	if thumbSize <= 0 {
+		thumbSize = 256
+	}
+	if v, ok := args["size"]; ok {
+		switch n := v.(type) {
+		case float64:
+			if int(n) >= 32 && int(n) <= 1024 {
+				thumbSize = int(n)
+			}
+		case int:
+			if n >= 32 && n <= 1024 {
+				thumbSize = n
+			}
+		}
+	}
+	switch action {
+	case "list", "ls", "dir":
+		return m.fmList(rel)
+	case "read", "cat":
+		enc := strings.ToLower(strings.TrimSpace(argString(args, "encoding")))
+		return m.fmRead(rel, enc)
+	case "write", "create", "save":
+		content := argString(args, "content")
+		enc := strings.ToLower(strings.TrimSpace(argString(args, "encoding")))
+		mkdirParents := false
+		if v, ok := args["mkdir_parents"]; ok {
+			if b, ok := v.(bool); ok {
+				mkdirParents = b
+			}
+		}
+		return m.fmWrite(rel, content, enc, mkdirParents, maxUpload)
+	case "mkdir", "mkdirs":
+		parents := true
+		if v, ok := args["mkdir_parents"]; ok {
+			if b, ok := v.(bool); ok {
+				parents = b
+			}
+		}
+		return m.fmMkdir(rel, parents)
+	case "stat", "attributes", "info":
+		return m.fmStat(rel)
+	case "delete", "rm", "remove":
+		recursive := false
+		if v, ok := args["recursive"]; ok {
+			if b, ok := v.(bool); ok {
+				recursive = b
+			}
+		}
+		return m.fmDelete(rel, recursive)
+	case "upload":
+		content := argString(args, "content")
+		return m.fmUpload(rel, content, maxUpload)
+	case "download":
+		return m.fmDownload(rel, maxUpload)
+	case "thumbnail", "thumb":
+		return m.fmThumbnail(rel, thumbMax, thumbSize)
+	case "rename", "move", "mv":
+		dest := strings.TrimSpace(argString(args, "dest"))
+		if dest == "" {
+			dest = strings.TrimSpace(argString(args, "destination"))
+		}
+		if dest == "" {
+			return `{"error":"param 'dest' is required for rename"}` 
+		}
+		return m.fmRename(rel, dest)
+	default:
+		return marshalJSON(map[string]any{"error": "unknown filemanager action: " + action, "allowed": []string{"list", "read", "write", "mkdir", "stat", "delete", "upload", "download", "thumbnail", "rename"}})
+	}
+}
+
+func (m *MCPServer) fmList(rel string) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if !info.IsDir() {
+		return m.fmStat(rel)
+	}
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		fi, _ := e.Info()
+		item := map[string]any{
+			"name":     e.Name(),
+			"path":     filepath.Join(rel, e.Name()),
+			"is_dir":   e.IsDir(),
+			"mode":     "",
+			"size":     int64(0),
+			"mod_time": "",
+		}
+		if fi != nil {
+			item["size"] = fi.Size()
+			item["mode"] = fi.Mode().String()
+			item["mod_time"] = fi.ModTime().Format(time.RFC3339)
+			item["is_dir"] = fi.IsDir()
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext != "" {
+			item["ext"] = ext
+		}
+		if !e.IsDir() && fi != nil && fi.Size() < 10<<20 {
+			if _, err := utils.DetectImageFormat(abs + string(os.PathSeparator) + e.Name()); err == nil {
+				item["is_image"] = true
+			}
+		}
+		out = append(out, item)
+	}
+	root, _ := m.fmResolve(".")
+	return marshalJSON(map[string]any{"path": rel, "abs": abs, "root": root, "count": len(out), "entries": out})
+}
+
+func (m *MCPServer) fmRead(rel, enc string) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if fi.IsDir() {
+		return m.fmList(rel)
+	}
+	if fi.Size() > 10<<20 && enc != "base64" {
+		return marshalJSON(map[string]any{"error": "file too large for text read (use base64/download, max 10MB for text)", "path": rel, "size": fi.Size()})
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if enc == "base64" {
+		return marshalJSON(map[string]any{"path": rel, "size": fi.Size(), "encoding": "base64", "content": base64.StdEncoding.EncodeToString(data), "mime": detectMime(abs, data)})
+	}
+	if !isText(data) {
+		return marshalJSON(map[string]any{"path": rel, "size": fi.Size(), "encoding": "base64", "content": base64.StdEncoding.EncodeToString(data), "mime": detectMime(abs, data), "note": "binary detected, returned as base64"})
+	}
+	return marshalJSON(map[string]any{"path": rel, "size": fi.Size(), "encoding": "text", "content": string(data), "mime": detectMime(abs, data)})
+}
+
+func (m *MCPServer) fmWrite(rel, content, enc string, mkdirParents bool, maxUpload int64) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	var data []byte
+	if enc == "base64" {
+		if content == "" {
+			data = []byte{}
+		} else {
+			d, err := base64.StdEncoding.DecodeString(content)
+			if err != nil {
+				if d2, err2 := base64.URLEncoding.DecodeString(content); err2 == nil {
+					d = d2
+				} else {
+					return marshalJSON(map[string]any{"error": "invalid base64: " + err.Error(), "path": rel})
+				}
+			}
+			data = d
+		}
+	} else {
+		data = []byte(content)
+	}
+	if int64(len(data)) > maxUpload {
+		return marshalJSON(map[string]any{"error": fmt.Sprintf("content exceeds max upload %d bytes", maxUpload), "path": rel, "size": len(data)})
+	}
+	dir := filepath.Dir(abs)
+	if mkdirParents {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+		}
+	} else {
+		if _, err := os.Stat(dir); err != nil {
+			return marshalJSON(map[string]any{"error": "parent dir does not exist (use mkdir_parents=true)", "path": rel, "dir": dir})
+		}
+	}
+	if err := os.WriteFile(abs, data, 0640); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	return marshalJSON(map[string]any{"path": rel, "abs": abs, "size": len(data), "written": true})
+}
+
+func (m *MCPServer) fmMkdir(rel string, parents bool) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	var mkErr error
+	if parents {
+		mkErr = os.MkdirAll(abs, 0750)
+	} else {
+		mkErr = os.Mkdir(abs, 0750)
+	}
+	if mkErr != nil {
+		return marshalJSON(map[string]any{"error": mkErr.Error(), "path": rel})
+	}
+	return marshalJSON(map[string]any{"path": rel, "abs": abs, "created": true})
+}
+
+func (m *MCPServer) fmStat(rel string) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	out := map[string]any{
+		"path":     rel,
+		"abs":      abs,
+		"name":     fi.Name(),
+		"is_dir":   fi.IsDir(),
+		"size":     fi.Size(),
+		"mode":     fi.Mode().String(),
+		"perm":     fmt.Sprintf("%04o", fi.Mode().Perm()),
+		"mod_time": fi.ModTime().Format(time.RFC3339),
+	}
+	if !fi.IsDir() {
+		ext := strings.ToLower(filepath.Ext(abs))
+		out["ext"] = ext
+		out["mime"] = mimeByExt(ext)
+		if data, err := os.ReadFile(abs); err == nil && len(data) > 0 {
+			out["mime_detected"] = detectMime(abs, data)
+			if w, h, err := imageDimensionsFromBytes(data); err == nil {
+				out["width"] = w
+				out["height"] = h
+				out["is_image"] = true
+			}
+		}
+		if fi.Size() < 10<<20 {
+			if _, err := utils.DetectImageFormat(abs); err == nil {
+				out["is_image"] = true
+			}
+		}
+	}
+	return marshalJSON(out)
+}
+
+func (m *MCPServer) fmDelete(rel string, recursive bool) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	root := eff.fmRoot
+	eff.mu.RUnlock()
+	if abs == root {
+		return marshalJSON(map[string]any{"error": "refusing to delete filemanager root", "path": rel})
+	}
+	if fi.IsDir() && !recursive {
+		entries, _ := os.ReadDir(abs)
+		if len(entries) > 0 {
+			return marshalJSON(map[string]any{"error": "directory not empty (use recursive=true)", "path": rel, "count": len(entries)})
+		}
+	}
+	var delErr error
+	if fi.IsDir() && recursive {
+		delErr = os.RemoveAll(abs)
+	} else {
+		delErr = os.Remove(abs)
+	}
+	if delErr != nil {
+		return marshalJSON(map[string]any{"error": delErr.Error(), "path": rel})
+	}
+	return marshalJSON(map[string]any{"path": rel, "deleted": true})
+}
+
+func (m *MCPServer) fmUpload(rel, b64 string, maxUpload int64) string {
+	if b64 == "" {
+		return marshalJSON(map[string]any{"error": "param 'content' is required (base64)", "path": rel})
+	}
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		if d2, err2 := base64.URLEncoding.DecodeString(b64); err2 == nil {
+			data = d2
+			err = nil
+		} else {
+			return marshalJSON(map[string]any{"error": "invalid base64: " + err.Error(), "path": rel})
+		}
+	}
+	if int64(len(data)) > maxUpload {
+		return marshalJSON(map[string]any{"error": fmt.Sprintf("decoded size %d exceeds max upload %d (200MB)", len(data), maxUpload), "path": rel})
+	}
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	dir := filepath.Dir(abs)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if err := os.WriteFile(abs, data, 0640); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	return marshalJSON(map[string]any{"path": rel, "abs": abs, "size": len(data), "uploaded": true})
+}
+
+func (m *MCPServer) fmDownload(rel string, maxUpload int64) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if fi.IsDir() {
+		return marshalJSON(map[string]any{"error": "path is directory, use list", "path": rel})
+	}
+	if fi.Size() > maxUpload {
+		return marshalJSON(map[string]any{"error": fmt.Sprintf("file size %d exceeds max upload %d", fi.Size(), maxUpload), "path": rel})
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	return marshalJSON(map[string]any{"path": rel, "size": fi.Size(), "mime": detectMime(abs, data), "encoding": "base64", "content": base64.StdEncoding.EncodeToString(data)})
+}
+
+func (m *MCPServer) fmThumbnail(rel string, maxBytes int64, size int) string {
+	abs, err := m.fmResolve(rel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if fi.IsDir() {
+		return marshalJSON(map[string]any{"error": "path is directory", "path": rel})
+	}
+	if fi.Size() > maxBytes {
+		return marshalJSON(map[string]any{"error": fmt.Sprintf("file too large for thumbnail (%d > %d max)", fi.Size(), maxBytes), "path": rel, "size": fi.Size()})
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": rel})
+	}
+	if len(data) == 0 {
+		return marshalJSON(map[string]any{"error": "empty file", "path": rel})
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return marshalJSON(map[string]any{"error": "not an image or unsupported format: " + err.Error(), "path": rel})
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > 50_000_000 {
+		return marshalJSON(map[string]any{"error": fmt.Sprintf("image dimensions exceed limit %dx%d", cfg.Width, cfg.Height), "path": rel})
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return marshalJSON(map[string]any{"error": "failed to decode image: " + err.Error(), "path": rel})
+	}
+	thumb := utils.Thumbnail(img, uint(size))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 80}); err != nil {
+		if err := png.Encode(&buf, thumb); err != nil {
+			return marshalJSON(map[string]any{"error": "failed to encode thumbnail: " + err.Error(), "path": rel})
+		}
+	}
+	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return marshalJSON(map[string]any{"path": rel, "width": cfg.Width, "height": cfg.Height, "thumb_size": size, "thumb_bytes": buf.Len(), "mime": "image/jpeg", "encoding": "base64", "thumbnail": b64})
+}
+
+func (m *MCPServer) fmRename(srcRel, dstRel string) string {
+	srcAbs, err := m.fmResolve(srcRel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": srcRel})
+	}
+	dstAbs, err := m.fmResolve(dstRel)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": dstRel})
+	}
+	if _, err := os.Stat(srcAbs); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": srcRel})
+	}
+	if err := os.MkdirAll(filepath.Dir(dstAbs), 0750); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": dstRel})
+	}
+	if err := os.Rename(srcAbs, dstAbs); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "path": srcRel, "dest": dstRel})
+	}
+	return marshalJSON(map[string]any{"path": srcRel, "dest": dstRel, "renamed": true})
+}
+
+func detectMime(path string, data []byte) string {
+	if len(data) > 0 {
+		m := http.DetectContentType(data)
+		if m != "application/octet-stream" {
+			return m
+		}
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if v := mimeByExt(ext); v != "" {
+		return v
+	}
+	return "application/octet-stream"
+}
+
+func mimeByExt(ext string) string {
+	switch ext {
+	case ".txt":
+		return "text/plain"
+	case ".json":
+		return "application/json"
+	case ".yaml", ".yml":
+		return "application/yaml"
+	case ".html", ".htm":
+		return "text/html"
+	case ".css":
+		return "text/css"
+	case ".js":
+		return "application/javascript"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".bmp":
+		return "image/bmp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".pdf":
+		return "application/pdf"
+	case ".zip":
+		return "application/zip"
+	case ".go":
+		return "text/x-go"
+	case ".md":
+		return "text/markdown"
+	default:
+		return ""
+	}
+}
+
+func isText(data []byte) bool {
+	if len(data) == 0 {
+		return true
+	}
+	sample := data
+	if len(sample) > 8000 {
+		sample = sample[:8000]
+	}
+	for _, b := range sample {
+		if b == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func imageDimensionsFromBytes(data []byte) (int, int, error) {
+	c, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0, err
+	}
+	return c.Width, c.Height, nil
 }
 
 func (m *MCPServer) getCachedHostname() string {

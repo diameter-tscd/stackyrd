@@ -132,6 +132,15 @@ mcp:
   rate_limit_time: 36000
   rate_limit_cooldowntime: 3200
   rate_limit_excludeip: ["127.0.0.1", "localhost"]
+  exec_enabled: true         # enable stackyrd_exec command executor (requires token)
+  exec_timeout: 10            # default timeout seconds (1-60)
+  exec_max_output: 65536      # max stdout+stderr bytes
+  exec_allowed_commands: []   # [] = allow all when enabled; e.g. ["echo","ls","git","uptime","df","ps"]
+  filemanager_enabled: true   # enable stackyrd_filemanager
+  filemanager_root: "."       # sandbox root (abs or relative)
+  filemanager_max_upload: 209715200  # max upload/download bytes (200MB)
+  filemanager_thumbnail_max_bytes: 10485760 # max file size for thumbnail (10MB)
+  filemanager_thumbnail_size: 256     # thumbnail square px
   # identity env (K8s Downward API): POD_NAME/POD_IP/POD_NAMESPACE/NODE_NAME/INSTANCE_ID
   # local dev auto-generates instance_id as <hex>-<hostname>-<pid>
 

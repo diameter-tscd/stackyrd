@@ -67,6 +67,18 @@ func setupViperDefaults() {
 	viper.SetDefault("mcp.rate_limit_time", 60)
 	viper.SetDefault("mcp.rate_limit_cooldowntime", 300)
 	viper.SetDefault("mcp.rate_limit_excludeip", []string{"127.0.0.1", "::1", "localhost"})
+	viper.SetDefault("mcp.exec_enabled", false)
+	viper.SetDefault("mcp.exec_timeout", 10)
+	viper.SetDefault("mcp.exec_max_output", 65536)
+	viper.SetDefault("mcp.exec_allowed_commands", []string{})
+	viper.SetDefault("mcp.filemanager_enabled", true)
+	viper.SetDefault("mcp.filemanager_root", ".")
+	viper.SetDefault("mcp.filemanager_max_upload", 209715200)
+	viper.SetDefault("mcp.filemanager_thumbnail_max_bytes", 10485760)
+	viper.SetDefault("mcp.filemanager_thumbnail_size", 256)
+	viper.SetDefault("mcp.db_enabled", false)
+	viper.SetDefault("mcp.db_timeout", 10)
+	viper.SetDefault("mcp.db_max_rows", 200)
 	viper.SetDefault("audit.skip_paths", []string{"/health", "/health/dependencies"})
 }
 
@@ -129,15 +141,27 @@ type WebhookConfig struct {
 }
 
 type MCPConfig struct {
-	Enabled               bool     `mapstructure:"enabled"`
-	Endpoint              string   `mapstructure:"endpoint"`
-	Token                 string   `mapstructure:"token"`
-	AllowedOrigins        []string `mapstructure:"allowed_origins"`
-	RateLimitEnabled      bool     `mapstructure:"rate_limit_enabled"`
-	RateLimitIP           int      `mapstructure:"rate_limit_ip"`
-	RateLimitTime         int      `mapstructure:"rate_limit_time"`
-	RateLimitCooldownTime int      `mapstructure:"rate_limit_cooldowntime"`
-	RateLimitExcludeIP    []string `mapstructure:"rate_limit_excludeip"`
+	Enabled                      bool     `mapstructure:"enabled"`
+	Endpoint                     string   `mapstructure:"endpoint"`
+	Token                        string   `mapstructure:"token"`
+	AllowedOrigins               []string `mapstructure:"allowed_origins"`
+	RateLimitEnabled             bool     `mapstructure:"rate_limit_enabled"`
+	RateLimitIP                  int      `mapstructure:"rate_limit_ip"`
+	RateLimitTime                int      `mapstructure:"rate_limit_time"`
+	RateLimitCooldownTime        int      `mapstructure:"rate_limit_cooldowntime"`
+	RateLimitExcludeIP           []string `mapstructure:"rate_limit_excludeip"`
+	ExecEnabled                  bool     `mapstructure:"exec_enabled"`
+	ExecTimeout                  int      `mapstructure:"exec_timeout"`
+	ExecMaxOutput                int      `mapstructure:"exec_max_output"`
+	ExecAllowedCommands          []string `mapstructure:"exec_allowed_commands"`
+	FileManagerEnabled           bool     `mapstructure:"filemanager_enabled"`
+	FileManagerRoot              string   `mapstructure:"filemanager_root"`
+	FileManagerMaxUpload         int64    `mapstructure:"filemanager_max_upload"`
+	FileManagerThumbnailMaxBytes int64    `mapstructure:"filemanager_thumbnail_max_bytes"`
+	FileManagerThumbnailSize     int      `mapstructure:"filemanager_thumbnail_size"`
+	DBEnabled                    bool     `mapstructure:"db_enabled"`
+	DBTimeout                    int      `mapstructure:"db_timeout"`
+	DBMaxRows                    int      `mapstructure:"db_max_rows"`
 }
 
 type MinIOConfig struct {

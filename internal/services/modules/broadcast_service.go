@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"stackyrd/config"
+	"stackyrd/pkg/infrastructure"
 	"stackyrd/pkg/interfaces"
 	"stackyrd/pkg/logger"
 	"stackyrd/pkg/registry"
@@ -152,6 +153,12 @@ func (s *BroadcastService) RegisterRoutes(g *echo.Group) {
 
 func (s *BroadcastService) streamEvents(c echo.Context) error {
 	streamID := c.Param("stream_id")
+	if streamID == "dashboard-logs" {
+		if !infrastructure.IsMCPAuthenticated(c) {
+			s.logger.Warn("Unauthorized dashboard-logs stream attempt", "ip", c.RealIP(), "path", c.Request().URL.Path)
+			return c.JSON(http.StatusUnauthorized, map[string]any{"error": "Unauthorized: valid MCP token required (Authorization: Bearer <token> or X-MCP-Token or ?token=<token>)"})
+		}
+	}
 	client := s.broadcaster.Subscribe(streamID)
 	defer s.broadcaster.Unsubscribe(client.ID)
 

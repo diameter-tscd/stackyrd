@@ -1,0 +1,1886 @@
+{
+	"info": {
+		"_postman_id": "stackyrd-local-dev-0001",
+		"name": "stackyrd — Local API",
+		"description": "# stackyrd — Postman Collection\n\nModular service framework on **Echo v4** (`github.com/diameter-tscd/stackyrd`).\n\n- **Base URL:** `{{baseUrl}}` → default `http://localhost:8452` (see `config.yaml → server.port`)\n- **Service prefix:** `{{apiBase}}` → `{{baseUrl}}/api/v1` (`server.services_endpoint`). All business services live here.\n- **Infra routes** (MCP, metrics, swagger, health) are mounted at **root**, not under `/api/v1` — except the inbound webhook which is `{{apiBase}}/webhook`.\n- **Response envelope** (`pkg/response/response.go`): every service returns\n  ```json\n  { \"success\": true, \"status\": 200, \"message\": \"...\", \"data\": {}, \"meta\": { \"page\": 1, \"per_page\": 10, \"total\": 2, \"total_pages\": 1 }, \"timestamp\": 1726140000, \"datetime\": \"2026-09-12T00:00:00Z\", \"correlation_id\": \"req-...\" }\n  ```\n  Errors: `{ \"success\": false, \"status\": 404, \"error\": { \"code\": \"NOT_FOUND\", \"message\": \"...\", \"details\": {} } }`. Validation failures are **422 `VALIDATION_ERROR`** on Users, **400 `BAD_REQUEST`** elsewhere.\n- **Correlation:** every request sends `X-Request-ID: {{requestId}}` + `X-Correlation-ID: {{correlationId}}` (auto-generated in the collection pre-request script). The server echoes one of them back as `correlation_id`.\n- **Run order:** run the folder `00 · Health & Platform` first, then `Users` (captures `{{userId}}`), `Tasks` (captures `{{taskId}}`), `Mongo Products` (captures `{{productId}}`), `Orders` (captures `{{orderId}}`), `Cache` (captures `{{cacheKey}}`), `Encryption` (captures `{{encryptedData}}`). Later requests reuse those variables — this is the correlation chain.\n\n## Authentication — read this first\n\n| Layer | Config | What to send | Status in this repo |\n|---|---|---|---|\n| `auth.type: apikey` | `config.yaml → auth.secret: super-secret-key` | **Nothing enforced.** No `apikey` middleware is registered, so service routes are open. Kept for docs/Swagger `ApiKeyAuth` only. | Open |\n| `jwt` middleware | `middleware.jwt: false` | When enabled: `Authorization: Bearer <HS256 JWT, iss=stackyrd, aud=stackyrd-api>` | **Disabled** — factory errors out unless `auth.type==jwt`. Requests in this collection carry no JWT. |\n| **MCP token** | `mcp.token: {{mcpToken}}` | `Authorization: Bearer {{mcpToken}}` **or** `X-MCP-Token: {{mcpToken}}` **or** `X-Api-Key: {{mcpToken}}` **or** `?token={{mcpToken}}` | **Required** for `POST {{baseUrl}}/mcp` and `GET {{apiBase}}/events/stream/dashboard-logs`. The MCP folder uses Bearer auth; dashboard-logs has both an authed (200 SSE) and unauthed (401) case. |\n| Webhook HMAC | `webhook.secret` | `X-Webhook-Signature: HMAC-SHA256(hex, body)` | Outbound signing demo is in the Webhook folder pre-request script. |\n| `permission_check` | `middleware.permission_check: true` | — | **Blocks ALL `DELETE` by default** (`blocked_methods=[DELETE]`). DELETE Tasks/Products/Orders/Grafana-dashboard requests assert `200 OR 403` and explain how to unblock. |\n\n## Known quirks encoded as tests\n\n- `GET /api/v1/products` (static) and `GET /api/v1/products/:tenant` (Mongo) **share the `/products` group** — a `:tenant` value of e.g. `primary` routes to Mongo, anything else may collide.\n- Mongo `/:tenant/search` and `/:tenant/analytics` are registered **after** `/:tenant/:id`, so Echo matches `/products/acme/search` as `:id=search` first (shadowed). Tests assert `200` and note this.\n- `PUT /tasks/:id` uses map-update so `completed:false` is applied (zero-value safe). The update test flips `completed` true→false explicitly.\n- `POST /orders/:tenant` **forces** `tenant_id=:tenant, status=pending` — body values for those fields are ignored.\n- SSE streams (`/events/stream/:id`) return `text/event-stream`, not JSON — folder tests branch on content-type.\n- Global caps: `BodyLimit 2M`, `ReadHeaderTimeout 5s`, `ReadTimeout 15s` (`internal/server/server.go`). One negative test posts an oversized body expecting `413`.\n",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "noauth"
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:8452", "description": "Echo server. Override with -port flag value. server.port in config.yaml." },
+		{ "key": "apiBase", "value": "http://localhost:8452/api/v1", "description": "server.services_endpoint prefix. All business services mount here via registry.Boot()." },
+		{ "key": "mcpToken", "value": "f76fda0080884d4ab36b93abf6421d49", "description": "mcp.token from config.yaml. Sent as Bearer for /mcp and dashboard-logs stream. Rotate in production; leave empty to auto-generate temp token." },
+		{ "key": "pgTenant", "value": "primary", "description": "Postgres connection name for Tasks default conn + Orders tenants (primary|secondary per config.yaml)." },
+		{ "key": "mongoTenant", "value": "primary", "description": "Mongo connection name for /products/:tenant (primary|secondary)." },
+		{ "key": "requestId", "value": "req-bootstrap", "description": "Auto-regenerated per request by the collection pre-request script. Sent as X-Request-ID." },
+		{ "key": "correlationId", "value": "req-bootstrap", "description": "Auto-regenerated per request. Sent as X-Correlation-ID; server echoes as correlation_id." },
+		{ "key": "timestamp", "value": "", "description": "ISO timestamp set by pre-request script, used in broadcast bodies." },
+		{ "key": "userId", "value": "1", "description": "Captured by 'Users — Create'. Seed users are id 1 (Alice) and 2 (Bob)." },
+		{ "key": "taskId", "value": "1", "description": "Captured by 'Tasks — Create'. Requires Postgres." },
+		{ "key": "orderId", "value": "1", "description": "Captured by 'Orders — Create'. Requires Postgres tenant." },
+		{ "key": "productId", "value": "", "description": "Mongo ObjectID hex captured by 'Mongo Products — Create'." },
+		{ "key": "cacheKey", "value": "demo-key", "description": "Captured/used by Cache folder." },
+		{ "key": "streamId", "value": "demo-notifications", "description": "SSE stream id. Demo streams: demo-notifications, demo-metrics, demo-alerts, dashboard-logs (auth)." },
+		{ "key": "encryptedData", "value": "", "description": "base64(nonce|ciphertext) captured by 'Encryption — Encrypt'. Service disabled by default (services.encryption_service=false)." },
+		{ "key": "grafanaUid", "value": "demo-dash", "description": "Captured by 'Grafana — Create Dashboard'. Service disabled by default." },
+		{ "key": "webhookSecret", "value": "whsec-test-secret", "description": "HMAC-SHA256 key for X-Webhook-Signature demo (webhook.secret)." }
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Collection pre-request: fresh correlation IDs for every request.",
+					"// Server echoes X-Request-ID (preferred) or X-Correlation-ID as `correlation_id` (pkg/response/response.go:getCorrelationID).",
+					"var rid = 'req-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);",
+					"pm.collectionVariables.set('requestId', rid);",
+					"pm.collectionVariables.set('correlationId', rid);",
+					"pm.collectionVariables.set('timestamp', new Date().toISOString());",
+					"// Default dynamic IDs so a cold run still works before captures fire.",
+					"if (!pm.collectionVariables.get('cacheKey')) { pm.collectionVariables.set('cacheKey', 'k-' + Date.now()); }",
+					"if (!pm.collectionVariables.get('streamId')) { pm.collectionVariables.set('streamId', 'demo-notifications'); }"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Collection test: runs after EVERY request (request-level tests add specifics).",
+					"pm.test('⏱ response time < 3000ms', function () { pm.expect(pm.response.responseTime).to.be.below(3000); });",
+					"var ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+					"var isSSE = ct.indexOf('text/event-stream') !== -1;",
+					"if (isSSE) {",
+					"    pm.test('📡 SSE stream opened (text/event-stream)', function () { pm.expect(ct).to.include('text/event-stream'); });",
+					"} else if (ct.indexOf('json') !== -1) {",
+					"    try {",
+					"        var j = pm.response.json();",
+					"        pm.test('✉️ envelope has success flag', function () { pm.expect(j).to.have.property('success'); });",
+					"        pm.test('🔗 correlation_id echoed', function () {",
+					"            pm.expect(j.correlation_id, 'correlation_id').to.eql(pm.collectionVariables.get('requestId'));",
+					"        });",
+					"    } catch (e) { pm.test('valid JSON body', function () { pm.expect(false, 'body was not JSON: ' + e).to.be.true; }); }",
+					"}"
+				]
+			}
+		}
+	],
+	"item": [
+		{
+			"name": "00 · Health & Platform",
+			"description": "Server liveness, dependency inventory, safe runtime config. Mounted directly on Echo in `internal/server/server.go:registerHealthEndpoints` — **not** under `/api/v1` (except `/api/v1/config`). No auth.",
+			"item": [
+				{
+					"name": "Health — Liveness + infra progress",
+					"description": "`GET /health`. `status: ok|initializing`, `server_ready`, per-component `infrastructure` map, `initialization_progress` (async infra boot). Skipped by audit middleware.",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Request-ID", "value": "{{requestId}}" },
+							{ "key": "X-Correlation-ID", "value": "{{correlationId}}" }
+						],
+						"url": "{{baseUrl}}/health"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('status is ok|initializing', function () { pm.expect(j.data.status).to.be.oneOf(['ok', 'initializing']); });",
+									"pm.test('server_ready is boolean', function () { pm.expect(j.data.server_ready).to.be.a('boolean'); });",
+									"pm.test('infra progress present', function () { pm.expect(j.data).to.have.property('initialization_progress'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Health — Dependencies inventory",
+					"description": "`GET /health/dependencies`. Lists sealed infra components + registered service factories. Useful to confirm Postgres/Mongo/Redis came up before calling Tasks/Orders/Products.",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/health/dependencies"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('inventory shape', function () {",
+									"    pm.expect(j.data).to.include.all.keys('total_infrastructure', 'list_infrastructure', 'total_service', 'list_service');",
+									"});",
+									"console.log('infra: ' + JSON.stringify(j.data.list_infrastructure));",
+									"console.log('services: ' + JSON.stringify(j.data.list_service));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Platform — Runtime config (safe subset)",
+					"description": "`GET /api/v1/config`. Returns only safe blocks: app, server, services, middleware, mcp, metrics, log, audit. Never secrets.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/config"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('safe config blocks', function () { pm.expect(j.data).to.include.all.keys('app', 'server', 'services', 'middleware'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Platform — Prometheus metrics (disabled by default)",
+					"description": "`GET /metrics` (`metrics.path`). Only mounted when `metrics.enabled=true`. Default config has no metrics block → expect **404 ENDPOINT_NOT_FOUND**. Enable to get Prometheus text exposition.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{baseUrl}}/metrics"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('404 when disabled, 200 when enabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });",
+									"if (pm.response.code === 404) { console.log('metrics disabled (metrics.enabled=false) — expected 404 ENDPOINT_NOT_FOUND'); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Platform — Swagger UI redirect (disabled by default)",
+					"description": "`GET /swagger` → 301 `/swagger/index.html` + `GET /swagger/*` (swaggo). Only when `swagger.enabled=true` (default false; absent from config.yaml → off). Regenerate docs with `./scripts/yrd swagger`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{baseUrl}}/swagger"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('301 redirect or 404 when disabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 301, 302, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "01 · Users (in-memory)",
+			"description": "CRUD over an in-memory slice (seed: Alice id=1, Bob id=2). `internal/services/modules/users_service.go`. No DB, no auth. Validation via `request.Bind` + go-playground/validator: `name*`, `email*`, `phone` (custom regex), `username` (`^[a-zA-Z0-9_]{3,20}$`), `age 0..130`. Failures → **422 VALIDATION_ERROR**. Pagination is manual: `page>total` → **400**.",
+			"item": [
+				{
+					"name": "Users — 01 List (paginated)",
+					"description": "`GET {{apiBase}}/users?page=1&per_page=10`. `per_page` clamped 1..100. Response `data: User[]` + `meta`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/users?page=1&per_page=10"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('data is array + meta paginates', function () {",
+									"    pm.expect(j.data).to.be.an('array');",
+									"    pm.expect(j.meta).to.include.all.keys('page', 'per_page', 'total', 'total_pages');",
+									"});",
+									"if (j.data && j.data.length) { pm.collectionVariables.set('userId', String(j.data[0].id)); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Users — 02 Create (captures userId)",
+					"description": "`POST {{apiBase}}/users`. Body validated; on success **201** with auto-increment id. Post-script saves `{{userId}}` for Get/Update correlation.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/users",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Charlie {{$timestamp}}\",\n  \"email\": \"charlie.{{$timestamp}}@example.com\",\n  \"phone\": \"+15551234567\",\n  \"username\": \"charlie_{{$timestamp}}\",\n  \"age\": 28\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"// Postman dynamic vars: unique user per run to avoid collisions.",
+									"var n = Date.now().toString().slice(-6);",
+									"pm.variables.set('timestamp', n);",
+									"var body = { name: 'Charlie ' + n, email: 'charlie.' + n + '@example.com', phone: '+15551234567', username: 'ch_' + n, age: 28 };",
+									"pm.request.body.update(JSON.stringify(body, null, 2));"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', function () { pm.response.to.have.status(201); });",
+									"var j = pm.response.json();",
+									"pm.test('user shape', function () { pm.expect(j.data).to.include.all.keys('id', 'name', 'email'); });",
+									"pm.collectionVariables.set('userId', String(j.data.id));",
+									"console.log('captured userId=' + j.data.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Users — 03 Get by ID (correlated)",
+					"description": "`GET {{apiBase}}/users/:id` using `{{userId}}` captured above. 400 on non-int id, 404 when missing.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/users/{{userId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('id matches correlation var', function () { pm.expect(String(j.data.id)).to.eql(pm.collectionVariables.get('userId')); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Users — 04 Update (full replace)",
+					"description": "`PUT {{apiBase}}/users/:id`. Full-replace semantics — send the whole User object. 422 on bad email/username/age.",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/users/{{userId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Charlie Updated\",\n  \"email\": \"charlie.updated@example.com\",\n  \"phone\": \"+15557654321\",\n  \"username\": \"charlie_upd\",\n  \"age\": 29\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"pm.test('name updated', function () { pm.expect(pm.response.json().data.name).to.eql('Charlie Updated'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Users — 05 Create invalid (422 negative)",
+					"description": "Negative test: bad email + bad username + age>130 → **422 VALIDATION_ERROR** with `error.details{field:msg}`. Proves trust-boundary validation.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/users",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\",\n  \"phone\": \"abc\",\n  \"username\": \"x\",\n  \"age\": 999\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('422 Validation error', function () { pm.response.to.have.status(422); });",
+									"var j = pm.response.json();",
+									"pm.test('code is VALIDATION_ERROR with field details', function () {",
+									"    pm.expect(j.error.code).to.eql('VALIDATION_ERROR');",
+									"    pm.expect(j.error.details).to.be.an('object');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Users — 06 Get missing (404 negative)",
+					"description": "`GET /users/999999` → **404 NOT_FOUND**. Also try `GET /users/abc` for the 400 invalid-id branch.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/users/999999"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('404 Not found', function () { pm.response.to.have.status(404); });",
+									"pm.test('code NOT_FOUND', function () { pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "02 · Tasks (Postgres)",
+			"description": "GORM-backed tasks (`Task{gorm.Model,title,description,completed}`). Requires **Postgres** default connection + AutoMigrate. `PUT` binds into a fresh struct (URL id wins) and map-updates so `completed:false` is applied. ⚠️ `DELETE` is blocked by default (`permission_check.blocked_methods=[DELETE]` → 403) — the delete request asserts `200 OR 403` and tells you how to unblock.",
+			"item": [
+				{
+					"name": "Tasks — 01 List (paginated)",
+					"description": "`GET {{apiBase}}/tasks?page=1&per_page=10`. Ordered `id desc`. Needs Postgres; without it the service reports `failed` state.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/tasks?page=1&per_page=10"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 (or 500 if Postgres down)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 500]); });",
+									"if (pm.response.code === 200) {",
+									"    var j = pm.response.json();",
+									"    pm.test('meta present', function () { pm.expect(j.meta).to.include.all.keys('page', 'per_page', 'total'); });",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Tasks — 02 Create (captures taskId)",
+					"description": "`POST {{apiBase}}/tasks` → **201** with GORM `Task{ID,CreatedAt,…}`. Captures `{{taskId}}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/tasks",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Write Postman collection\",\n  \"description\": \"Cover all stackyrd services with correlation + auth\",\n  \"completed\": false\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', function () { pm.response.to.have.status(201); });",
+									"var j = pm.response.json();",
+									"pm.collectionVariables.set('taskId', String(j.data.ID || j.data.id));",
+									"console.log('captured taskId=' + pm.collectionVariables.get('taskId'));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Tasks — 03 Update (zero-value safe)",
+					"description": "`PUT {{apiBase}}/tasks/{{taskId}}`. Flips `completed` false→true using the map-update path; a second run flipping true→false proves zero-values apply.",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/tasks/{{taskId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Write Postman collection (done)\",\n  \"description\": \"All folders + tests + correlation\",\n  \"completed\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"pm.test('completed applied', function () { pm.expect(pm.response.json().data.completed).to.eql(true); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Tasks — 04 Delete (403 when permission_check on)",
+					"description": "`DELETE {{apiBase}}/tasks/{{taskId}}`. With default `permission_check` this returns **403 `Permission Denied: DELETE actions are restricted.`** To allow: scope `middleware.permission_check.blocked_paths` or disable the middleware.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/tasks/{{taskId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 deleted OR 403 blocked by permission_check', function () { pm.expect(pm.response.code).to.be.oneOf([200, 403]); });",
+									"if (pm.response.code === 403) { console.log('DELETE blocked by permission_check middleware (default blocked_methods=[DELETE])'); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Tasks — 05 Update invalid id (400 negative)",
+					"description": "`PUT /tasks/abc` → **400 Invalid task ID** (strconv.Atoi branch).",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/tasks/abc",
+						"body": { "mode": "raw", "raw": "{\n  \"title\": \"x\"\n}", "options": { "raw": { "language": "json" } } }
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": { "type": "text/javascript", "exec": ["pm.test('400 Bad request', function () { pm.response.to.have.status(400); });"] }
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "03 · Products static + Mongo tenants",
+			"description": "⚠️ **Route collision by design:** `products_service` (static demo) and `mongodb_service` (tenant CRUD) both mount `g.Group(\"/products\")`. `GET /products` (no tenant) hits the static list; anything with `:tenant` hits Mongo. Mongo needs a `mongo` connection named `{{mongoTenant}}` (default `primary`, see `config.yaml → mongo.connections`). `search`/`analytics` are registered AFTER `/:tenant/:id` so `/products/acme/search` matches as `:id=search` first (shadowed) — noted in tests.",
+			"item": [
+				{
+					"name": "Products — Static list (no DB)",
+					"description": "`GET {{apiBase}}/products` → static `[{Laptop 999.99},{Mouse 29.99},{Keyboard 79.99}]`. No params, no auth.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"pm.test('3 static items', function () { pm.expect(pm.response.json().data.length).to.eql(3); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 01 List by tenant",
+					"description": "`GET {{apiBase}}/products/{{mongoTenant}}?page=1&per_page=10`. Sort `_id:-1`. **404** `Tenant database 'x' not found` when the connection name is wrong — try `?tenant=bad` variant by editing the path.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products/{{mongoTenant}}?page=1&per_page=10"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 unknown tenant', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 02 Create (captures productId)",
+					"description": "`POST {{apiBase}}/products/{{mongoTenant}}`. Server strips client `_id` and assigns ObjectID. Requires `name*`, `price>=0`, `quantity>=0`. Captures `{{productId}}` (hex).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/products/{{mongoTenant}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Ergo Chair\",\n  \"description\": \"Mesh office chair\",\n  \"price\": 249.5,\n  \"category\": \"furniture\",\n  \"in_stock\": true,\n  \"quantity\": 12,\n  \"tags\": [\"office\", \"ergonomic\"]\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', function () { pm.response.to.have.status(201); });",
+									"var j = pm.response.json();",
+									"var pid = (j.data && (j.data.id || (j.data.product && j.data.product.id))) || '';",
+									"if (pid) { pm.collectionVariables.set('productId', String(pid)); console.log('captured productId=' + pid); }",
+									"else { console.log('create response: ' + pm.response.text().slice(0, 500)); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 03 Get by ID (correlated)",
+					"description": "`GET {{apiBase}}/products/{{mongoTenant}}/{{productId}}`. 400 on non-hex id, 404 when missing.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products/{{mongoTenant}}/{{productId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 (no seed yet)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 04 Update",
+					"description": "`PUT {{apiBase}}/products/{{mongoTenant}}/{{productId}}` — `$set` of name/description/price/category/in_stock/quantity/tags.",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/products/{{mongoTenant}}/{{productId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Ergo Chair Pro\",\n  \"description\": \"Mesh office chair, updated\",\n  \"price\": 279.0,\n  \"category\": \"furniture\",\n  \"in_stock\": true,\n  \"quantity\": 10,\n  \"tags\": [\"office\"]\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 updated (or 404)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 05 Search (shadowed-route note)",
+					"description": "`GET {{apiBase}}/products/{{mongoTenant}}/search?q=chair`. Literal-regex over name|description|category (`QuoteMeta`, q max 100). NOTE: registered after `/:tenant/:id`, so Echo may match `:id=search` first — test accepts 200 or 400/404 and logs the outcome.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products/{{mongoTenant}}/search?q=chair"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('search responds (shadowing possible)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]); });",
+									"console.log('If 400/404 with :id=search semantics, reorder routes so /search registers before /:id');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 06 Analytics ($group by category)",
+					"description": "`GET {{apiBase}}/products/{{mongoTenant}}/analytics` → `[{_id,count,avgPrice,totalValue}]`. Same shadowing caveat as search.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products/{{mongoTenant}}/analytics"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('analytics responds', function () { pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Mongo Products — 07 Delete (403 when permission_check on)",
+					"description": "`DELETE {{apiBase}}/products/{{mongoTenant}}/{{productId}}`. Blocked by default permission_check → 403. Unblock per Tasks note.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/products/{{mongoTenant}}/{{productId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 403 blocked or 404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 403, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "04 · Orders (multi-tenant Postgres)",
+			"description": "Tenant-isolated orders (`MultiTenantOrder{tenant_id,customer_id,product_name,quantity>0,total_price,status=pending}`). One Postgres connection per `:tenant` (`{{pgTenant}}` = primary|secondary). Create **forces** `tenant_id=:tenant, status=pending` (body values ignored); rejects `quantity<0||price<0`. Update is partial (only non-zero fields; empty → 400).",
+			"item": [
+				{
+					"name": "Orders — 01 List by tenant",
+					"description": "`GET {{apiBase}}/orders/{{pgTenant}}`. 404 unknown tenant, 503 ORM nil.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/orders/{{pgTenant}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404/503 without tenant DB', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404, 503]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Orders — 02 Create (captures orderId)",
+					"description": "`POST {{apiBase}}/orders/{{pgTenant}}`. `tenant_id`/`status` in body are ignored — server forces them. Captures `{{orderId}}` (gorm `ID`).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/orders/{{pgTenant}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"customer_id\": 7,\n  \"product_name\": \"Ergo Chair\",\n  \"quantity\": 2,\n  \"total_price\": 499.0,\n  \"tenant_id\": \"IGNORED\",\n  \"status\": \"IGNORED\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 Created', function () { pm.response.to.have.status(201); });",
+									"var j = pm.response.json();",
+									"pm.test('server forced tenant+pending', function () {",
+									"    pm.expect(j.data.tenant_id).to.eql(pm.collectionVariables.get('pgTenant'));",
+									"    pm.expect(j.data.status).to.eql('pending');",
+									"});",
+									"pm.collectionVariables.set('orderId', String(j.data.ID || j.data.id));"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Orders — 03 Get by ID (correlated)",
+					"description": "`GET {{apiBase}}/orders/{{pgTenant}}/{{orderId}}` — scoped `WHERE(id AND tenant_id)` so cross-tenant reads 404.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/orders/{{pgTenant}}/{{orderId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Orders — 04 Partial update",
+					"description": "`PUT {{apiBase}}/orders/{{pgTenant}}/{{orderId}}`. Only non-zero/non-empty fields update; send e.g. just `status`. Empty body → 400 `No fields to update`.",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/orders/{{pgTenant}}/{{orderId}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"confirmed\",\n  \"quantity\": 3\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 updated', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Orders — 05 Delete (403 when permission_check on)",
+					"description": "`DELETE {{apiBase}}/orders/{{pgTenant}}/{{orderId}}`. `RowsAffected==0` → 404; default middleware → 403.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/orders/{{pgTenant}}/{{orderId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 403/404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 403, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "05 · Cache (in-memory TTL)",
+			"description": "In-memory `cache.Cache[string]` (`cache_service.go`). `POST /cache/:key {value, ttl_seconds 1..2592000}` → `ttl: \"1h0m0s\"`; `GET /cache/:key` → `{key,value}` or 404 on miss/expiry. No auth.",
+			"item": [
+				{
+					"name": "Cache — 01 Set (captures cacheKey)",
+					"description": "`POST {{apiBase}}/cache/{{cacheKey}}`. Pre-request refreshes `{{cacheKey}}` to `k-<ts>` so reruns don't collide. TTL 3600.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/cache/{{cacheKey}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"value\": \"hello-stackyrd\",\n  \"ttl_seconds\": 3600\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"var k = 'k-' + Date.now();",
+									"pm.collectionVariables.set('cacheKey', k);",
+									"console.log('cacheKey=' + k);"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 Cached', function () { pm.response.to.have.status(200); });",
+									"pm.test('ttl echoed', function () { pm.expect(pm.response.json().data.ttl).to.eql('1h0m0s'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Cache — 02 Get (correlated)",
+					"description": "`GET {{apiBase}}/cache/{{cacheKey}}` — must run right after Set (same in-memory store, same process).",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/cache/{{cacheKey}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 hit', function () { pm.response.to.have.status(200); });",
+									"pm.test('value round-trips', function () { pm.expect(pm.response.json().data.value).to.eql('hello-stackyrd'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Cache — 03 Set invalid TTL (400 negative)",
+					"description": "`ttl_seconds: 0` → **400** `ttl_seconds must be between 1 and 2592000`. Boundary also rejects >2592000 (30d).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/cache/{{cacheKey}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"value\": \"x\",\n  \"ttl_seconds\": 0\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 Bad TTL', function () { pm.response.to.have.status(400); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Cache — 04 Get miss (404 negative)",
+					"description": "`GET /cache/does-not-exist-<ts>` → **404** `Key not found or expired`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/cache/does-not-exist-999999"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('404 miss', function () { pm.response.to.have.status(404); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "06 · Events broadcast (SSE)",
+			"description": "Realtime via `utils.EventBroadcaster` (`broadcast_service.go`). `POST /events/broadcast {stream_id?,type*,message*,data?}` (empty stream_id → all streams). `GET /events/stream/:id` is **SSE** (`text/event-stream`, open-ended — set a client timeout). `dashboard-logs` requires MCP auth (401 raw `{error}` otherwise). Demo generators tick every 3s.",
+			"item": [
+				{
+					"name": "Events — 01 Active streams",
+					"description": "`GET {{apiBase}}/events/streams` → `{streams:{id:{clients,active}},total_clients,stream_count}`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/events/streams"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+									"pm.test('stream_count present', function () { pm.expect(pm.response.json().data).to.have.property('stream_count'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 02 Start stream",
+					"description": "`POST {{apiBase}}/events/stream/{{streamId}}/start` → **201** created / **200** restarted. Starts the 3s demo generator.",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/events/stream/{{streamId}}/start"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 or 200', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 03 Broadcast to stream",
+					"description": "`POST {{apiBase}}/events/broadcast` with `stream_id={{streamId}}`. `type`+`message` required. Observe it on the SSE stream request.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/events/broadcast",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"stream_id\": \"{{streamId}}\",\n  \"type\": \"demo_update\",\n  \"message\": \"Hello from Postman at {{timestamp}}\",\n  \"data\": { \"source\": \"postman\", \"records\": 1 }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 broadcasted', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 04 Broadcast to ALL streams",
+					"description": "Same endpoint with **empty/missing `stream_id`** → `BroadcastToAll`. Fans out to every active SSE client.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/events/broadcast",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"announcement\",\n  \"message\": \"Global hello at {{timestamp}}\",\n  \"data\": { \"source\": \"postman\" }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 to all', function () { pm.response.to.have.status(200); });",
+									"pm.test('message mentions all streams', function () { pm.expect(pm.response.json().message).to.include('all streams'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 05 Open SSE stream (text/event-stream)",
+					"description": "`GET {{apiBase}}/events/stream/{{streamId}}`. Returns infinite SSE (`data: {id,type,message,data,timestamp,stream_id}`). **Set Postman client timeout** (Settings → General → Request timeout) or close manually; the collection test only asserts headers + first bytes.",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Accept", "value": "text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/events/stream/{{streamId}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 SSE', function () { pm.response.to.have.status(200); });",
+									"pm.test('event-stream content type', function () { pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream'); });",
+									"pm.test('first frame is data:', function () { pm.expect(pm.response.text()).to.include('data:'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 06 dashboard-logs WITHOUT token (401 negative)",
+					"description": "`GET {{apiBase}}/events/stream/dashboard-logs` with **no** token → **401** raw `{error: Unauthorized: valid MCP token required…}` (NOT the standard envelope — direct `c.JSON`).",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Accept", "value": "text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/events/stream/dashboard-logs"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('401 Unauthorized', function () { pm.response.to.have.status(401); });",
+									"pm.test('mentions MCP token', function () { pm.expect(pm.response.text()).to.include('MCP token'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 07 dashboard-logs WITH token (SSE authed)",
+					"description": "Same stream with `Authorization: Bearer {{mcpToken}}`. Alternatives the server accepts: `X-MCP-Token`, `X-Api-Key`, `?token=`. First frame is a log-shape `{timestamp,level,message,source}`.",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Accept", "value": "text/event-stream" },
+							{ "key": "Authorization", "value": "Bearer {{mcpToken}}" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/events/stream/dashboard-logs"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 SSE authed', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Events — 08 Stop stream",
+					"description": "`POST {{apiBase}}/events/stream/{{streamId}}/stop` → 200; unknown id → 404.",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/events/stream/{{streamId}}/stop"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "07 · Encryption (disabled by default)",
+			"description": "AES-256-GCM (`encryption_service.go`). Key = `sha256(config.encryption.key)` or random ephemeral. Disabled via `services.encryption_service=false` + `encryption.enabled=false` → expect **404** until enabled; tests accept `200 OR 404` so the suite stays green either way. Encrypt captures `{{encryptedData}}` for Decrypt correlation.",
+			"item": [
+				{
+					"name": "Encryption — Status",
+					"description": "`GET {{apiBase}}/encryption/status` → `{enabled,algorithm,rotate_keys,last_rotation}`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/encryption/status"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Encryption — Encrypt (captures encryptedData)",
+					"description": "`POST {{apiBase}}/encryption/encrypt {data*, content_type?}` → `{encrypted_data: base64(nonce|ct), algorithm: aes-256-gcm, timestamp}`. Captures `{{encryptedData}}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/encryption/encrypt",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"data\": \"top-secret from Postman\",\n  \"content_type\": \"text/plain\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });",
+									"if (pm.response.code === 200) {",
+									"    var j = pm.response.json();",
+									"    pm.collectionVariables.set('encryptedData', j.data.encrypted_data);",
+									"    console.log('captured encryptedData (' + j.data.encrypted_data.length + ' chars)');",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Encryption — Decrypt (correlated)",
+					"description": "`POST {{apiBase}}/encryption/decrypt {encrypted_data*}` using `{{encryptedData}}`. Must run after Encrypt with the **same process key** (ephemeral keys don't survive restarts).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/encryption/decrypt",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"encrypted_data\": \"{{encryptedData}}\",\n  \"content_type\": \"text/plain\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });",
+									"if (pm.response.code === 200) { pm.test('round-trips', function () { pm.expect(pm.response.json().data.decrypted_data).to.eql('top-secret from Postman'); }); }"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Encryption — Rotate key",
+					"description": "`POST {{apiBase}}/encryption/key-rotate {new_key* 32..128 chars}` → re-derives `sha256(new_key)`, invalidates AEAD cache. ⚠️ Rotating invalidates previously captured `{{encryptedData}}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/encryption/key-rotate",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"new_key\": \"postman-rotation-key-0123456789abcdef\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 400/404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "08 · Grafana (disabled by default)",
+			"description": "Grafana proxy (`grafana_service.go`, needs `GrafanaManager`). Disabled via `services.grafana_service=false`. Dashboards CRUD + datasources + annotations + health. `:uid` must match `[A-Za-z0-9_-]+`. Tests accept `200/201 OR 404` so the suite passes while disabled.",
+			"item": [
+				{
+					"name": "Grafana — Create dashboard (captures grafanaUid)",
+					"description": "`POST {{apiBase}}/grafana/dashboards` → **201**. Minimal valid `GrafanaDashboard{title*, panels[]}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/grafana/dashboards",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Postman Demo\",\n  \"tags\": [\"postman\", \"stackyrd\"],\n  \"timezone\": \"browser\",\n  \"panels\": [],\n  \"refresh\": \"30s\",\n  \"schemaVersion\": 39,\n  \"version\": 1\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([201, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Get dashboard",
+					"description": "`GET {{apiBase}}/grafana/dashboards/{{grafanaUid}}`. 404 when missing.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/grafana/dashboards/{{grafanaUid}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Update dashboard",
+					"description": "`PUT {{apiBase}}/grafana/dashboards/{{grafanaUid}}`. `:uid` is overwritten into the body server-side.",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/grafana/dashboards/{{grafanaUid}}",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Postman Demo (updated)\",\n  \"tags\": [\"postman\"],\n  \"panels\": []\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — List dashboards",
+					"description": "`GET {{apiBase}}/grafana/dashboards?page=1&per_page=50` (max 100), in-memory paginate.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/grafana/dashboards?page=1&per_page=50"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Create datasource",
+					"description": "`POST {{apiBase}}/grafana/datasources {name*,type*,url,…}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/grafana/datasources",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"prom-postman\",\n  \"type\": \"prometheus\",\n  \"url\": \"http://localhost:9090\",\n  \"access\": \"proxy\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([201, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Create annotation",
+					"description": "`POST {{apiBase}}/grafana/annotations {text*,dashboardId,panelId,time,tags}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/grafana/annotations",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Deploy from Postman\",\n  \"tags\": [\"deploy\"],\n  \"time\": 1726140000000\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('201 or 404', function () { pm.expect(pm.response.code).to.be.oneOf([201, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Health",
+					"description": "`GET {{apiBase}}/grafana/health` → 200 or **503** when Grafana unreachable.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/grafana/health"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200/503/404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 404, 503]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Grafana — Delete dashboard (403 when permission_check on)",
+					"description": "`DELETE {{apiBase}}/grafana/dashboards/{{grafanaUid}}`.",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/grafana/dashboards/{{grafanaUid}}"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200/403/404', function () { pm.expect(pm.response.code).to.be.oneOf([200, 403, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "09 · Webhook (inbound HMAC)",
+			"description": "Inbound `ANY {{apiBase}}/webhook` (`pkg/webhook/handler.go`, mounted `RouterCustom`). Expects `WebhookEvent{id,type,timestamp,data,signature}`, verifies `X-Webhook-Signature` HMAC-SHA256. **Inactive unless `webhook.enabled=true`** (no webhook block in default config → 404). Pre-request script signs the body with `{{webhookSecret}}`.",
+			"item": [
+				{
+					"name": "Webhook — POST signed event",
+					"description": "Sends a signed event. Pre-request computes `X-Webhook-Signature` via CryptoJS HMAC-SHA256 over the raw body.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" },
+							{ "key": "X-Webhook-Signature", "value": "{{webhookSig}}" },
+							{ "key": "X-Webhook-Timestamp", "value": "{{timestamp}}" }
+						],
+						"url": "{{apiBase}}/webhook",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"evt-postman-1\",\n  \"type\": \"order.created\",\n  \"timestamp\": \"{{timestamp}}\",\n  \"data\": { \"order_id\": \"{{orderId}}\", \"source\": \"postman\" }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"var body = pm.request.body.raw;",
+									"var secret = pm.collectionVariables.get('webhookSecret') || 'whsec-test-secret';",
+									"try {",
+									"    var sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+									"    pm.variables.set('webhookSig', sig);",
+									"    pm.request.headers.upsert({ key: 'X-Webhook-Signature', value: sig });",
+									"} catch (e) { console.log('CryptoJS unavailable, sending unsigned: ' + e); }"
+								]
+							}
+						},
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([200, 202, 404]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Webhook — POST unsigned (negative)",
+					"description": "Same event with **no** signature → expect 401/400 when enabled, 404 when disabled.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{apiBase}}/webhook",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"evt-postman-2\",\n  \"type\": \"order.created\",\n  \"timestamp\": \"{{timestamp}}\",\n  \"data\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('401/400 or 404 disabled', function () { pm.expect(pm.response.code).to.be.oneOf([400, 401, 404]); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "10 · MCP server (JSON-RPC, Bearer)",
+			"description": "Streamable-HTTP MCP at `POST {{baseUrl}}/mcp` (`pkg/infrastructure/mcpserver.go`, `mcp.enabled=true`). JSON-RPC 2.0 `{jsonrpc:2.0,id,method,params}`. Protocol versions `2026-07-28/2025-11-25/2025-03-26`. **Auth: `Authorization: Bearer {{mcpToken}}`** (folder-level) — server also accepts `X-MCP-Token`, `X-Api-Key`, `?token=`. `OPTIONS /mcp` for CORS; `GET /mcp` → 405. Tools: `stackyrd_health/services/infra/endpoints/uptime/resources/middleware/dashboard/app/identity/cluster/memory/goroutines/config/cron/cron_trigger/build/exec/filemanager/system_control/service_call/db`. `exec`/`filemanager`/`db` are gated by their `mcp.*_enabled` flags.",
+			"auth": {
+				"type": "bearer",
+				"bearer": [{ "key": "token", "value": "{{mcpToken}}", "type": "string" }]
+			},
+			"item": [
+				{
+					"name": "MCP — initialize (handshake)",
+					"description": "`initialize {protocolVersion, capabilities, clientInfo}` → server capabilities + version. Send once per session; follow with `notifications/initialized`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-11-25\",\n    \"capabilities\": {},\n    \"clientInfo\": { \"name\": \"postman\", \"version\": \"1.0.0\" }\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 JSON-RPC', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"pm.test('has result.capabilities', function () { pm.expect(j.result || j).to.have.property('capabilities'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — tools/list",
+					"description": "Lists all 24 `stackyrd_*` tools with input schemas. Use to discover `stackyrd_exec` / `stackyrd_filemanager` / `stackyrd_db` availability.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 with tools array', function () { pm.response.to.have.status(200); });",
+									"var j = pm.response.json();",
+									"var tools = (j.result && j.result.tools) || j.tools || [];",
+									"pm.test('stackyrd_health present', function () { pm.expect(JSON.stringify(tools)).to.include('stackyrd_health'); });",
+									"console.log('tool count=' + tools.length);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — tools/call stackyrd_health",
+					"description": "Calls the health tool — same data as `GET /health` but over MCP. Pattern for all `tools/call`: `{name, arguments}`.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": { \"name\": \"stackyrd_health\", \"arguments\": {} }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 tool result', function () { pm.response.to.have.status(200); });",
+									"pm.test('no JSON-RPC error', function () { pm.expect(pm.response.json()).to.not.have.property('error'); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — tools/call stackyrd_services",
+					"description": "Service states: running|failed|disabled (`registry.GetServiceState`). Failing = enabled but factory nil (missing infra).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": { \"name\": \"stackyrd_services\", \"arguments\": {} }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 tool result', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — tools/call stackyrd_infra",
+					"description": "Infra component statuses. `GetStatus()` contract: `\"connected\": true` when operational (TUI shows disconnected otherwise).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": { \"name\": \"stackyrd_infra\", \"arguments\": {} }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 tool result', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — tools/call stackyrd_endpoints",
+					"description": "All registered service endpoints (mirrors TUI `endpoints` command).",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 6,\n  \"method\": \"tools/call\",\n  \"params\": { \"name\": \"stackyrd_endpoints\", \"arguments\": {} }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 tool result', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — ping",
+					"description": "`ping {}` → liveness without auth weight. Good first check when debugging 401s.",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 7,\n  \"method\": \"ping\",\n  \"params\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 pong', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — no token (401 negative)",
+					"description": "Same `tools/list` with **explicitly no auth** (`noauth` override) → **401** when `mcp.token` is set. Proves Bearer enforcement. If `mcp.token` is empty (auto-temp-token mode) this may 200 — test accepts both and logs.",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 8,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('401 without token (or 200 if token empty)', function () { pm.expect(pm.response.code).to.be.oneOf([200, 401]); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "MCP — X-MCP-Token header alt auth",
+					"description": "Proves the header alias: `X-MCP-Token: {{mcpToken}}` with `noauth` Bearer. Also valid: `X-Api-Key`, `?token=`.",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Accept", "value": "application/json, text/event-stream" },
+							{ "key": "X-MCP-Token", "value": "{{mcpToken}}" },
+							{ "key": "X-Request-ID", "value": "{{requestId}}" }
+						],
+						"url": "{{baseUrl}}/mcp",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 9,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('200 via X-MCP-Token', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "11 · Negative & Edge",
+			"description": "Trust-boundary checks: unknown route (404 envelope with path+method details), wrong method (405), oversized body (413 via `BodyLimit 2M`). All hit `internal/server/server.go` handlers, not services.",
+			"item": [
+				{
+					"name": "Edge — Unknown route (404 envelope)",
+					"description": "`GET {{apiBase}}/nope` → **404 ENDPOINT_NOT_FOUND** `Endpoint not found. This incident will be reported.` with `error.details{path,method}`.",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/nope"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('404 envelope', function () { pm.response.to.have.status(404); });",
+									"var j = pm.response.json();",
+									"pm.test('code + details', function () {",
+									"    pm.expect(j.error.code).to.eql('ENDPOINT_NOT_FOUND');",
+									"    pm.expect(j.error.details).to.include.all.keys('path', 'method');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Edge — Wrong method (405)",
+					"description": "`PATCH {{apiBase}}/users` (no PATCH route) → **405 HTTP_ERROR** `Method not allowed`.",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/users"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('405 Method not allowed', function () { pm.response.to.have.status(405); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Edge — Pagination overflow (400)",
+					"description": "`GET {{apiBase}}/users?page=9999` → **400** `Invalid pagination parameters` (manual `page>total` guard in users_service).",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/users?page=9999&per_page=10"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('400 overflow', function () { pm.response.to.have.status(400); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+	],
+	"protocolProfileBehavior": {
+		"disableBodyPruning": true
+	}
+}

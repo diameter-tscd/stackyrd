@@ -128,6 +128,163 @@ func TestHandler_NotificationNoContent(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, rec.Code)
 }
 
+func TestHandler_ToolsList_ContainsServiceCall(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "stackyrd_service_call")
+}
+
+func TestHandler_ResourcesList_ContainsSvc(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "stackyrd://svc")
+}
+
+func TestHandler_ServiceCall_UnknownService(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackyrd_service_call","arguments":{"service":"no-such-svc"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "service not found")
+	assert.Contains(t, rec.Body.String(), `"isError":true`)
+}
+
+func TestHandler_ServiceCall_TraversalRejected(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackyrd_service_call","arguments":{"service":"x","path":"../../etc/passwd"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"isError":true`)
+}
+
+func TestHandler_ServiceCall_BadMethod(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackyrd_service_call","arguments":{"service":"x","method":"TRACE"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "method not allowed")
+}
+
+func dbCallBody(t *testing.T, args string) string {
+	t.Helper()
+	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stackyrd_db","arguments":{` + args + `}}}`
+}
+
+func postMCP(t *testing.T, body string) string {
+	t.Helper()
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	return rec.Body.String()
+}
+
+func TestHandler_ToolsList_ContainsDB(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "stackyrd_db")
+}
+
+func TestHandler_ResourcesList_ContainsDB(t *testing.T) {
+	m := &infrastructure.MCPServer{}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	assert.NoError(t, m.Handler()(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "stackyrd://db")
+}
+
+func TestHandler_DBStatus_Unregistered(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"status"`))
+	assert.Contains(t, res, `"isError":false`)
+	assert.Contains(t, res, `writes_enabled`)
+	assert.Contains(t, res, `postgres`)
+	assert.Contains(t, res, `mongo`)
+	assert.Contains(t, res, `redis`)
+}
+
+func TestHandler_DBUnknownAction(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"frobnicate"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "unknown db action")
+}
+
+func TestHandler_DBPGQuery_RejectsWrite(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"pg_query","sql":"DROP TABLE users"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "read-only")
+}
+
+func TestHandler_DBPGQuery_NoConnection(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"pg_query","sql":"SELECT 1"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "postgres")
+}
+
+func TestHandler_DBPGExec_Gated(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"pg_exec","sql":"DELETE FROM users WHERE id = 1"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "mcp.db_enabled")
+}
+
+func TestHandler_DBMongoWrite_Gated(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"mongo_write","op":"delete_many","collection":"users","filter":"{}"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "mcp.db_enabled")
+}
+
+func TestHandler_DBRedisWrite_Gated(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"redis_write","op":"delete","key":"k"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "mcp.db_enabled")
+}
+
+func TestHandler_DBMongoFind_BadFilter(t *testing.T) {
+	res := postMCP(t, dbCallBody(t, `"action":"mongo_find","collection":"users","filter":"{oops"`))
+	assert.Contains(t, res, `"isError":true`)
+	assert.Contains(t, res, "invalid filter JSON")
+}
+
 func TestMCPServer_Name(t *testing.T) {
 	m := &infrastructure.MCPServer{}
 	assert.Equal(t, "MCP", m.Name())

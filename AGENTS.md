@@ -75,6 +75,19 @@ deployments/       # K8s manifests
 Infra async init → Dependencies → Middleware → AutoDiscoverServices
 ```
 
+## Skills
+
+Source of truth: `.agent/skills/<name>/SKILL.md` (Agent Skills spec: `name` matches dir, YAML frontmatter with `name` + `description`).
+
+| Skill | Path | Use when |
+|-------|------|----------|
+| `stackyrd-dev` | `.agent/skills/stackyrd-dev/SKILL.md` | Go services, middleware, infra, config, tests |
+| `stackyrd-cli-dev` | `.agent/skills/stackyrd-cli-dev/SKILL.md` | `scripts/yrd` CLI architecture, new subcommand |
+| `scripts` | `.agent/skills/scripts/SKILL.md` | Specific subcommand reference (`BUILD/SERVICE/PKG/SWAGGER/DOCKER_SCRIPT.md`) |
+| `stackyrd-docs-wiki` | `.agent/skills/stackyrd-docs-wiki/SKILL.md` | `docs_wiki/` updates |
+
+Every other `*/skills` path in this repo is a symlink to `.agent/skills` so all CLIs discover the same files: `.agents/skills`, `.claude/skills`, `.codex/skills`, `.cursor/skills`, `.windsurf/skills`, `.gemini/skills`, `.github/skills` (Copilot/VSCode), `.opencode/skills`, `.cline/skills`, `.roo/skills`, `.vscode/skills`, `.kilo/skills` (gitignored local only). Edit only `.agent/skills/` — never edit through a symlink target copy. New skill = new dir under `.agent/skills/` with `SKILL.md`; it appears in all agents automatically.
+
 ## Never Commit
 
 - `config.yaml` with real secrets

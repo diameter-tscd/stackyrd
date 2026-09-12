@@ -1262,6 +1262,13 @@ func (m *MCPServer) buildToolDefs() []ToolDef {
 			},
 			"required": []string{"action", "path"},
 		}},
+		{Name: "stackyrd_system_control", Description: "Safe runtime control: gc (force Go GC) or clear_cache (invalidate MCP dashboard/resources/memory/config/goroutine caches). Protected by existing MCP token auth, no extra config.", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action": map[string]any{"type": "string", "enum": []string{"gc", "clear_cache"}, "description": "gc = runtime.GC + mem snapshot; clear_cache = drop MCP internal caches"},
+			},
+			"required": []string{"action"},
+		}},
 	}
 }
 
@@ -1342,6 +1349,8 @@ func (m *MCPServer) handleToolsCall(params json.RawMessage) (map[string]any, *js
 		text, isErr = m.toolExec(cp.Arguments)
 	case "stackyrd_filemanager":
 		text, isErr = m.toolFileManagerResult(cp.Arguments)
+	case "stackyrd_system_control":
+		text, isErr = m.toolSystemControl(cp.Arguments)
 	default:
 		text = fmt.Sprintf(`{"error":"unknown tool: %s"}`, cp.Name)
 		isErr = true
@@ -2759,6 +2768,48 @@ func (m *MCPServer) toolGoroutinesFiltered(filter string, limit int) string {
 		return result, nil
 	})
 	return v.(string)
+}
+
+func (m *MCPServer) toolSystemControl(args map[string]any) (string, bool) {
+	eff := m.resolveEffective()
+	action := strings.TrimSpace(argString(args, "action"))
+	switch action {
+	case "gc":
+		var before runtime.MemStats
+		runtime.ReadMemStats(&before)
+		runtime.GC()
+		var after runtime.MemStats
+		runtime.ReadMemStats(&after)
+		return marshalJSON(map[string]any{
+			"action":            "gc",
+			"goroutines":        runtime.NumGoroutine(),
+			"heap_alloc_before": before.HeapAlloc,
+			"heap_alloc_after":  after.HeapAlloc,
+			"heap_objects":      after.HeapObjects,
+			"num_gc":            after.NumGC,
+			"instance_id":       eff.getIdentity().InstanceID,
+		}), false
+	case "clear_cache":
+		eff.mu.Lock()
+		eff.dashboardCache = ""
+		eff.dashboardExpiry = time.Time{}
+		eff.resourcesCache = ""
+		eff.resourcesExpiry = time.Time{}
+		eff.memoryCache = ""
+		eff.memoryExpiry = time.Time{}
+		eff.configCache = ""
+		eff.configExpiry = time.Time{}
+		eff.goroutineCache = ""
+		eff.goroutineExpiry = time.Time{}
+		eff.goroutineKey = ""
+		eff.mu.Unlock()
+		return marshalJSON(map[string]any{
+			"action":  "clear_cache",
+			"cleared": []string{"dashboard", "resources", "memory", "config", "goroutines"},
+		}), false
+	default:
+		return marshalJSON(map[string]any{"error": "unknown action: " + action, "allowed": []string{"gc", "clear_cache"}}), true
+	}
 }
 
 func marshalJSON(v any) string {

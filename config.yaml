@@ -10,7 +10,7 @@ app:
   theme: "tokyonight" # TUI color theme (default, vintage_purple, vintage_dark, vintage_pinky, blue_ish, slate, charcoal_tea, pastel_light, sunflower_gold, muted_teal)
 
 server:   
-  port: "8080"
+  port: "8452"
   services_endpoint: /api/v1      # endpoint service path
 
 services:

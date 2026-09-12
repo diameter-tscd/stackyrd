@@ -76,6 +76,9 @@ func setupViperDefaults() {
 	viper.SetDefault("mcp.filemanager_max_upload", 209715200)
 	viper.SetDefault("mcp.filemanager_thumbnail_max_bytes", 10485760)
 	viper.SetDefault("mcp.filemanager_thumbnail_size", 256)
+	viper.SetDefault("mcp.db_enabled", false)
+	viper.SetDefault("mcp.db_timeout", 10)
+	viper.SetDefault("mcp.db_max_rows", 200)
 	viper.SetDefault("audit.skip_paths", []string{"/health", "/health/dependencies"})
 }
 
@@ -156,6 +159,9 @@ type MCPConfig struct {
 	FileManagerMaxUpload         int64    `mapstructure:"filemanager_max_upload"`
 	FileManagerThumbnailMaxBytes int64    `mapstructure:"filemanager_thumbnail_max_bytes"`
 	FileManagerThumbnailSize     int      `mapstructure:"filemanager_thumbnail_size"`
+	DBEnabled                    bool     `mapstructure:"db_enabled"`
+	DBTimeout                    int      `mapstructure:"db_timeout"`
+	DBMaxRows                    int      `mapstructure:"db_max_rows"`
 }
 
 type MinIOConfig struct {

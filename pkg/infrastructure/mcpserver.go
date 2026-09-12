@@ -30,6 +30,9 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gopkg.in/yaml.v3"
 
+	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
 	"stackyrd/config"
 	"stackyrd/internal/middleware"
 	"stackyrd/pkg/logger"
@@ -266,6 +269,11 @@ type ipState struct {
 	blockedUntil time.Time
 }
 
+type proxyEntry struct {
+	body   string
+	expiry time.Time
+}
+
 type MCPServer struct {
 	enabled              bool
 	endpoint             string
@@ -310,6 +318,9 @@ type MCPServer struct {
 	goroutineExpiry  time.Time
 	goroutineKey     string
 
+	proxyMu    sync.Mutex
+	proxyCache map[string]proxyEntry
+
 	execEnabled   bool
 	execTimeout   time.Duration
 	execMaxOutput int
@@ -321,6 +332,10 @@ type MCPServer struct {
 	fmMaxUpload      int64
 	fmThumbMaxBytes  int64
 	fmThumbSize      int
+
+	dbEnabled bool
+	dbTimeout time.Duration
+	dbMaxRows int
 }
 
 var (
@@ -400,6 +415,9 @@ func (m *MCPServer) GetStatus() map[string]any {
 		"filemanager_max_upload":     m.fmMaxUpload,
 		"filemanager_thumbnail_max":  m.fmThumbMaxBytes,
 		"filemanager_thumbnail_size": m.fmThumbSize,
+		"db_enabled":                 m.dbEnabled,
+		"db_timeout_seconds":         int(m.dbTimeout.Seconds()),
+		"db_max_rows":                m.dbMaxRows,
 		"build":                      m.buildInfo,
 		"instance_id":                id.InstanceID,
 		"instance":                   id,
@@ -500,6 +518,20 @@ func init() {
 		if fmThumbSize <= 0 || fmThumbSize > 1024 {
 			fmThumbSize = 256
 		}
+		dbTimeout := time.Duration(cfg.MCP.DBTimeout) * time.Second
+		if dbTimeout <= 0 {
+			dbTimeout = 10 * time.Second
+		}
+		if dbTimeout > 60*time.Second {
+			dbTimeout = 60 * time.Second
+		}
+		dbMaxRows := cfg.MCP.DBMaxRows
+		if dbMaxRows <= 0 {
+			dbMaxRows = 200
+		}
+		if dbMaxRows > 1000 {
+			dbMaxRows = 1000
+		}
 		fmRoot := strings.TrimSpace(cfg.MCP.FileManagerRoot)
 		if fmRoot == "" {
 			fmRoot = "."
@@ -537,6 +569,9 @@ func init() {
 			fmMaxUpload:     fmMax,
 			fmThumbMaxBytes: fmThumbMax,
 			fmThumbSize:     fmThumbSize,
+			dbEnabled:       cfg.MCP.DBEnabled,
+			dbTimeout:       dbTimeout,
+			dbMaxRows:       dbMaxRows,
 		}
 		mcpSingletonMu.Lock()
 		mcpSingleton = srv
@@ -1127,6 +1162,8 @@ func (m *MCPServer) resourceDefs() []map[string]any {
 			{"uri": "stackyrd://cron", "name": "Cron Jobs", "description": "Scheduled cron jobs with schedule, last/next run and pool status", "mimeType": "application/json"},
 			{"uri": "stackyrd://build", "name": "Build Info", "description": "Build metadata: version, Go version, OS/arch, VCS revision and build time", "mimeType": "application/json"},
 			{"uri": "stackyrd://fs", "name": "Filesystem Root", "description": "Filesystem listing at filemanager root (same as filemanager action=list path=.)", "mimeType": "application/json"},
+			{"uri": "stackyrd://svc", "name": "Service Proxy", "description": "Proxyable running services (same as stackyrd_service_call discovery)", "mimeType": "application/json"},
+			{"uri": "stackyrd://db", "name": "Databases", "description": "Postgres/Mongo/Redis connection status (same as db action=status)", "mimeType": "application/json"},
 		}
 	})
 	return resourceDefsCache
@@ -1171,8 +1208,18 @@ func (m *MCPServer) handleResourcesRead(params json.RawMessage) (any, *jsonRPCEr
 		data = m.toolBuild()
 	case "stackyrd://fs":
 		data = m.toolFileManager(map[string]any{"action": "list", "path": "."})
+	case "stackyrd://svc":
+		data = m.toolServiceProxyList()
+	case "stackyrd://db":
+		data, _ = m.toolDB(map[string]any{"action": "status"})
 	default:
-		if strings.HasPrefix(p.URI, "stackyrd://fs/") {
+		if strings.HasPrefix(p.URI, "stackyrd://svc/") {
+			svcData, svcErr := m.toolServiceProxyResource(p.URI)
+			if svcErr != nil {
+				return nil, svcErr
+			}
+			data = svcData
+		} else if strings.HasPrefix(p.URI, "stackyrd://fs/") {
 			rel := strings.TrimPrefix(p.URI, "stackyrd://fs/")
 			if rel == "" {
 				rel = "."
@@ -1269,6 +1316,36 @@ func (m *MCPServer) buildToolDefs() []ToolDef {
 			},
 			"required": []string{"action"},
 		}},
+		{Name: "stackyrd_service_call", Description: "Call a registered running service via internal loopback (GET/POST/PUT/PATCH/DELETE). Token auth only, no extra config. GET cached 2s.", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"service": map[string]any{"type": "string", "description": "Service wire_name or Name, e.g. 'hello-service'"},
+				"method":  map[string]any{"type": "string", "enum": []string{"GET", "POST", "PUT", "PATCH", "DELETE"}, "description": "HTTP method (default GET)"},
+				"path":    map[string]any{"type": "string", "description": "Sub-path appended to service endpoint, e.g. '/' or '/123'"},
+				"query":   map[string]any{"type": "string", "description": "Raw query string without leading '?', e.g. 'a=1&b=2'"},
+				"body":    map[string]any{"type": "string", "description": "JSON string for POST/PUT/PATCH"},
+			},
+			"required": []string{"service"},
+		}},
+		{Name: "stackyrd_db", Description: "Query connected databases via infra managers (no HTTP hop). Reads + status need token auth only; writes need mcp.db_enabled=true.", InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action":     map[string]any{"type": "string", "enum": []string{"status", "pg_query", "pg_exec", "mongo_find", "mongo_collections", "mongo_write", "redis_get", "redis_scan", "redis_write"}, "description": "Operation"},
+				"connection": map[string]any{"type": "string", "description": "Named pg/mongo connection (default: default connection)"},
+				"sql":        map[string]any{"type": "string", "description": "Raw SQL: single SELECT/WITH/... statement for pg_query, any single statement for pg_exec"},
+				"collection": map[string]any{"type": "string", "description": "Mongo collection name"},
+				"filter":     map[string]any{"type": "string", "description": "Mongo filter as JSON object (default {})"},
+				"document":   map[string]any{"type": "string", "description": "Mongo insert_one document as JSON object"},
+				"update":     map[string]any{"type": "string", "description": "Mongo update_one/update_many update doc as JSON object"},
+				"op":         map[string]any{"type": "string", "enum": []string{"insert_one", "update_one", "update_many", "delete_one", "delete_many", "set", "delete"}, "description": "Write op for mongo_write / redis_write"},
+				"key":        map[string]any{"type": "string", "description": "Redis key"},
+				"value":      map[string]any{"type": "string", "description": "Redis set value"},
+				"ttl_seconds": map[string]any{"type": "integer", "description": "Redis set TTL seconds (0 = persistent)"},
+				"pattern":    map[string]any{"type": "string", "description": "Redis scan pattern (default *)"},
+				"limit":      map[string]any{"type": "integer", "description": "Max rows/docs/keys (default 50, capped by mcp.db_max_rows)"},
+			},
+			"required": []string{"action"},
+		}},
 	}
 }
 
@@ -1351,6 +1428,10 @@ func (m *MCPServer) handleToolsCall(params json.RawMessage) (map[string]any, *js
 		text, isErr = m.toolFileManagerResult(cp.Arguments)
 	case "stackyrd_system_control":
 		text, isErr = m.toolSystemControl(cp.Arguments)
+	case "stackyrd_service_call":
+		text, isErr = m.toolServiceProxy(cp.Arguments)
+	case "stackyrd_db":
+		text, isErr = m.toolDB(cp.Arguments)
 	default:
 		text = fmt.Sprintf(`{"error":"unknown tool: %s"}`, cp.Name)
 		isErr = true
@@ -2803,12 +2884,791 @@ func (m *MCPServer) toolSystemControl(args map[string]any) (string, bool) {
 		eff.goroutineExpiry = time.Time{}
 		eff.goroutineKey = ""
 		eff.mu.Unlock()
+		eff.proxyMu.Lock()
+		eff.proxyCache = nil
+		eff.proxyMu.Unlock()
 		return marshalJSON(map[string]any{
 			"action":  "clear_cache",
-			"cleared": []string{"dashboard", "resources", "memory", "config", "goroutines"},
+			"cleared": []string{"dashboard", "resources", "memory", "config", "goroutines", "proxy"},
 		}), false
 	default:
 		return marshalJSON(map[string]any{"error": "unknown action: " + action, "allowed": []string{"gc", "clear_cache"}}), true
+	}
+}
+
+func (m *MCPServer) toolServiceProxyList() string {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	svcs := eff.services
+	eff.mu.RUnlock()
+	out := make([]map[string]any, 0, len(svcs))
+	for _, s := range svcs {
+		if s.State != "running" {
+			continue
+		}
+		out = append(out, map[string]any{"name": s.Name, "wire_name": s.WireName, "endpoints": s.Endpoints})
+	}
+	slices.SortFunc(out, func(a, b map[string]any) int {
+		return cmp.Compare(a["wire_name"].(string), b["wire_name"].(string))
+	})
+	return marshalJSON(map[string]any{"count": len(out), "services": out})
+}
+
+func (m *MCPServer) toolServiceProxyResource(uri string) (string, *jsonRPCErr) {
+	rest := strings.TrimPrefix(uri, "stackyrd://svc/")
+	if rest == "" {
+		return m.toolServiceProxyList(), nil
+	}
+	wire, sub, _ := strings.Cut(rest, "/")
+	query := ""
+	if i := strings.Index(sub, "?"); i >= 0 {
+		query = sub[i+1:]
+		sub = sub[:i]
+	}
+	if i := strings.Index(wire, "?"); i >= 0 {
+		query = wire[i+1:]
+		wire = wire[:i]
+	}
+	text, isErr := m.toolServiceProxy(map[string]any{
+		"service": wire, "method": "GET", "path": "/" + sub, "query": query,
+	})
+	if isErr {
+		return "", &jsonRPCErr{Code: -32602, Message: text}
+	}
+	return text, nil
+}
+
+func (m *MCPServer) toolServiceProxy(args map[string]any) (string, bool) {
+	eff := m.resolveEffective()
+	name := strings.TrimSpace(argString(args, "service"))
+	if name == "" {
+		return `{"error":"param 'service' is required (wire_name or Name)"}`, true
+	}
+	method := strings.ToUpper(strings.TrimSpace(argString(args, "method")))
+	if method == "" {
+		method = "GET"
+	}
+	switch method {
+	case "GET", "POST", "PUT", "PATCH", "DELETE":
+	default:
+		return marshalJSON(map[string]any{"error": "method not allowed: " + method, "allowed": []string{"GET", "POST", "PUT", "PATCH", "DELETE"}}), true
+	}
+	sub := strings.TrimSpace(argString(args, "path"))
+	if sub == "" {
+		sub = "/"
+	}
+	query := strings.TrimSpace(argString(args, "query"))
+	query = strings.TrimPrefix(query, "?")
+	bodyStr := argString(args, "body")
+	if len(sub) > 2048 || len(query) > 2048 {
+		return `{"error":"path/query too long (max 2048)"}`, true
+	}
+	if strings.Contains(sub, "\\") || strings.Contains(sub, "\n") || strings.Contains(sub, "\r") ||
+		strings.Contains(query, "\n") || strings.Contains(query, "\r") ||
+		strings.Contains(strings.ToLower(sub), "://") {
+		return `{"error":"invalid path/query"}`, true
+	}
+	if !strings.HasPrefix(sub, "/") {
+		sub = "/" + sub
+	}
+	clean := "/" + strings.Trim(filepath.Clean(sub), "/")
+	if clean != "/" {
+		for _, seg := range strings.Split(strings.Trim(clean, "/"), "/") {
+			if seg == ".." || seg == "." || seg == "" {
+				return `{"error":"invalid path: traversal not allowed"}`, true
+			}
+		}
+	} else {
+		clean = sub
+		if strings.Contains(clean, "..") {
+			return `{"error":"invalid path: traversal not allowed"}`, true
+		}
+	}
+
+	eff.mu.RLock()
+	svcs := eff.services
+	port := eff.serverPort
+	eff.mu.RUnlock()
+	var matched *ServiceMeta
+	lower := strings.ToLower(name)
+	for i := range svcs {
+		if strings.EqualFold(svcs[i].WireName, name) || strings.EqualFold(svcs[i].Name, name) {
+			matched = &svcs[i]
+			break
+		}
+	}
+	if matched == nil {
+		for i := range svcs {
+			if strings.Contains(strings.ToLower(svcs[i].WireName), lower) || strings.Contains(strings.ToLower(svcs[i].Name), lower) {
+				matched = &svcs[i]
+				break
+			}
+		}
+	}
+	if matched == nil {
+		return marshalJSON(map[string]any{"error": "service not found: " + name, "hint": "use stackyrd_services"}), true
+	}
+	if matched.State != "running" {
+		return marshalJSON(map[string]any{"error": "service not running: " + matched.WireName, "state": matched.State}), true
+	}
+	base := ""
+	if len(matched.Endpoints) > 0 {
+		eps := append([]string(nil), matched.Endpoints...)
+		slices.Sort(eps)
+		base = eps[0]
+	}
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
+	}
+	fullPath := "/api/v1" + strings.TrimSuffix(base, "/") + clean
+	fullPath = strings.ReplaceAll(fullPath, "//", "/")
+	if port == "" {
+		port = "8452"
+	}
+	key := method + "|" + matched.WireName + "|" + fullPath + "|" + query
+	if method == "GET" {
+		eff.proxyMu.Lock()
+		if e, ok := eff.proxyCache[key]; ok && time.Now().Before(e.expiry) {
+			eff.proxyMu.Unlock()
+			return e.body, false
+		}
+		eff.proxyMu.Unlock()
+	}
+
+	var v any
+	if method == "GET" {
+		type proxyResult struct {
+			text  string
+			isErr bool
+		}
+		v, _, _ = eff.sfGroup.Do("proxy:"+key, func() (any, error) {
+			eff.proxyMu.Lock()
+			if e, ok := eff.proxyCache[key]; ok && time.Now().Before(e.expiry) {
+				eff.proxyMu.Unlock()
+				return proxyResult{text: e.body, isErr: false}, nil
+			}
+			eff.proxyMu.Unlock()
+			text, isErr := eff.doServiceProxyRequest(port, matched.WireName, method, fullPath, query, "")
+			if !isErr {
+				eff.proxyMu.Lock()
+				if eff.proxyCache == nil {
+					eff.proxyCache = make(map[string]proxyEntry)
+				}
+				eff.proxyCache[key] = proxyEntry{body: text, expiry: time.Now().Add(2 * time.Second)}
+				eff.proxyMu.Unlock()
+			}
+			return proxyResult{text: text, isErr: isErr}, nil
+		})
+		if r, ok := v.(proxyResult); ok {
+			return r.text, r.isErr
+		}
+		return `{"error":"proxy failed"}`, true
+	}
+	text, isErr := eff.doServiceProxyRequest(port, matched.WireName, method, fullPath, query, bodyStr)
+	return text, isErr
+}
+
+func (m *MCPServer) doServiceProxyRequest(port, wire, method, fullPath, query, bodyStr string) (string, bool) {
+	target := "http://127.0.0.1:" + port + fullPath
+	if query != "" {
+		target += "?" + query
+	}
+	if len(bodyStr) > 1<<20 {
+		return `{"error":"body exceeds 1MiB cap"}`, true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var reqBody io.Reader
+	if bodyStr != "" && (method == "POST" || method == "PUT" || method == "PATCH") {
+		reqBody = strings.NewReader(bodyStr)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, reqBody)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "service": wire}), true
+	}
+	req.Header.Set("Accept", "application/json")
+	if reqBody != nil {
+		trimmed := bytes.TrimSpace([]byte(bodyStr))
+		if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req.Header.Set("Content-Type", "text/plain")
+		}
+	}
+	if m.token != "" {
+		req.Header.Set("Authorization", "Bearer "+m.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "service": wire, "path": fullPath}), true
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "service": wire}), true
+	}
+	var parsed any
+	var bodyOut any = string(raw)
+	if json.Unmarshal(raw, &parsed) == nil {
+		bodyOut = parsed
+	} else if len(raw) > 64<<10 {
+		bodyOut = string(raw[:64<<10])
+	}
+	return marshalJSON(map[string]any{
+		"service": wire, "method": method, "path": fullPath, "query": query,
+		"status": resp.StatusCode, "body": bodyOut, "instance_id": m.getIdentity().InstanceID,
+	}), resp.StatusCode >= 400
+}
+
+func (m *MCPServer) dbLimits() (timeout time.Duration, maxRows int) {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	timeout, maxRows = eff.dbTimeout, eff.dbMaxRows
+	eff.mu.RUnlock()
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if maxRows <= 0 {
+		maxRows = 200
+	}
+	return timeout, maxRows
+}
+
+func (m *MCPServer) dbWriteAllowed() bool {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	defer eff.mu.RUnlock()
+	return eff.dbEnabled
+}
+
+func argInt(args map[string]any, key string, def int) int {
+	if v, ok := args[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case int64:
+			return int(n)
+		}
+	}
+	return def
+}
+
+func (m *MCPServer) toolDB(args map[string]any) (string, bool) {
+	action := strings.ToLower(strings.TrimSpace(argString(args, "action")))
+	switch action {
+	case "", "status", "list":
+		return m.dbStatus(), false
+	case "pg_query", "pgquery", "query":
+		return m.dbPGQuery(args)
+	case "pg_exec", "pgexec", "exec":
+		return m.dbPGExec(args)
+	case "mongo_find", "find":
+		return m.dbMongoFind(args)
+	case "mongo_collections", "collections":
+		return m.dbMongoCollections(args)
+	case "mongo_write", "mongowrite":
+		return m.dbMongoWrite(args)
+	case "redis_get", "get":
+		return m.dbRedisGet(args)
+	case "redis_scan", "scan":
+		return m.dbRedisScan(args)
+	case "redis_write", "rediswrite":
+		return m.dbRedisWrite(args)
+	default:
+		return marshalJSON(map[string]any{"error": "unknown db action: " + action, "allowed": []string{"status", "pg_query", "pg_exec", "mongo_find", "mongo_collections", "mongo_write", "redis_get", "redis_scan", "redis_write"}}), true
+	}
+}
+
+func (m *MCPServer) pgConn(name string) (*PostgresManager, string, *jsonRPCErr) {
+	comp, ok := GetGlobalRegistry().Get("postgres")
+	if !ok {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "postgres not registered or disabled"}
+	}
+	mgr, ok := comp.(*PostgresConnectionManager)
+	if !ok {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "invalid postgres manager type"}
+	}
+	if strings.TrimSpace(name) != "" {
+		conn, ok := mgr.GetConnection(strings.TrimSpace(name))
+		if !ok || conn == nil || conn.DB == nil {
+			return nil, "", &jsonRPCErr{Code: -32602, Message: "postgres connection not found or not connected: " + name}
+		}
+		return conn, strings.TrimSpace(name), nil
+	}
+	conn, ok := mgr.GetDefaultConnection()
+	if !ok || conn == nil || conn.DB == nil {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "postgres has no connected default connection"}
+	}
+	return conn, "default", nil
+}
+
+func (m *MCPServer) mongoConn(name string) (*MongoManager, string, *jsonRPCErr) {
+	comp, ok := GetGlobalRegistry().Get("mongo")
+	if !ok {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "mongo not registered or disabled"}
+	}
+	mgr, ok := comp.(*MongoConnectionManager)
+	if !ok {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "invalid mongo manager type"}
+	}
+	if strings.TrimSpace(name) != "" {
+		conn, ok := mgr.GetConnection(strings.TrimSpace(name))
+		if !ok || conn == nil || conn.Client == nil {
+			return nil, "", &jsonRPCErr{Code: -32602, Message: "mongo connection not found or not connected: " + name}
+		}
+		return conn, strings.TrimSpace(name), nil
+	}
+	conn, ok := mgr.GetDefaultConnection()
+	if !ok || conn == nil || conn.Client == nil {
+		return nil, "", &jsonRPCErr{Code: -32602, Message: "mongo has no connected default connection"}
+	}
+	return conn, "default", nil
+}
+
+func (m *MCPServer) redisConn() (*RedisManager, *jsonRPCErr) {
+	comp, ok := GetGlobalRegistry().Get("redis")
+	if !ok {
+		return nil, &jsonRPCErr{Code: -32602, Message: "redis not registered or disabled"}
+	}
+	mgr, ok := comp.(*RedisManager)
+	if !ok || mgr == nil || mgr.Client == nil {
+		return nil, &jsonRPCErr{Code: -32602, Message: "redis not connected"}
+	}
+	return mgr, nil
+}
+
+func (m *MCPServer) dbStatus() string {
+	eff := m.resolveEffective()
+	eff.mu.RLock()
+	writeEnabled := eff.dbEnabled
+	eff.mu.RUnlock()
+	out := map[string]any{"writes_enabled": writeEnabled}
+	if comp, ok := GetGlobalRegistry().Get("postgres"); ok {
+		if mgr, ok := comp.(*PostgresConnectionManager); ok {
+			names := make([]string, 0)
+			for n := range mgr.GetAllConnections() {
+				names = append(names, n)
+			}
+			slices.Sort(names)
+			out["postgres"] = map[string]any{"registered": true, "connected": len(names) > 0, "connections": names, "status": comp.GetStatus()}
+		} else {
+			out["postgres"] = map[string]any{"registered": true, "connected": false, "error": "invalid manager type"}
+		}
+	} else {
+		out["postgres"] = map[string]any{"registered": false, "connected": false}
+	}
+	if comp, ok := GetGlobalRegistry().Get("mongo"); ok {
+		if mgr, ok := comp.(*MongoConnectionManager); ok {
+			names := make([]string, 0)
+			for n := range mgr.GetAllConnections() {
+				names = append(names, n)
+			}
+			slices.Sort(names)
+			out["mongo"] = map[string]any{"registered": true, "connected": len(names) > 0, "connections": names, "status": comp.GetStatus()}
+		} else {
+			out["mongo"] = map[string]any{"registered": true, "connected": false, "error": "invalid manager type"}
+		}
+	} else {
+		out["mongo"] = map[string]any{"registered": false, "connected": false}
+	}
+	if comp, ok := GetGlobalRegistry().Get("redis"); ok {
+		st := comp.GetStatus()
+		connected, _ := st["connected"].(bool)
+		out["redis"] = map[string]any{"registered": true, "connected": connected, "status": st}
+	} else {
+		out["redis"] = map[string]any{"registered": false, "connected": false}
+	}
+	return marshalJSON(out)
+}
+
+// isReadOnlySQL reports whether q is a single read-only statement.
+func isReadOnlySQL(q string) (string, bool) {
+	s := strings.TrimSpace(q)
+	for s != "" {
+		if strings.HasPrefix(s, "--") {
+			if i := strings.Index(s, "\n"); i >= 0 {
+				s = strings.TrimSpace(s[i+1:])
+				continue
+			}
+			return "", false
+		}
+		if strings.HasPrefix(s, "/*") {
+			if i := strings.Index(s, "*/"); i >= 0 {
+				s = strings.TrimSpace(s[i+2:])
+				continue
+			}
+			return "", false
+		}
+		break
+	}
+	core := strings.TrimSpace(strings.TrimSuffix(s, ";"))
+	if core == "" || strings.Contains(core, ";") {
+		return "", false
+	}
+	first := strings.ToUpper(core)
+	if i := strings.IndexFunc(first, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '(' }); i >= 0 {
+		first = first[:i]
+	}
+	switch first {
+	case "SELECT", "WITH", "EXPLAIN", "SHOW", "DESCRIBE", "DESC", "TABLE", "VALUES":
+		return core, true
+	default:
+		return "", false
+	}
+}
+
+func (m *MCPServer) dbPGQuery(args map[string]any) (string, bool) {
+	sqlStr := strings.TrimSpace(argString(args, "sql"))
+	if sqlStr == "" {
+		return `{"error":"param 'sql' is required"}`, true
+	}
+	if len(sqlStr) > 64<<10 {
+		return `{"error":"sql exceeds 64KiB cap"}`, true
+	}
+	if _, ok := isReadOnlySQL(sqlStr); !ok {
+		return marshalJSON(map[string]any{"error": "pg_query accepts a single read-only statement (SELECT/WITH/EXPLAIN/SHOW/DESCRIBE/TABLE/VALUES); use pg_exec for writes (requires mcp.db_enabled=true)"}), true
+	}
+	conn, connName, rpcErr := m.pgConn(argString(args, "connection"))
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, maxRows := m.dbLimits()
+	limit := argInt(args, "limit", 0)
+	if limit == 0 {
+		limit = argInt(args, "max_rows", maxRows)
+	}
+	if limit <= 0 {
+		limit = maxRows
+	}
+	if limit > maxRows {
+		limit = maxRows
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	rows, err := conn.ExecuteRawQuery(ctx, sqlStr)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "postgres", "connection": connName}), true
+	}
+	truncated := false
+	if len(rows) > limit {
+		rows = rows[:limit]
+		truncated = true
+	}
+	return marshalJSON(map[string]any{
+		"store": "postgres", "connection": connName, "count": len(rows),
+		"truncated": truncated, "max_rows": limit, "rows": rows,
+	}), false
+}
+
+func (m *MCPServer) dbPGExec(args map[string]any) (string, bool) {
+	if !m.dbWriteAllowed() {
+		return `{"error":"db writes disabled — set mcp.db_enabled=true in config.yaml"}`, true
+	}
+	sqlStr := strings.TrimSpace(argString(args, "sql"))
+	if sqlStr == "" {
+		return `{"error":"param 'sql' is required"}`, true
+	}
+	if len(sqlStr) > 64<<10 {
+		return `{"error":"sql exceeds 64KiB cap"}`, true
+	}
+	core := strings.TrimSpace(strings.TrimSuffix(sqlStr, ";"))
+	if core == "" || strings.Contains(core, ";") {
+		return `{"error":"pg_exec accepts a single statement only"}`, true
+	}
+	conn, connName, rpcErr := m.pgConn(argString(args, "connection"))
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, _ := m.dbLimits()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	n, err := conn.Exec(ctx, sqlStr)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "postgres", "connection": connName}), true
+	}
+	affected, _ := n.RowsAffected()
+	return marshalJSON(map[string]any{
+		"store": "postgres", "connection": connName, "rows_affected": affected,
+	}), false
+}
+
+func parseJSONObject(s string) (map[string]any, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return map[string]any{}, nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		return map[string]any{}, nil
+	}
+	return out, nil
+}
+
+func (m *MCPServer) dbMongoFind(args map[string]any) (string, bool) {
+	coll := strings.TrimSpace(argString(args, "collection"))
+	if coll == "" {
+		return `{"error":"param 'collection' is required"}`, true
+	}
+	filter, err := parseJSONObject(argString(args, "filter"))
+	if err != nil {
+		return marshalJSON(map[string]any{"error": "invalid filter JSON: " + err.Error()}), true
+	}
+	conn, connName, rpcErr := m.mongoConn(argString(args, "connection"))
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, maxRows := m.dbLimits()
+	limit := argInt(args, "limit", 50)
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxRows {
+		limit = maxRows
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cur, err := conn.Find(ctx, coll, filter, options.Find().SetLimit(int64(limit)))
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "mongo", "connection": connName, "collection": coll}), true
+	}
+	defer func() { _ = cur.Close(ctx) }()
+	docs := make([]map[string]any, 0, limit)
+	for cur.Next(ctx) {
+		var doc map[string]any
+		if err := cur.Decode(&doc); err != nil {
+			return marshalJSON(map[string]any{"error": err.Error(), "store": "mongo"}), true
+		}
+		docs = append(docs, doc)
+		if len(docs) >= limit {
+			break
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "mongo"}), true
+	}
+	return marshalJSON(map[string]any{
+		"store": "mongo", "connection": connName, "collection": coll,
+		"count": len(docs), "limit": limit, "docs": docs,
+	}), false
+}
+
+func (m *MCPServer) dbMongoCollections(args map[string]any) (string, bool) {
+	conn, connName, rpcErr := m.mongoConn(argString(args, "connection"))
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, _ := m.dbLimits()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	names, err := conn.ListCollections(ctx)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "mongo", "connection": connName}), true
+	}
+	if names == nil {
+		names = []string{}
+	}
+	return marshalJSON(map[string]any{
+		"store": "mongo", "connection": connName, "count": len(names), "collections": names,
+	}), false
+}
+
+func (m *MCPServer) dbMongoWrite(args map[string]any) (string, bool) {
+	if !m.dbWriteAllowed() {
+		return `{"error":"db writes disabled — set mcp.db_enabled=true in config.yaml"}`, true
+	}
+	op := strings.ToLower(strings.TrimSpace(argString(args, "op")))
+	coll := strings.TrimSpace(argString(args, "collection"))
+	if coll == "" {
+		return `{"error":"param 'collection' is required"}`, true
+	}
+	conn, connName, rpcErr := m.mongoConn(argString(args, "connection"))
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, _ := m.dbLimits()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	base := map[string]any{"store": "mongo", "connection": connName, "collection": coll, "op": op}
+	switch op {
+	case "insert_one", "insert":
+		doc, err := parseJSONObject(argString(args, "document"))
+		if err != nil || len(doc) == 0 {
+			if err != nil {
+				return marshalJSON(map[string]any{"error": "invalid document JSON: " + err.Error()}), true
+			}
+			return `{"error":"param 'document' (non-empty JSON object) is required for insert_one"}`, true
+		}
+		res, err := conn.InsertOne(ctx, coll, doc)
+		if err != nil {
+			return marshalJSON(map[string]any{"error": err.Error()}), true
+		}
+		base["inserted_id"] = res.InsertedID
+		return marshalJSON(base), false
+	case "update_one", "update_many":
+		filter, err := parseJSONObject(argString(args, "filter"))
+		if err != nil {
+			return marshalJSON(map[string]any{"error": "invalid filter JSON: " + err.Error()}), true
+		}
+		update, err := parseJSONObject(argString(args, "update"))
+		if err != nil || len(update) == 0 {
+			if err != nil {
+				return marshalJSON(map[string]any{"error": "invalid update JSON: " + err.Error()}), true
+			}
+			return `{"error":"param 'update' (non-empty JSON object) is required"}`, true
+		}
+		var matched, modified int64
+		var upserted any
+		if op == "update_one" {
+			res, err := conn.UpdateOne(ctx, coll, filter, update)
+			if err != nil {
+				return marshalJSON(map[string]any{"error": err.Error()}), true
+			}
+			matched, modified, upserted = res.MatchedCount, res.ModifiedCount, res.UpsertedID
+		} else {
+			res, err := conn.UpdateMany(ctx, coll, filter, update)
+			if err != nil {
+				return marshalJSON(map[string]any{"error": err.Error()}), true
+			}
+			matched, modified, upserted = res.MatchedCount, res.ModifiedCount, res.UpsertedID
+		}
+		base["matched"] = matched
+		base["modified"] = modified
+		if upserted != nil {
+			base["upserted_id"] = upserted
+		}
+		return marshalJSON(base), false
+	case "delete_one", "delete_many":
+		if strings.TrimSpace(argString(args, "filter")) == "" {
+			return `{"error":"param 'filter' is required for delete (pass {} to match all)"}`, true
+		}
+		filter, err := parseJSONObject(argString(args, "filter"))
+		if err != nil {
+			return marshalJSON(map[string]any{"error": "invalid filter JSON: " + err.Error()}), true
+		}
+		var deleted int64
+		if op == "delete_one" {
+			res, err := conn.DeleteOne(ctx, coll, filter)
+			if err != nil {
+				return marshalJSON(map[string]any{"error": err.Error()}), true
+			}
+			deleted = res.DeletedCount
+		} else {
+			res, err := conn.DeleteMany(ctx, coll, filter)
+			if err != nil {
+				return marshalJSON(map[string]any{"error": err.Error()}), true
+			}
+			deleted = res.DeletedCount
+		}
+		base["deleted"] = deleted
+		return marshalJSON(base), false
+	default:
+		return marshalJSON(map[string]any{"error": "unknown mongo_write op: " + op, "allowed": []string{"insert_one", "update_one", "update_many", "delete_one", "delete_many"}}), true
+	}
+}
+
+func (m *MCPServer) dbRedisGet(args map[string]any) (string, bool) {
+	key := argString(args, "key")
+	if key == "" {
+		return `{"error":"param 'key' is required"}`, true
+	}
+	mgr, rpcErr := m.redisConn()
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, _ := m.dbLimits()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	val, err := mgr.Get(ctx, key)
+	if err == redis.Nil {
+		return marshalJSON(map[string]any{"store": "redis", "key": key, "found": false}), false
+	}
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "redis", "key": key}), true
+	}
+	return marshalJSON(map[string]any{"store": "redis", "key": key, "found": true, "value": val}), false
+}
+
+func (m *MCPServer) dbRedisScan(args map[string]any) (string, bool) {
+	pattern := strings.TrimSpace(argString(args, "pattern"))
+	if pattern == "" {
+		pattern = "*"
+	}
+	if len(pattern) > 256 {
+		return `{"error":"pattern too long (max 256)"}`, true
+	}
+	mgr, rpcErr := m.redisConn()
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, maxRows := m.dbLimits()
+	limit := argInt(args, "limit", maxRows)
+	if limit <= 0 {
+		limit = maxRows
+	}
+	if limit > maxRows {
+		limit = maxRows
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	keys, err := mgr.ScanKeys(ctx, pattern)
+	if err != nil {
+		return marshalJSON(map[string]any{"error": err.Error(), "store": "redis", "pattern": pattern}), true
+	}
+	truncated := false
+	if len(keys) > limit {
+		keys = keys[:limit]
+		truncated = true
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	return marshalJSON(map[string]any{
+		"store": "redis", "pattern": pattern, "count": len(keys),
+		"truncated": truncated, "limit": limit, "keys": keys,
+	}), false
+}
+
+func (m *MCPServer) dbRedisWrite(args map[string]any) (string, bool) {
+	if !m.dbWriteAllowed() {
+		return `{"error":"db writes disabled — set mcp.db_enabled=true in config.yaml"}`, true
+	}
+	op := strings.ToLower(strings.TrimSpace(argString(args, "op")))
+	if op == "" {
+		op = "set"
+	}
+	key := argString(args, "key")
+	if key == "" {
+		return `{"error":"param 'key' is required"}`, true
+	}
+	mgr, rpcErr := m.redisConn()
+	if rpcErr != nil {
+		return marshalJSON(map[string]any{"error": rpcErr.Message}), true
+	}
+	timeout, _ := m.dbLimits()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	switch op {
+	case "set":
+		ttl := time.Duration(argInt(args, "ttl_seconds", 0)) * time.Second
+		if ttl < 0 {
+			ttl = 0
+		}
+		if err := mgr.Set(ctx, key, argString(args, "value"), ttl); err != nil {
+			return marshalJSON(map[string]any{"error": err.Error(), "store": "redis"}), true
+		}
+		return marshalJSON(map[string]any{"store": "redis", "op": "set", "key": key, "ttl_seconds": int(ttl.Seconds())}), false
+	case "delete", "del":
+		if err := mgr.Delete(ctx, key); err != nil {
+			return marshalJSON(map[string]any{"error": err.Error(), "store": "redis"}), true
+		}
+		return marshalJSON(map[string]any{"store": "redis", "op": "delete", "key": key}), false
+	default:
+		return marshalJSON(map[string]any{"error": "unknown redis_write op: " + op, "allowed": []string{"set", "delete"}}), true
 	}
 }
 

@@ -36,9 +36,11 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 	e.HideBanner = true
 	e.HidePort = true
 
-	e.Use(echomiddleware.Recover())
+	e.Use(middleware.Recovery(l))
 	// Cap request bodies (memory DoS) and slowloris-style idle connections.
 	e.Use(echomiddleware.BodyLimit("2M"))
+	e.HTTPErrorHandler = middleware.HTTPErrorHandler(l)
+	response.SetTraceDebug(cfg.App.Debug)
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second
 	e.Server.WriteTimeout = 0
@@ -46,15 +48,12 @@ func New(cfg *config.Config, l *logger.Logger) *Server {
 
 	e.RouteNotFound("/*", func(c echo.Context) error {
 		l.Warn("Endpoint not found", "path", c.Request().URL.Path, "method", c.Request().Method)
-		return response.Error(c, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found. This incident will be reported.", map[string]any{
-			"path":   c.Request().URL.Path,
-			"method": c.Request().Method,
-		})
+		return response.TraceError(c, http.StatusNotFound, fmt.Errorf("endpoint not found: %s %s", c.Request().Method, c.Request().URL.Path), "Server.RouteNotFound", "")
 	})
 
 	echo.MethodNotAllowedHandler = func(c echo.Context) error {
 		l.Warn("Method not allowed", "path", c.Request().URL.Path, "method", c.Request().Method)
-		return response.Error(c, http.StatusMethodNotAllowed, "HTTP_ERROR", "Method not allowed")
+		return response.TraceError(c, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed: %s %s", c.Request().Method, c.Request().URL.Path), "Server.MethodNotAllowed", "")
 	}
 
 	return &Server{

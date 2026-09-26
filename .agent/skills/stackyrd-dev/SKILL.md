@@ -30,12 +30,23 @@ Auto-registered via `init()`. Default: enabled unless `config.yaml` says `false`
 - **Log config:** `LogConfig` includes `max_age_hours` (default 168) and `max_size_mb` (default 100) alongside `max_files`/`compress` — use these for rotation, not ad-hoc env checks.
 - **TUI config:** `AppConfig.TUI` (`SidebarMinWidth` default 135, `SidebarMinHeight` default 42) via `app.tui.sidebar_min_width` / `app.tui.sidebar_min_height` in `config.yaml`; `pkg/tui/terminal.go` reads `m.config.TUI` (not constants) and `cmd/app/application.go` passes `app.config.App.TUI` into `LiveConfig`. When adding TUI layout logic, read from `config.TUI`, not hardcoded thresholds.
 - **Logger:** structured key-value pairs; log technical errors server-side, never echo raw `err.Error()` to clients — return generic messages
-- **Responses:** `pkg/response.{Success,Created,BadRequest,NotFound,Error,ValidationError}`
+- **Responses:** `pkg/response.{Success,Created,BadRequest,NotFound,Error,ValidationError}` — for failures that must be traceable use `TraceError(c, status, err, "Struct.Method", "wire-name")`, panics use `TracePanic` (recovery middleware only)
 - **Request binding:** `pkg/request.Bind(c, &target)` — returns typed `*ValidationError`; inspect with `errors.As`, not a bare type assertion
 - **Dependencies:** services that need infra use `RegisterServiceWithDeps` and read **typed getters** on `*registry.Dependencies` (`deps.Redis()`, `deps.Postgres()`, `deps.Mongo()`, `deps.Kafka()`, `deps.Grafana()`, `deps.MinIO()`, `deps.Cron()`) — each returns `*T` or `nil`. The container is **sealed after boot**: `Set()` is a no-op once infrastructure registration completes.
 - **Mocks:** `pkg/testing.MockService` is guarded by `var _ interfaces.Service = (*MockService)(nil)` and `RegisterRoutes` takes `*echo.Group` (not `any`). If a Service signature changes and the guard fails, fix the mock — do not silence the guard or widen to `any`.
 - **Rate limiting:** `pkg/infrastructure/mcpserver.go` uses `golang.org/x/time/rate.NewLimiter(20, 50)` in `Handler()` — return `429` with JSON-RPC `-32003` when `!limiter.Allow()`. Follow this pattern for token-gated endpoints; do not hand-roll counters.
 - **Error wrapping:** use `fmt.Errorf("context: %w", err)`; match sentinels with `errors.Is` / typed chains with `errors.As`
+
+## Exception Tracing
+
+Every error response carries `error.details.trace{trace_id,endpoint,method,path,handler,service,kind,code,constraint,table,stack}` with `correlation_id == trace.trace_id` — grep one ID to join request log ↔ response ↔ DB error.
+
+- **Helpers:** `pkg/response/exception.go` — `Trace` struct, `Classify(err)` (`sql|mongo|db|validation|http|redis|kafka|auth|panic|internal`; SQLSTATE `23505→409 CONFLICT`, `23503/23502/23514→400`, else `500`), `TraceError(c, status, err, handler, service)`, `TracePanic(c, rec, stack, handler, service)`, `GetCorrelationID(c)`, `SetTraceDebug(bool)`.
+- **Recovery:** `internal/middleware/recovery.go` (`recovery`, auto-registered via `init()`) renders panics as traced JSON; `HTTPErrorHandler(l)` covers 404/405/`*echo.HTTPError`. `server.go:New()` uses `middleware.Recovery(l)` (not stock `Recover()`) and sets the handler; debug flag comes from existing `cfg.App.Debug` — no new config section.
+- **Verbosity:** `SetTraceDebug` redacts `stack`/`table`/raw 500 messages in production; `trace_id/kind/code` always present. Call once at boot; tests toggle explicitly and defer-reset.
+- **Handler adoption:** pass literal `"Struct.Method"` + wire name, e.g. `return response.TraceError(c, 500, result.Error, "TasksService.Create", "tasks-service")`. One line per failure branch; don't retrofit `NotFound`/validation-only paths that carry no cause.
+- **Tests:** `tests/services/exception_test.go` — classify PG `23505` + validation, 409 trace shape + id echo, ID generation when middleware absent, panic→JSON without stack leak in prod mode.
+- **Postman:** `details.trace` is a response-envelope change → update `11 · Negative & Edge` contract tests (`trace_id == correlation_id`, `kind` assertions) per the Postman check task.
 
 ## References
 

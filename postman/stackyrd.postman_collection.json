@@ -1810,11 +1810,11 @@
 		},
 		{
 			"name": "11 · Negative & Edge",
-			"description": "Trust-boundary checks: unknown route (404 envelope with path+method details), wrong method (405), oversized body (413 via `BodyLimit 2M`). All hit `internal/server/server.go` handlers, not services.",
+			"description": "Trust-boundary checks: unknown route (404 traced via `response.TraceError`), wrong method (405 traced), oversized body (413 via `BodyLimit 2M`), trace-correlation contract. All hit `internal/server/server.go` handlers, not services.",
 			"item": [
 				{
 					"name": "Edge — Unknown route (404 envelope)",
-					"description": "`GET {{apiBase}}/nope` → **404 ENDPOINT_NOT_FOUND** `Endpoint not found. This incident will be reported.` with `error.details{path,method}`.",
+					"description": "`GET {{apiBase}}/nope` → **404 NOT_FOUND** via `response.TraceError` (`Server.RouteNotFound` in `internal/server/server.go`). `error.details.trace{trace_id,endpoint,method,path,handler,kind}` with `correlation_id == trace.trace_id`.",
 					"request": {
 						"method": "GET",
 						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
@@ -1828,9 +1828,13 @@
 								"exec": [
 									"pm.test('404 envelope', function () { pm.response.to.have.status(404); });",
 									"var j = pm.response.json();",
-									"pm.test('code + details', function () {",
-									"    pm.expect(j.error.code).to.eql('ENDPOINT_NOT_FOUND');",
-									"    pm.expect(j.error.details).to.include.all.keys('path', 'method');",
+									"pm.test('traced 404 shape', function () {",
+									"    pm.expect(j.success).to.eql(false);",
+									"    pm.expect(j.error.code).to.eql('NOT_FOUND');",
+									"    pm.expect(j.error.details).to.have.property('trace');",
+									"    pm.expect(j.error.details.trace.kind).to.eql('internal');",
+									"    pm.expect(j.error.details.trace.handler).to.eql('Server.RouteNotFound');",
+									"    pm.expect(j.correlation_id).to.eql(j.error.details.trace.trace_id);",
 									"});"
 								]
 							}
@@ -1839,7 +1843,7 @@
 				},
 				{
 					"name": "Edge — Wrong method (405)",
-					"description": "`PATCH {{apiBase}}/users` (no PATCH route) → **405 HTTP_ERROR** `Method not allowed`.",
+					"description": "`PATCH {{apiBase}}/users` (no PATCH route) → **405** via `response.TraceError` (`Server.MethodNotAllowed`, kind `http`). `correlation_id == trace.trace_id`.",
 					"request": {
 						"method": "PATCH",
 						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
@@ -1851,7 +1855,13 @@
 							"script": {
 								"type": "text/javascript",
 								"exec": [
-									"pm.test('405 Method not allowed', function () { pm.response.to.have.status(405); });"
+									"pm.test('405 Method not allowed', function () { pm.response.to.have.status(405); });",
+									"var j405 = pm.response.json();",
+									"pm.test('traced 405 shape', function () {",
+									"    pm.expect(j405.error.details).to.have.property('trace');",
+									"    pm.expect(j405.error.details.trace.kind).to.eql('http');",
+									"    pm.expect(j405.correlation_id).to.eql(j405.error.details.trace.trace_id);",
+									"});"
 								]
 							}
 						}
@@ -1872,6 +1882,32 @@
 								"type": "text/javascript",
 								"exec": [
 									"pm.test('400 overflow', function () { pm.response.to.have.status(400); });"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Edge — Trace correlation (404 contract)",
+					"description": "Contract for the exception-trace feature (`pkg/response/exception.go`): every traced error echoes `X-Request-ID` as both `correlation_id` and `details.trace.trace_id`, plus `endpoint/method/path/handler/kind`. Uses the deterministic 404 RouteNotFound branch (no DB needed).",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "X-Request-ID", "value": "{{requestId}}" }],
+						"url": "{{apiBase}}/nope?trace=1"
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('404 traced', function () { pm.response.to.have.status(404); });",
+									"var j = pm.response.json();",
+									"pm.test('trace correlation', function () {",
+									"    pm.expect(j.correlation_id).to.eql(pm.collectionVariables.get('requestId'));",
+									"    pm.expect(j.error.details.trace.trace_id).to.eql(j.correlation_id);",
+									"    pm.expect(j.error.details.trace).to.include.all.keys('trace_id', 'endpoint', 'method', 'path', 'handler', 'kind');",
+									"});"
 								]
 							}
 						}

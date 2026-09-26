@@ -11,6 +11,7 @@ go run cmd/app/main.go  # Run (needs config.yaml in CWD)
 go test ./...           # All tests
 docker compose up       # Full dev stack (Redis, PG, Kafka, Mongo, Grafana, MinIO)
 cd scripts && go build -o yrd . # Build CLI (output: scripts/yrd)
+./scripts/yrd init # Rename project + onboarding menu (build, docker, pkg, swagger)
 ./scripts/yrd build # Build server binary (output: dist/stackyrd)
 ```
 

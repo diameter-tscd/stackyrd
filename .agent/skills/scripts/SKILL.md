@@ -1,6 +1,6 @@
 ---
 name: scripts
-description: Reference docs for the stackyrd CLI subcommands in scripts/ — build, service, pkg, swagger, docker. Use when working on or invoking a specific yrd subcommand implementation.
+description: Reference docs for the stackyrd CLI subcommands in scripts/ — build, service, pkg, swagger, docker, init. Use when working on or invoking a specific yrd subcommand implementation.
 ---
 
 # Stackyrd Scripts Reference
@@ -14,3 +14,4 @@ Deep reference docs for each `scripts/yrd` subcommand implementation in `scripts
 - `PKG_SCRIPT.md` — `yrd pkg` (install infra from GitHub index)
 - `SWAGGER_SCRIPT.md` — `yrd swagger` (generate OpenAPI docs)
 - `DOCKER_SCRIPT.md` — `yrd docker` (multi-stage Docker build, 10 targets)
+- `INIT_SCRIPT.md` — `yrd init` (rename project + onboarding menu)

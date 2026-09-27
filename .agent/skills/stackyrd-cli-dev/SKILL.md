@@ -16,6 +16,7 @@ The scripts folder is a standalone Go module (`scripts/go.mod`) producing a sing
 | `pkg` | `internal/pkg` | Install infra from GitHub index |
 | `swagger` | `internal/swagger` | Generate OpenAPI docs |
 | `service` | `internal/service` | Scaffold service from templates |
+| `init` | `internal/init` | Rename project + guided onboarding menu (build, docker, pkg, swagger) |
 
 Deep docs: `.agent/skills/scripts/{NAME}_SCRIPT.md`.
 
@@ -33,7 +34,7 @@ func Run(args []string)
 
 - **CLI flags:** stdlib `flag` package. No cobra/urfave — zero CLI framework deps.
 - **Project root:** walk up from CWD looking for `cmd/app/main.go` (`findProjectRoot()`). NOT `go.mod` — `scripts/` has its own go.mod and must not be mistaken for the stackyrd root. `-path <dir>` overrides auto-detection.
-- **Logger:** lightweight struct with `Info`/`Warn`/`Error`/`Success`/`Debug` + ANSI colors. Same pattern across all 5 scripts (teal-green info `\033[38;5;108m`, red errors `\033[38;5;167m`, yellow warnings `\033[38;5;186m`).
+- **Logger:** lightweight struct with `Info`/`Warn`/`Error`/`Success`/`Debug` + ANSI colors. Same pattern across all 6 scripts (teal-green info `\033[38;5;108m`, red errors `\033[38;5;167m`, yellow warnings `\033[38;5;186m`).
 - **Multi-step workflows:** `[]struct{name string; fn func(*Logger) error}` + for-loop (see `build.go`)
 - `./scripts/yrd <command> [flags]` for all tooling
 - `./scripts/yrd -path <dir> <command>` for a specific project
@@ -43,7 +44,7 @@ func Run(args []string)
 
 1. Create `scripts/internal/<name>/<name>.go` as its own package (e.g. `package build`).
 2. Rename `func main()` → `func Run(args []string)` and prepend `os.Args = append([]string{"yrd"}, args...)`.
-3. Add a case to `scripts/main.go` dispatcher: `<name>.<name>.Run(args)`.
+3. Add a case to `scripts/main.go` dispatcher: `<name>.<name>.Run(args)` (exception: `init` is imported aliased as `initcmd` to avoid the `init` qualifier).
 4. Add new dep to `scripts/go.mod` if needed. `go mod tidy` in `scripts/`.
 5. Update `.agent/skills/stackyrd-cli-dev/SKILL.md` and doc files.
 

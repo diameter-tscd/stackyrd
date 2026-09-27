@@ -165,7 +165,7 @@ func (s *UsersService) createUser(c echo.Context) error {
 	usersMu.Lock()
 	if len(usersList) >= maxUsers {
 		usersMu.Unlock()
-		return response.Error(c, 503, "SERVICE_UNAVAILABLE", "User limit reached", nil)
+		return response.TraceError(c, 503, errors.New("user limit reached"), "UsersService.Create", "users")
 	}
 	user.ID = len(usersList) + 1
 	usersList = append(usersList, user)

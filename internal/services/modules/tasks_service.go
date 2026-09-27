@@ -72,7 +72,7 @@ func (s *TasksService) listTasks(c echo.Context) error {
 	var total int64
 	if err := s.db.ORM.WithContext(ctx).Model(&Task{}).Count(&total).Error; err != nil {
 		s.logger.Error("Failed to count tasks", err)
-		return response.InternalServerError(c, "Failed to list tasks")
+		return response.TraceError(c, 500, err, "TasksService.List", "tasks-service")
 	}
 
 	var tasks []Task
@@ -83,7 +83,7 @@ func (s *TasksService) listTasks(c echo.Context) error {
 		Find(&tasks)
 	if result.Error != nil {
 		s.logger.Error("Failed to list tasks", result.Error)
-		return response.InternalServerError(c, "Failed to list tasks")
+		return response.TraceError(c, 500, result.Error, "TasksService.List", "tasks-service")
 	}
 
 	perPage := req.GetPerPage()
@@ -106,7 +106,7 @@ func (s *TasksService) createTask(c echo.Context) error {
 	result := s.db.ORM.WithContext(c.Request().Context()).Create(task)
 	if result.Error != nil {
 		s.logger.Error("Failed to create task", result.Error)
-		return response.InternalServerError(c, "Failed to create task")
+		return response.TraceError(c, 500, result.Error, "TasksService.Create", "tasks-service")
 	}
 
 	return response.Created(c, task)
@@ -125,7 +125,7 @@ func (s *TasksService) updateTask(c echo.Context) error {
 			return response.NotFound(c, "Task not found")
 		}
 		s.logger.Error("Failed to fetch task", result.Error, "id", id)
-		return response.InternalServerError(c, "Failed to fetch task")
+		return response.TraceError(c, 500, result.Error, "TasksService.Update", "tasks-service")
 	}
 
 	// Bind into a fresh struct: the body must never override the ID resolved
@@ -144,7 +144,7 @@ func (s *TasksService) updateTask(c echo.Context) error {
 	})
 	if result.Error != nil {
 		s.logger.Error("Failed to update task", result.Error, "id", id)
-		return response.InternalServerError(c, "Failed to update task")
+		return response.TraceError(c, 500, result.Error, "TasksService.Update", "tasks-service")
 	}
 
 	task.Title = payload.Title
@@ -163,7 +163,7 @@ func (s *TasksService) deleteTask(c echo.Context) error {
 	result := s.db.ORM.WithContext(c.Request().Context()).Delete(&Task{}, "id = ?", id)
 	if result.Error != nil {
 		s.logger.Error("Failed to delete task", result.Error, "id", id)
-		return response.InternalServerError(c, "Failed to delete task")
+		return response.TraceError(c, 500, result.Error, "TasksService.Delete", "tasks-service")
 	}
 
 	return response.Success(c, nil, "Task deleted")
